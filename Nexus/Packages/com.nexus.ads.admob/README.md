@@ -84,7 +84,8 @@ in the context (the bridge's). The assembly `Nexus.Ads.AdMob.Firebase` compiles 
   warning is logged. The status is read at start, when the update answers (on the main thread, whichever
   thread UMP answers on) and on `IAdService.ReadyChanged`, which the family raises after the consent
   answer, when ads start or are refused. `Changed` fires only when the status changed, and each change is
-  logged in every build (`[Nexus Ads] analytics consent: ...`).
+  logged in every build with the status and the analytics decision it gives
+  (`[Nexus Ads] analytics consent: NotRequired, analytics Send`).
 - **Choice** is always `Denied`. Google maps no TCF purpose to `analytics_storage` (purpose 1 maps to
   `ad_storage` and `ad_user_data`; [Implement TCF strings](https://developers.google.com/tag-platform/security/guides/implement-TCF-strings)),
   so the form answers nothing about analytics. Where consent is required (EEA, UK) nothing is sent: no

@@ -4,6 +4,8 @@ using GoogleMobileAds.Ump.Api;
 using NUnit.Framework;
 using Nexus.Core.Services;
 using Nexus.Firebase.Analytics;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace Nexus.Ads.AdMob.Tests
 {
@@ -26,6 +28,8 @@ namespace Nexus.Ads.AdMob.Tests
             Action<FormError> answer = null;
             using var ads = new AdService();
             var consent = new UmpAnalyticsConsent(() => status, () => request, (sent, callback) => { asked = sent; answer = callback; }) { Ads = ads };
+            ExpectLine("Unknown", AnalyticsDecision.Hold);
+            ExpectLine("NotRequired", AnalyticsDecision.Send);
             consent.InitializeAsync(default);
             AnalyticsDecision beforeTheAnswer = AnalyticsCollectionPolicy.Decide(consent.State, consent.Choice);
 
@@ -35,7 +39,12 @@ namespace Nexus.Ads.AdMob.Tests
             Assert.That(asked, Is.SameAs(request));
             Assert.That((beforeTheAnswer, consent.State, AnalyticsCollectionPolicy.Decide(consent.State, consent.Choice)),
                 Is.EqualTo((AnalyticsDecision.Hold, ConsentState.NotRequired, AnalyticsDecision.Send)));
+            LogAssert.NoUnexpectedReceived();
         }
+
+        // Issue #283: the line named the reader's fixed choice, "analytics Denied", also where the events are sent.
+        private static void ExpectLine(string state, AnalyticsDecision decision)
+            => LogAssert.Expect(LogType.Warning, "[Nexus Ads] analytics consent: " + state + ", analytics " + decision);
 
         // The launch update and the consent flow send one request: a second request with another age tag or debug
         // geography would replace the first answer (issue #121). A release build never carries the debug devices.
@@ -64,9 +73,11 @@ namespace Nexus.Ads.AdMob.Tests
         {
             using var ads = new AdService();
             var consent = new UmpAnalyticsConsent(() => status) { Ads = ads };
+            ExpectLine(status.ToString(), expected);
             consent.InitializeAsync(default);
 
             Assert.That(AnalyticsCollectionPolicy.Decide(consent.State, consent.Choice), Is.EqualTo(expected));
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
@@ -77,6 +88,8 @@ namespace Nexus.Ads.AdMob.Tests
             var consent = new UmpAnalyticsConsent(() => status) { Ads = ads };
             int changes = 0;
             consent.Changed += () => changes++;
+            ExpectLine("Unknown", AnalyticsDecision.Hold);
+            ExpectLine("Obtained", AnalyticsDecision.Discard);
             consent.InitializeAsync(default);
 
             ads.SetNetworkAdapter(null);
@@ -89,6 +102,7 @@ namespace Nexus.Ads.AdMob.Tests
             ads.SetNetworkAdapter(null);
 
             Assert.That((unchanged, afterAnswer, consent.State, changes), Is.EqualTo((1, 2, ConsentState.Obtained, 2)));
+            LogAssert.NoUnexpectedReceived();
         }
     }
 }

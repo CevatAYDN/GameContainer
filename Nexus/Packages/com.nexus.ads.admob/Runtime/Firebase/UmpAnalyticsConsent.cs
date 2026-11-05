@@ -101,7 +101,8 @@ namespace Nexus.Ads.AdMob
             if (_read && state == State) return;
             _read = true;
             State = state;
-            NexusLog.WarnAlways("[Nexus Ads] analytics consent: " + state + ", analytics " + Choice);
+            // the decision the analytics gate takes, not Choice, which is Denied whatever the region (#283)
+            NexusLog.WarnAlways("[Nexus Ads] analytics consent: " + state + ", analytics " + AnalyticsCollectionPolicy.Decide(state, Choice));
             Changed?.Invoke();
         }
 
