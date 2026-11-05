@@ -45,7 +45,9 @@ that called the method gets CS0117 and removes the call; nothing replaces it.
 #### `IAdService.OnAdImpression`
 
 Issue #135 added `event Action<AdImpression> OnAdImpression` to `IAdService`. A class of the game that implements
-`IAdService` gets CS0535 and adds the event; no known game or sample implements it. A game that logs ad revenue
+`IAdService` gets CS0535 and adds the event, in a test fake as `public event Action<AdImpression> OnAdImpression { add { } remove { } }`.
+Five test fakes of the known games implement it (issue #287): Gigawatt's `FakeAdAdapter` and `DelayedAds` (`Tests/PlaytestRunner`),
+Wickling's `FakeAds` (`Tests/SimRunner`) and RingFlow's two `MockAdService` classes; no sample does. A game that logs ad revenue
 subscribes this event instead of `OnImpressionRecorded` and logs the impression's `Currency` instead of a fixed "USD";
 `Format` and `Precision` are there too. `OnImpressionRecorded` still fires for every impression.
 
