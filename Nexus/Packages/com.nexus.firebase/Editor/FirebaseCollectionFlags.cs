@@ -69,7 +69,7 @@ namespace Nexus.Firebase.Editor
 
         private static bool IsLoaded(string assemblyName)
         {
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 if (assembly.GetName().Name == assemblyName) return true;
             }
