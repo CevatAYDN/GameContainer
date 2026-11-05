@@ -144,8 +144,11 @@ namespace Nexus.Iap.Unity.Tests
         {
             string previous = UnityIAPServices.GetDefaultStore();
             var store = UseTestStore("NexusConfirmRefused", failConfirms: 1);
+            var logger = Nexus.Core.NexusRuntime.Logger;
+            bool loggerWasEnabled = logger.IsEnabled;
             try
             {
+                logger.IsEnabled = false; // as in a release player, which drops LogWarning
                 var adapter = AdapterRetryingAfter(TimeSpan.FromMilliseconds(1), retries: 1);
                 LogAssert.Expect(LogType.Warning, new Regex(@"\[UnityIAP\] The store did not confirm the purchase of rewards_pass \(Unknown: billing service unavailable\)"));
                 PurchaseOutcome? outcome = null;
@@ -155,7 +158,7 @@ namespace Nexus.Iap.Unity.Tests
                 Assert.AreEqual(2, store.Confirms);
                 LogAssert.NoUnexpectedReceived();
             }
-            finally { UnityIAPServices.SetStoreAsDefault(previous); }
+            finally { logger.IsEnabled = loggerWasEnabled; UnityIAPServices.SetStoreAsDefault(previous); }
         }
 
         // Issue #172: a game can tell that a purchase it granted is not yet acknowledged with the store

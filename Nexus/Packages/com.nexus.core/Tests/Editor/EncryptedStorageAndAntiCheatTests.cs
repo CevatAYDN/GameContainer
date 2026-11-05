@@ -376,10 +376,12 @@ namespace Nexus.Editor.Tests
             try
             {
                 Write(device, StorageKeyBinding.Device, "phone-A", 1234);
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[EncryptedStorage\] Save file tampering detected for key: Coins! Reverting to default\.$"));
                 Assert.AreEqual(-1, Read(device, StorageKeyBinding.Device, "phone-B"), "The device-bound store reads a restored save as tampered.");
 
                 Write(app, StorageKeyBinding.App, "phone-A", 1234);
                 Assert.AreEqual(1234, Read(app, StorageKeyBinding.App, "phone-B"));
+                UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
             }
             finally { ForgetStore(device); ForgetStore(app); }
         }

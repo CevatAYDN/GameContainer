@@ -186,6 +186,7 @@ namespace Nexus.Editor.Tests
                 _signalBus.Fire(new UnheardSignal());
                 Assert.AreEqual(0, warnings);
                 logger.IsEnabled = true;
+                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] Signal '.*\+UnheardSignal' fired but has no subscribers"));
                 _signalBus.Fire(new UnheardSignal());
                 Assert.AreEqual(1, warnings);
             }

@@ -128,44 +128,50 @@ namespace Nexus.Tests
         // ── DefaultRecoveryStrategy tests ──────────────────────
 
         [Test]
-        public void DefaultRecoveryStrategy_WithFireAsync_ThrowsOnExhaustion()
+        public void DefaultRecoveryStrategy_SyncFire_RetriesThenThrowsAbort_WhenRetriesRunOut()
         {
             var strategy = new DefaultRecoveryStrategy(maxRetries: 1);
             _container.BindInstance<IRecoveryStrategy>(strategy);
             _container.Bind<FailCommand>(isSingleton: false);
             _signalBus.RegisterCommand(typeof(TestSignal), typeof(FailCommand), ExecutionMode.Sequential, 0, isAsync: false);
 
-            // The engine logs each failed attempt (1 initial + 1 retry) and the default strategy logs the abort.
-            for (int i = 0; i < 3; i++)
-                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] Command FailCommand failed"));
+            // in the order they are logged: each failed attempt, the strategy's warning before the retry, its abort
+            ExpectLog(LogType.Error, @"^\[Nexus\] Command FailCommand failed: ");
+            ExpectLog(LogType.Warning, @"^\[Nexus\] Command FailCommand failed \(attempt 1/1\)\. Retrying");
+            ExpectLog(LogType.Error, @"^\[Nexus\] Command FailCommand failed: ");
+            ExpectLog(LogType.Error, @"^\[Nexus\] Command FailCommand failed after 1 retries\. Aborting");
             Assert.Throws<NexusRecoveryAbortException>(() =>
-                _signalBus.Fire(new TestSignal(5, "async-retry"))
+                _signalBus.Fire(new TestSignal(5, "sync-retry"))
             );
             Assert.AreEqual(2, _results.ExecutionCount, "1 initial + 1 retry = 2");
+            UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
-        public async Task DefaultRecoveryStrategy_WithFireAsync_FallbackAsync_Skips()
+        public async Task DefaultRecoveryStrategy_FireAsync_RetriesTwiceThenThrowsAbort()
         {
             var strategy = new DefaultRecoveryStrategy(maxRetries: 2);
             _container.BindInstance<IRecoveryStrategy>(strategy);
             _container.Bind<FailAsyncCommand>(isSingleton: false);
             _signalBus.RegisterCommand(typeof(TestSignal), typeof(FailAsyncCommand), ExecutionMode.Sequential, 0, isAsync: true);
 
-            // The engine logs each failed attempt (1 initial + 2 retries) and the default strategy logs the abort.
-            for (int i = 0; i < 4; i++)
-                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] Command FailAsyncCommand failed"));
+            ExpectLog(LogType.Error, @"^\[Nexus\] Command FailAsyncCommand failed: ");
+            ExpectLog(LogType.Warning, @"^\[Nexus\] Command FailAsyncCommand failed \(attempt 1/2\)\. Retrying");
+            ExpectLog(LogType.Error, @"^\[Nexus\] Command FailAsyncCommand failed: ");
+            ExpectLog(LogType.Warning, @"^\[Nexus\] Command FailAsyncCommand failed \(attempt 2/2\)\. Retrying");
+            ExpectLog(LogType.Error, @"^\[Nexus\] Command FailAsyncCommand failed: ");
+            ExpectLog(LogType.Error, @"^\[Nexus\] Command FailAsyncCommand failed after 2 retries\. Aborting");
             try
             {
                 await _signalBus.FireAsync(new TestSignal(6, "async-fail"));
-                Assert.Fail("Should have thrown");
+                Assert.Fail("FireAsync returned after the retries ran out");
             }
-            catch (InvalidOperationException ex)
-            {
-                Assert.IsTrue(ex.Message.Contains("Retry limit reached") || ex.Message.Contains("async") || ex.Message.Contains("aborted"), "Exception should indicate failure: " + ex.Message);
-            }
-            // Retries are handled by the recovery pipeline; the async path should retry
-            // then abort when exhausted.
+            catch (NexusRecoveryAbortException) { }
+            Assert.AreEqual(3, _results.ExecutionCount, "1 initial + 2 retries = 3");
+            UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
         }
+
+        private static void ExpectLog(LogType type, string pattern)
+            => UnityEngine.TestTools.LogAssert.Expect(type, new System.Text.RegularExpressions.Regex(pattern));
     }
 }

@@ -35,10 +35,11 @@ namespace Nexus.Tests
             }
         }
 
-        public class FallbackCommand : ICommand, ICommand<FailSignal>
+        public class FallbackCommand : ICommand, ICommand<FailSignal>, IResettableCommand
         {
             [Inject] private RecoveryTestResults _results;
             public FailSignal Signal;
+            public void ResetState() => Signal = default;
             public void Execute() => Execute(Signal);
             public void Execute(FailSignal signal)
             {
@@ -47,10 +48,11 @@ namespace Nexus.Tests
             }
         }
 
-        public class AsyncFallbackCommand : IAsyncCommand, IAsyncCommand<FailSignal>, ICommand, ICommand<FailSignal>
+        public class AsyncFallbackCommand : IAsyncCommand, IAsyncCommand<FailSignal>, ICommand, ICommand<FailSignal>, IResettableCommand
         {
             [Inject] private RecoveryTestResults _results;
             public FailSignal Signal;
+            public void ResetState() => Signal = default;
 
             public void Execute() => Execute(Signal);
             public void Execute(FailSignal signal)
@@ -206,6 +208,7 @@ namespace Nexus.Tests
             Assert.AreEqual(1, _results.ThrowCount);
             Assert.AreEqual(1, _results.FallbackCount);
             Assert.AreEqual("FallbackTest", _results.FallbackMessage);
+            UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
@@ -220,6 +223,7 @@ namespace Nexus.Tests
             Assert.AreEqual(1, _results.ThrowCount);
             Assert.AreEqual(1, _results.AsyncFallbackCount);
             Assert.AreEqual("FallbackAsyncTest", _results.AsyncFallbackMessage);
+            UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
@@ -236,6 +240,7 @@ namespace Nexus.Tests
             Assert.AreEqual(1, _results.ThrowCount);
             Assert.AreEqual(1, _results.FallbackCount, "Generic-only fallback command must execute.");
             Assert.AreEqual("GenericFallbackTest", _results.FallbackMessage);
+            UnityEngine.TestTools.LogAssert.NoUnexpectedReceived(); // no "without the payload" warning (#278)
         }
 
         [Test]
@@ -253,6 +258,7 @@ namespace Nexus.Tests
             Assert.AreEqual(1, _results.ThrowCount);
             Assert.AreEqual(1, _results.AsyncFallbackCount, "Generic-only async fallback command must execute.");
             Assert.AreEqual("GenericAsyncFallbackTest", _results.AsyncFallbackMessage);
+            UnityEngine.TestTools.LogAssert.NoUnexpectedReceived(); // no "without the payload" warning (#278)
         }
 
         [Test]

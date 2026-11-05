@@ -275,6 +275,8 @@ namespace Nexus.Ads.Tests.Runtime
         {
             // the warnings this test causes, in the order it causes them (#198)
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\ Ads\]\ NoFill\ Rewarded\ '':\ no\ fill\ \(first\ this\ session;\ repeats\ are\ not\ logged\)"));
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] ShowFailed Rewarded 'shop_refill'$"));
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] ShowFailed Rewarded 'shop_refill'$"));
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\ Ads\]\ PolicyViolation\ UnknownPlacement\ \(Interstitial\ 'no_such_placement'\):\ placement\ 'no_such_placement'"));
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\ Ads\]\ ConsentRefused:\ the\ consent\ flow\ allows\ no\ ad\ request;\ no\ ads\ until\ the\ player\ changes\ it\ in\ the\ p"));
             SimulatorProvider provider = null;
