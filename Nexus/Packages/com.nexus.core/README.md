@@ -28,7 +28,7 @@ Pin a commit (the full 40-character hash: the Package Manager does not take a sh
 tag in production. Unity resolves the declared dependencies
 (`com.unity.ugui`, `com.unity.profiling.core`, `com.unity.inputsystem`,
 `com.unity.modules.androidjni`, `com.unity.modules.uielements`). Minimum Unity is 6000.6; every gate but 11 (the games)
-runs 6000.6.7f1 (the repository's `docs/RELEASE_GATES.md`).
+runs 6000.6.8f1 (the repository's `docs/RELEASE_GATES.md`).
 
 ## Start: pick your level
 

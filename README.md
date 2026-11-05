@@ -8,7 +8,7 @@ mobile and PC games, and an editor tool suite in one package.
 | | |
 |---|---|
 | Package | `Nexus/Packages/com.nexus.core` (version in `package.json`: **0.6.0**; unreleased work is listed in its `CHANGELOG.md`) |
-| Unity | 6000.6 minimum (`package.json`); the development project and every gate but 11 (the games, each on its own pin) run **6000.6.7f1** (latest runs in [RELEASE_GATES.md](docs/RELEASE_GATES.md)) |
+| Unity | 6000.6 minimum (`package.json`); the development project and every gate but 11 (the games, each on its own pin) run **6000.6.8f1** (latest runs in [RELEASE_GATES.md](docs/RELEASE_GATES.md)) |
 | License | MIT |
 | Verification status | [docs/RELEASE_GATES.md](docs/RELEASE_GATES.md) |
 
@@ -58,7 +58,7 @@ Three importable samples ship with the package: **Code-first Startup** (one comp
 | `Nexus/Packages/com.nexus.ads`, `com.nexus.ads.bridge.nexus`, `com.nexus.ads.levelplay` | The ad package family (engine-free core, Unity layer, editor; the bridge to `com.nexus.core`'s `AdService`; the LevelPlay provider), changelog in `com.nexus.ads/CHANGELOG.md` |
 | `Nexus/Packages/com.nexus.ads.admob`, `com.nexus.iap.unity`, `com.nexus.firebase`, `com.nexus.googleplay`, `com.nexus.notifications.unity` | Adapter packages: Google AdMob (the ad family's provider with Google's consent form), Unity IAP 5, Firebase, Google Play's in-app review and in-app update, Unity Mobile Notifications |
 | `Nexus/Packages/com.nexus.fsm`, `com.nexus.dots` | Split from the core in #112 with their namespaces kept: `GameStateMachine` and the window's State Machine tab; `NativeSignalQueue<T>`/`DOTSSignalBridge<T>`, compiled only with `com.unity.collections` |
-| `Nexus/` | Unity 6000.6.7f1 development project that hosts the packages and their EditMode/PlayMode tests |
+| `Nexus/` | Unity 6000.6.8f1 development project that hosts the packages and their EditMode/PlayMode tests |
 | `tools/nexus-benchmark` | .NET host harness: compiles the runtime against Unity stubs and runs stress, fuzz, zero-allocation, lifecycle, codegen, ads-core and evidence suites; also the pre-commit hook |
 | `tools/nexus-compile-check` | Compiles every runtime file against the installed editor's engine modules (`dotnet build tools/nexus-compile-check`) four times: a release player, the editor with `NEXUS_DEBUG`, Android IL2CPP and iOS IL2CPP; a missing engine or package assembly is an error |
 | `tools/nexus-comparison` | Pinned VContainer/Zenject/Reflex core DI comparison (host, Unity Mono player and Android IL2CPP device) |
@@ -76,12 +76,12 @@ Three importable samples ship with the package: **Code-first Startup** (one comp
 # Host harness (also runs on every commit through the pre-commit hook)
 dotnet run --project tools/nexus-benchmark
 
-# Unity tests, headless (Unity 6000.6.7f1)
-& "C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Unity.exe" -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode -testResults artifacts\editmode.xml -logFile Nexus\artifacts\editmode.log
-& "C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Unity.exe" -batchmode -projectPath Nexus -runTests -testPlatform PlayMode -testResults artifacts\playmode.xml -logFile Nexus\artifacts\playmode.log
+# Unity tests, headless (Unity 6000.6.8f1)
+& "C:\Program Files\Unity\Hub\Editor\6000.6.8f1\Editor\Unity.exe" -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode -testResults artifacts\editmode.xml -logFile Nexus\artifacts\editmode.log
+& "C:\Program Files\Unity\Hub\Editor\6000.6.8f1\Editor\Unity.exe" -batchmode -projectPath Nexus -runTests -testPlatform PlayMode -testResults artifacts\playmode.xml -logFile Nexus\artifacts\playmode.log
 
 # Regenerate the AOT binder of the development project
-& "C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder
+& "C:\Program Files\Unity\Hub\Editor\6000.6.8f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder
 
 # Documentation links
 python tools/check-docs.py

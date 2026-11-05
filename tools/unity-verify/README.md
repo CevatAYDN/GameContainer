@@ -1,4 +1,4 @@
-# Unity 6000.6.7 Compile Verification (Mono + IL2CPP)
+# Unity 6000.6.8 Compile Verification (Mono + IL2CPP)
 
 The `.NET` harness in `tools/nexus-benchmark` compiles the real `com.nexus.core`
 sources and proves behavior, but it cannot prove the **Unity pipeline** compiles:
@@ -7,12 +7,12 @@ critically — the **IL2CPP/AOT** path (code stripping, `link.xml` preservation,
 generic dispatch survival without a JIT).
 
 This folder is the missing half: a repeatable, headless command sequence that
-compiles the demo project under Unity **6000.6.7f1** with both scripting
+compiles the demo project under Unity **6000.6.8f1** with both scripting
 backends.
 
 ## Prerequisites
 
-- Unity **6000.6.7f1** (matches `Nexus/ProjectSettings/ProjectVersion.txt`),
+- Unity **6000.6.8f1** (matches `Nexus/ProjectSettings/ProjectVersion.txt`),
   installed via Unity Hub, with the **Windows Build Support** module.
   - Optional: **Android Build Support** (SDK + NDK) if you want the Android
     IL2CPP step.
@@ -22,7 +22,7 @@ backends.
 
 ```bash
 # from the repo root
-UNITY_PATH="C:/Program Files/Unity/Hub/Editor/6000.6.7f1/Editor/Unity.exe" \
+UNITY_PATH="C:/Program Files/Unity/Hub/Editor/6000.6.8f1/Editor/Unity.exe" \
   bash tools/unity-verify/verify-unity-build.sh
 ```
 
@@ -33,7 +33,7 @@ Logs and test result XMLs land in `tools/unity-verify/artifacts/`.
 ### 1. EditMode tests — editor + runtime compile under Mono
 
 ```bash
-"<Unity 6000.6.7f1>/Editor/Unity.exe" -batchmode -nographics \
+"<Unity 6000.6.8f1>/Editor/Unity.exe" -batchmode -nographics \
   -projectPath "Nexus" \
   -runTests -testPlatform EditMode \
   -testResults "tools/unity-verify/artifacts/editmode-results.xml" \
@@ -46,7 +46,7 @@ Any `result="Failed"` in the XML is a failure.
 ### 2. PlayMode tests — runtime boots and dispatches in a player context
 
 ```bash
-"<Unity 6000.6.7f1>/Editor/Unity.exe" -batchmode -nographics \
+"<Unity 6000.6.8f1>/Editor/Unity.exe" -batchmode -nographics \
   -projectPath "Nexus" \
   -runTests -testPlatform PlayMode \
   -testResults "tools/unity-verify/artifacts/playmode-results.xml" \
@@ -70,7 +70,7 @@ Play Mode Options to not reload the domain first, and restore the setting after:
 
 ```bash
 sed -i 's/^  m_EnterPlayModeOptions: 0$/  m_EnterPlayModeOptions: 1/' Nexus/ProjectSettings/EditorSettings.asset
-"/c/Program Files/Unity/Hub/Editor/6000.6.7f1/Editor/Unity.exe" -batchmode   -projectPath "Nexus"   -executeMethod NexusVerify.PlayModeTwice.Run   -twiceResults "artifacts/playmode-twice"   -logFile "Nexus/artifacts/playmode-twice.log"
+"/c/Program Files/Unity/Hub/Editor/6000.6.8f1/Editor/Unity.exe" -batchmode   -projectPath "Nexus"   -executeMethod NexusVerify.PlayModeTwice.Run   -twiceResults "artifacts/playmode-twice"   -logFile "Nexus/artifacts/playmode-twice.log"
 git checkout -- Nexus/ProjectSettings/EditorSettings.asset
 ```
 
@@ -82,7 +82,7 @@ shows "Entering Playmode with Reload Domain disabled." once per run.
 ### 3. Mono player build — full player compile (Mono backend)
 
 ```bash
-"<Unity 6000.6.7f1>/Editor/Unity.exe" -batchmode -nographics \
+"<Unity 6000.6.8f1>/Editor/Unity.exe" -batchmode -nographics \
   -projectPath "Nexus" \
   -executeMethod NexusVerify.NexusVerifyBuild.BuildStandaloneMono \
   -logFile "tools/unity-verify/artifacts/mono-build.log" -quit
@@ -97,7 +97,7 @@ A success proves the whole game
 ### 4. IL2CPP player build — code-stripping + AOT verification
 
 ```bash
-"<Unity 6000.6.7f1>/Editor/Unity.exe" -batchmode -nographics \
+"<Unity 6000.6.8f1>/Editor/Unity.exe" -batchmode -nographics \
   -projectPath "Nexus" \
   -executeMethod NexusVerify.NexusVerifyBuild.BuildStandaloneIL2CPP \
   -logFile "tools/unity-verify/artifacts/il2cpp-build.log" -quit
@@ -127,7 +127,7 @@ IL2CPP compiles the C# to C++ and strips unused code, so it validates that
 ### Optional: Android IL2CPP (needs SDK/NDK)
 
 ```bash
-"<Unity 6000.6.7f1>/Editor/Unity.exe" -batchmode -nographics \
+"<Unity 6000.6.8f1>/Editor/Unity.exe" -batchmode -nographics \
   -projectPath "Nexus" \
   -buildTarget Android -executeMethod NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPP \
   -logFile "tools/unity-verify/artifacts/android-il2cpp-build.log" -quit
@@ -241,7 +241,7 @@ binder left beside the generator stops both, with a message that names CS0101.
 rm Nexus/Assets/Scripts/Nexus/NexusGeneratedBinder.g.cs
 
 # 3) Build the IL2CPP player (step 4 above); the compile now includes the source-generated binder:
-"C:/Program Files/Unity/Hub/Editor/6000.6.7f1/Editor/Unity.exe" -batchmode -nographics -quit \
+"C:/Program Files/Unity/Hub/Editor/6000.6.8f1/Editor/Unity.exe" -batchmode -nographics -quit \
   -projectPath Nexus -executeMethod NexusVerify.NexusVerifyBuild.BuildStandaloneIL2CPP \
   -logFile Nexus/artifacts/il2cpp-build.log
 

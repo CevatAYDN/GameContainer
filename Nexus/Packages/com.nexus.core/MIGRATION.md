@@ -49,6 +49,14 @@ Issue #135 added `event Action<AdImpression> OnAdImpression` to `IAdService`. A 
 subscribes this event instead of `OnImpressionRecorded` and logs the impression's `Currency` instead of a fixed "USD";
 `Format` and `Precision` are there too. `OnImpressionRecorded` still fires for every impression.
 
+#### The editor patch moves to 6000.6.8f1
+
+The framework's gates run on Unity 6000.6.8f1 (issue #284), the newest patch of the Supported stream; the `unity` field
+stays 6000.6. Open the game in 6000.6.8f1 at the re-pin (gate 11 records each game's editor). The patch ships the same
+.NET SDK, built-in packages and Android tools as 6000.6.7f1. Its release notes list a known issue, UUM-159613: with both
+**Run In Background** and **Predictive Back Support** on, the back gesture or button closes the app after it returns from
+the background. Keep one of the two off.
+
 ---
 
 ## Version 0.5.0 → 0.6.0
@@ -121,7 +129,7 @@ destroy it only if it is alive (`if (instance != null)`). `UICanvasSystem.Update
 
 The `unity` field of `com.nexus.core`, `com.nexus.fsm`, `com.nexus.dots`, `com.nexus.firebase` and `com.nexus.iap.unity`
 is 6000.6 (issue #139), and `com.nexus.core` depends on `com.unity.ugui` 2.6.0 (#138), which the 6000.6 editor ships. Open
-the game in the framework's editor patch, 6000.6.7f1 (gate 11 records each game's editor). After the move, select the
+the game in the framework's editor patch, 6000.6.8f1 since issue #284 (gate 11 records each game's editor). After the move, select the
 Android Target API Level again in Player Settings: 6000.6.3f1 to 6000.6.6 saved a level 6 lower than the one selected
 (UUM-151786, fixed in 6000.6.7f1). A release build below API 36 now fails the ads family's pre-build check (#194).
 

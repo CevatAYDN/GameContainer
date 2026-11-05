@@ -101,6 +101,7 @@ everything under Unreleased is in the repository but not yet in a tagged package
   - In `d01dd4f` the harness's CT1 marks its constructor with `[Construct]`, the alias it is named after; with `NexusDI`'s `[Construct]` check removed it fails.
   - The review found #278, #279 and #280 (Fixed, below).
   - Verified on `d01dd4f`: host harness 526 / 0; Unity 6000.6.7f1 EditMode 744 total, 743 passed, 0 failed, 1 skipped (`Inspectors_DrawAdditionalNestedSerializedSettings` needs a graphics device; `LatestCommitEditorRegressionTests` with one 9 / 9 / 0 / 0), PlayMode 278 / 276 / 0 / 2 (the two tests that need `NEXUS_DEBUG` off) (`Nexus/artifacts/verify-20261105-d01dd4f/`).
+- **The framework's editor is Unity 6000.6.8f1** (issue #284). Every gate runs on the newest patch of Unity's Supported stream (released 2026-11-03) instead of 6000.6.7f1. The `unity` field stays 6000.6; the games open 6000.6.8f1 at their re-pin, and gate 11 records each game's editor. The patch ships the same .NET SDK (8.0.318, so the source generator's Roslyn is unchanged), built-in packages and Android tools. Its known issue UUM-159613 closes the app on the back gesture after a return from the background when both Run In Background and Predictive Back Support are on; the development project and the gate-11 games have Run In Background off (MIGRATION, 0.6.0 → 0.7.0).
 
 ### Fixed
 - **A mediator resolved through `[Mediator(typeof(X), typeof(IX))]` went back to a pool its view never takes from, when DI binds `IX` to a concrete other than `X`** (issue #281).

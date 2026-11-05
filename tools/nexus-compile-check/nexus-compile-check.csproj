@@ -7,7 +7,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <!-- The installed editor's engine modules; pass -p:UNITY_MODULES=<...\Data\Managed\UnityEngine\> for another install. -->
-    <UNITY_MODULES Condition="'$(UNITY_MODULES)' == ''">C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Data\Managed\UnityEngine\</UNITY_MODULES>
+    <UNITY_MODULES Condition="'$(UNITY_MODULES)' == ''">C:\Program Files\Unity\Hub\Editor\6000.6.8f1\Editor\Data\Managed\UnityEngine\</UNITY_MODULES>
     <UNITY_COLLECTIONS_DLL Condition="'$(UNITY_COLLECTIONS_DLL)' == ''">..\..\Nexus\Library\ScriptAssemblies\Unity.Collections.dll</UNITY_COLLECTIONS_DLL>
     <UNITY_INPUTSYSTEM_DLL Condition="'$(UNITY_INPUTSYSTEM_DLL)' == ''">..\..\Nexus\Library\ScriptAssemblies\Unity.InputSystem.dll</UNITY_INPUTSYSTEM_DLL>
     <UNITY_UGUI_DLL Condition="'$(UNITY_UGUI_DLL)' == '' and Exists('$(UNITY_UGUI)UnityEngine.UI.dll')">$(UNITY_UGUI)UnityEngine.UI.dll</UNITY_UGUI_DLL>
@@ -98,7 +98,7 @@
 
   <!-- A missing assembly stops the check instead of compiling less than it claims (#198). -->
   <Target Name="RequireUnityAssemblies" BeforeTargets="ResolveAssemblyReferences">
-    <Error Condition="!Exists('$(UNITY_MODULES)UnityEngine.CoreModule.dll')" Text="No engine modules at $(UNITY_MODULES): install Unity 6000.6.7f1 or pass -p:UNITY_MODULES=..." />
+    <Error Condition="!Exists('$(UNITY_MODULES)UnityEngine.CoreModule.dll')" Text="No engine modules at $(UNITY_MODULES): install Unity 6000.6.8f1 or pass -p:UNITY_MODULES=..." />
     <Error Condition="!Exists('$(UNITY_COLLECTIONS_DLL)') or !Exists('$(UNITY_UGUI_DLL)') or !Exists('$(UNITY_INPUTSYSTEM_DLL)')" Text="Nexus/Library/ScriptAssemblies lacks Unity.Collections, UnityEngine.UI or Unity.InputSystem: open or batch-compile the Nexus project once." />
   </Target>
 
