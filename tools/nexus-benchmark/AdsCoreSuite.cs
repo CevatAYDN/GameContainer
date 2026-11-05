@@ -789,6 +789,35 @@ namespace NexusBench
                     $"ad-free interstitial={paced}, kill-switched={killed}, violations={rig.Violations.Count - violations} (expected 0), banner hidden by the kill switch={killHidden}");
             }
 
+            // #282: a banner's IsReady answered true while ShowBanner was blocked, no ReadyChanged followed the end of its
+            // first-show delay, and a banner show was never recorded, so the placement's cooldown and caps never engaged
+            {
+                var cfg = AdsRig.Config(null, BuildKind.Development, new AdPlacement("hud", AdFormat.Banner, cooldownSeconds: 60, firstShowAfterSeconds: 30));
+                using var rig = new AdsRig(cfg);
+                rig.Controller.Start();
+                rig.Provider.InitCallback(true);
+                bool readyEarly = rig.Controller.IsReady("hud");
+                AdResult? early = null, first = null, second = null;
+                rig.Controller.ShowBanner("hud", BannerPosition.Bottom, r => early = r);
+                int changes = rig.ReadyChanges;
+                rig.Scheduler.Advance(31);
+                bool raisedAtDelayEnd = rig.ReadyChanges > changes;
+                bool readyAfterDelay = rig.Controller.IsReady("hud");
+                rig.Controller.ShowBanner("hud", BannerPosition.Bottom, r => first = r);
+                rig.Scheduler.Advance(1);
+                rig.Controller.ShowBanner("hud", BannerPosition.Bottom, r => second = r);
+                bool readyInCooldown = rig.Controller.IsReady("hud");
+                changes = rig.ReadyChanges;
+                rig.Scheduler.Advance(60);
+                bool raisedAtCooldownEnd = rig.ReadyChanges > changes && rig.Controller.IsReady("hud");
+                Check("AC60. Banner_IsReadyGivesTheGuardsAnswer_AndAShowStartsItsCooldown",
+                    !readyEarly && early == AdResult.Blocked && raisedAtDelayEnd && readyAfterDelay && first == AdResult.Closed
+                        && second == AdResult.Blocked && !readyInCooldown && raisedAtCooldownEnd,
+                    $"at 0 s IsReady={readyEarly} ShowBanner={early}; at 31 s ReadyChanged={raisedAtDelayEnd} IsReady={readyAfterDelay} ShowBanner={first}; "
+                    + $"1 s later ShowBanner={second} IsReady={readyInCooldown}; cooldown end ReadyChanged and ready={raisedAtCooldownEnd} "
+                    + "(expected False Blocked; True True Closed; Blocked False; True)");
+            }
+
             // readiness polled every frame reaches the provider once per window; Show still asks live (issue #32)
             using (var rig = new AdsRig().Running())
             {

@@ -137,7 +137,8 @@ namespace Nexus.Ads
         {
             var declared = _config.Find(placement);
             if (declared == null || State != Phase.Running || _killSwitch || AdFreeCovers(declared.Format)) return false;
-            if (declared.Format == AdFormat.Banner) return true;
+            // a banner has no load slot: the guard alone decides, as it does for ShowBanner (#282)
+            if (declared.Format == AdFormat.Banner) return Guard.Check(placement, AdFormat.Banner, new GuardState(_fullScreenOpen, false)).Allowed;
             if (!_slots.TryGetValue(declared.Format, out var slot) || slot.State != SlotState.Ready || !ProviderReady(declared.Format)) return false;
             var verdict = Guard.Check(placement, declared.Format, new GuardState(_fullScreenOpen, false));
             WakeAfterTouch(verdict, declared);
@@ -287,7 +288,10 @@ namespace Nexus.Ads
 
         public void HideBanner() => _provider.HideBanner();
 
-        /// <summary>Shows a banner placement at a position; same guard and NotReady rules as <see cref="Show"/>.</summary>
+        /// <summary>
+        /// Shows a banner placement at a position; same guard and NotReady rules as <see cref="Show"/>. A call that reaches
+        /// the provider counts as a show of the placement, so its cooldown and caps also space a call that only moves the banner.
+        /// </summary>
         public void ShowBanner(string placement, BannerPosition position, Action<AdResult> onResult = null)
         {
             var declared = _config.Find(placement);
@@ -297,6 +301,9 @@ namespace Nexus.Ads
             if (State != Phase.Running) { NotReady(declared, State.ToString()); onResult?.Invoke(AdResult.NotReady); return; }
             _lastPlacement[AdFormat.Banner] = placement;
             _provider.ShowBanner(placement, position);
+            // the show counts for the placement's cooldown and caps, and a wake is armed for its cooldown's end (#282)
+            Isolated(() => _session.RecordShown(declared), AdFormat.Banner, placement, "recording the show");
+            ArmPacingWake();
             onResult?.Invoke(AdResult.Closed);
         }
 
@@ -597,7 +604,7 @@ namespace Nexus.Ads
             ArmPacingWake();
         }
 
-        // Arms one wake for the loaded placement whose time rules end first. Placements held back by anything else are left
+        // Arms one wake for the loaded placement, or banner, whose time rules end first. Placements held back by anything else are left
         // out: a load, a close, visibility, the kill switch, the ad-free entitlement and a new session raise ReadyChanged themselves.
         private void ArmPacingWake()
         {
@@ -610,7 +617,7 @@ namespace Nexus.Ads
             for (int i = 0; i < placements.Count; i++)
             {
                 var placement = placements[i];
-                if (!_slots.TryGetValue(placement.Format, out var slot) || slot.State != SlotState.Ready) continue;
+                if (placement.Format != AdFormat.Banner && (!_slots.TryGetValue(placement.Format, out var slot) || slot.State != SlotState.Ready)) continue;
                 if ((placement.Format == AdFormat.Interstitial && !placement.NaturalBreak) || AdFreeCovers(placement.Format)) continue;
                 if (Guard.SessionCapReached(placement)) continue;
                 if (Guard.DayCapReached(placement)) { dayCapped = true; continue; }
