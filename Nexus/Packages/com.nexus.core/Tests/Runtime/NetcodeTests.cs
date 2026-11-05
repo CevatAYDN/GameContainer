@@ -52,7 +52,7 @@ namespace Nexus.Tests
         }
 
         [Test]
-        public void Fire_StoresTypedHistory_WithoutBoxing()
+        public void Fire_RecordsTheSignalInItsTypedHistoryAtTheCurrentTick()
         {
             // the warnings this test causes, in the order it causes them (#198)
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Tests\.NetcodeTests\+TestPlayerSignal'\ fired\ but\ has\ no\ subscribers\ or\ command\ handlers\ re"));

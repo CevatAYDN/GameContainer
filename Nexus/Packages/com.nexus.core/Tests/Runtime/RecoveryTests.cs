@@ -415,7 +415,7 @@ namespace Nexus.Tests
         }
 
         [Test]
-        public void NexusTestContext_Dispose_ClearsWrappedContextAndSubscriptions()
+        public void NexusTestContext_Dispose_RemovesItsContextFromTheRuntime()
         {
             var testContext = NexusTestHarness.CreateContext("HarnessScope");
 

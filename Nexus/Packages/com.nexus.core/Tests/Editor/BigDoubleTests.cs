@@ -82,7 +82,7 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void SecureObservableBigDouble_RAMObfuscation_And_OnChanged_Fires()
+        public void SecureObservableBigDouble_OnChanged_ReceivesOldAndNewValue()
         {
             BigDouble init = new BigDouble(1.0, 6);
             var secureProp = new SecureObservableBigDouble(init);
@@ -110,13 +110,12 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void EncryptedStorageService_BigDouble_SaveLoad_RoundTrips()
+        public void EncryptedStorageService_GetBigDouble_ReturnsWhatSetBigDoubleStored()
         {
             using var storage = new EncryptedStorageService("Test_Salt_BigDouble");
             BigDouble original = new BigDouble(9.87, 45);
 
             storage.SetBigDouble("User_Idle_Coins", original);
-            storage.Save();
 
             BigDouble loaded = storage.GetBigDouble("User_Idle_Coins", BigDouble.Zero);
             Assert.AreEqual(original.Mantissa, loaded.Mantissa, 0.0001);

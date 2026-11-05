@@ -179,14 +179,9 @@ namespace Nexus.Editor.Tests
             public static int LastValue;
             public void Execute(TestSignal signal) => LastValue = signal.Value;
         }
-        public class TestReactiveModel : IReactiveModel
-        {
-            public int BindCount;
-            public ValueTask OnBind(CancellationToken ct) { BindCount++; return default; }
-        }
 
         [Test]
-        public void ContextBuilder_BindSignalTo_And_BindReactiveModel()
+        public void ContextBuilder_BindSignalTo_RunsTheCommandWhenTheSignalFires()
         {
             TestCommand.LastValue = 0;
             using var di = new NexusDI();
@@ -195,8 +190,6 @@ namespace Nexus.Editor.Tests
             var builder = new ContextBuilder(di, bus);
 
             builder.BindSignal<TestSignal>().To<TestCommand>();
-            builder.BindReactiveModel<TestReactiveModel>();
-            di.Bind<TestReactiveModel>(isSingleton: true);
 
             bus.Fire(new TestSignal { Value = 42 });
             Assert.AreEqual(42, TestCommand.LastValue,

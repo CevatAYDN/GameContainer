@@ -51,7 +51,7 @@ namespace Nexus.Tests
         }
 
         [Test]
-        public async Task GameSaveManager_SaveAndLoad_RoundTripsModel()
+        public async Task SaveAndLoad_FindsTheSlotAndRestoresTheRegisteredModelOnce()
         {
             var manager = new GameSaveManager();
             var model = new TestSaveModel();

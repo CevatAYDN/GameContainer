@@ -603,7 +603,7 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void SecureObservableFloat_RAMObfuscationWorksAndFiresOnChanged()
+        public void SecureObservableFloat_ReadsBackEachWrite_AndFiresOnChangedOnce()
         {
             var secureFloat = new SecureObservableFloat(0.75f);
             int callCount = 0;
@@ -707,7 +707,7 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void AdService_InterstitialCooldownUsesObfuscatedStorage()
+        public void AdService_InterstitialIsUnavailableDuringItsCooldown_AndAZeroCooldownLiftsIt()
         {
             var service = new AdService();
             // An adapter whose placements are always ready, so IsInterstitialAvailable reflects only the cooldown gate

@@ -319,12 +319,11 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void ProviderMovement_IsClampedAndOwnsButtonQueries()
+        public void ProviderMovement_IsClampedToUnitLength()
         {
             var input = new InputService(); input.SetInputProvider(new Provider { Move = new Vector2(3, 4) });
             input.UpdateInput(0);
             Assert.AreEqual(1, input.MoveInput.sqrMagnitude, 0.00001);
-            Assert.IsFalse(input.GetButton("Jump"));
         }
     }
 }

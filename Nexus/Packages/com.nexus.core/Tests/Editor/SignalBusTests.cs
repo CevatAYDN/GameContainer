@@ -366,7 +366,7 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void Fire_WithAsyncHandlers_ThrowsInDevelopmentBuild()
+        public void Fire_WithAsyncCommandRegistered_ThrowsSyncAsyncMismatch()
         {
             _container.Bind<AsyncTestCommand>(isSingleton: false);
             _signalBus.RegisterCommand(typeof(SimpleSignal), typeof(AsyncTestCommand), ExecutionMode.Sequential, 0, isAsync: true);

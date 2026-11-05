@@ -48,7 +48,7 @@ namespace Nexus.Tests
         }
 
         [Test]
-        public void CrossContextSignal_WithScopeTag_FiltersByTag()
+        public void ScopedCrossContextSignal_DoesNotReachAContextWithoutItsTag()
         {
             using (var ctx1 = new Context())
             using (var ctx2 = new Context())

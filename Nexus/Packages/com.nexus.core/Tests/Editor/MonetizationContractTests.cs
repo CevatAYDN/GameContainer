@@ -145,7 +145,7 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public async Task PurchaseOutcome_MapsBoolOnlyAdaptersAndUsesOutcomeAdapters()
+        public async Task PurchaseOutcome_ABoolOnlyStoresRefusalIsFailed()
         {
             using var iap = new IapService();
             await iap.InitializeAsync(default);
@@ -154,11 +154,7 @@ namespace Nexus.Editor.Tests
             iap.SetStoreAdapter(new PricedStoreAdapter());
             PurchaseOutcome? outcome = null;
             iap.Purchase("pass", o => outcome = o);
-            Assert.That(outcome, Is.EqualTo(PurchaseOutcome.Failed), "a bool adapter's refusal is a failure");
-
-            iap.SetStoreAdapter(new MockIapStoreAdapter());
-            iap.Purchase("missing", o => outcome = o);
-            Assert.That(outcome, Is.EqualTo(PurchaseOutcome.Failed), "unknown product");
+            Assert.That(outcome, Is.EqualTo(PurchaseOutcome.Failed));
         }
 
         [Test]

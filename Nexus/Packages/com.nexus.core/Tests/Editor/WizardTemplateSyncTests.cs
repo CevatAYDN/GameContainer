@@ -231,7 +231,7 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void GameMediatorTemplate_UsesTrackedSubscriptionPattern()
+        public void GameMediatorTemplate_UnbindRemovesOnlyTheHandlersBindAdded()
         {
             string template = NexusSetupWizard.GameMediatorTemplate;
             StringAssert.Contains("RemoveOnChanged", template);

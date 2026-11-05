@@ -10,7 +10,7 @@ namespace Nexus.Editor.Tests
     public class CasualFrameworkServicesTests
     {
         [Test]
-        public void ObservableProperty_FiresMultipleHandlersWithoutAllocating()
+        public void ObservableProperty_NotifiesEveryHandlerOnceForOneChange()
         {
             var prop = new ObservableProperty<int>(10);
             int callCount1 = 0;

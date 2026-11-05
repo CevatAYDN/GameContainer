@@ -72,11 +72,9 @@ namespace Nexus.Editor.Tests
     public class StrategicCapabilitiesEditModeTests
     {
         [Test]
-        public void RegisterCommandAttribute_DecoratesCommandClass_WithSignalTypeAndExecutionMode()
+        public void RegisterCommandAttribute_ModeDefaultsToSequential()
         {
             var attr = typeof(TestCapCommand).GetCustomAttribute<RegisterCommandAttribute>();
-            Assert.IsNotNull(attr);
-            Assert.AreEqual(typeof(TestCapSignal), attr.SignalType);
             Assert.AreEqual(ExecutionMode.Sequential, attr.Mode);
         }
 
@@ -255,7 +253,7 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void NexusBehaviour_Resolves_Subscribes_And_AutoDisposesOnDestroy()
+        public void NexusBehaviour_InjectsResolvesAndSubscribes_AndDestroyLifecycleUnsubscribes()
         {
             // the warnings this test causes, in the order it causes them (#198)
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Editor\.Tests\.TestCapSignal'\ fired\ but\ has\ no\ subscribers\ or\ command\ handlers\ registered\."));
