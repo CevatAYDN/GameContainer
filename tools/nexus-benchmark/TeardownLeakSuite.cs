@@ -43,6 +43,28 @@ namespace NexusBench
             public void Unbind() => throw new InvalidOperationException("view unbind failed");
         }
 
+        public interface IPoolKeyMediator : IMediator { }
+
+        public class PoolKeyDeclaredMediator : IPoolKeyMediator
+        {
+            public void Bind(object view, ISignalBus signalBus) { }
+            public void Unbind() { }
+        }
+
+        public class PoolKeyBoundMediator : IPoolKeyMediator
+        {
+            public void Bind(object view, ISignalBus signalBus) { }
+            public void Unbind() { }
+        }
+
+        // the attribute names one concrete, DI binds the abstraction to another
+        [Mediator(typeof(PoolKeyDeclaredMediator), typeof(IPoolKeyMediator))]
+        public class AbstractionMediatedView : IView
+        {
+            public void Bind(IContext context) { }
+            public void Unbind() { }
+        }
+
         public static int Run()
         {
             int failures = 0;
@@ -54,6 +76,7 @@ namespace NexusBench
             failures += AssertPass("TL2. DisposedContext_Removed_From_NexusRuntime_ActiveContexts", TestDisposedContextRemovedFromRegistry);
             failures += AssertPass("TL3. ViewBinderDispose_Unbinds_Mediator_When_View_Unbind_Throws", TestViewBinderDisposeUnbindsMediatorWhenViewThrows);
             failures += AssertPass("TL4. ReadOnlyObservable_TrackedByAMediator_IsReleasedOnUnbind", TestReadOnlyObservableReleasedOnUnbind);
+            failures += AssertPass("TL5. AbstractionMediator_ReturnedToThePool_IsReusedByTheNextView", TestAbstractionMediatorIsReusedFromThePool);
 
             if (failures == 0)
                 Console.WriteLine("\n[TeardownLeak] ALL TEARDOWN LEAK AUDIT TESTS PASSED ✓");
@@ -161,6 +184,27 @@ namespace NexusBench
                 return false;
             }
 
+            return true;
+        }
+
+        // A mediator resolved through an abstraction bound to another concrete went back to a pool its view never reads:
+        // every registration constructed a new one and the pool kept up to 64 unused instances per type.
+        private static bool TestAbstractionMediatorIsReusedFromThePool()
+        {
+            using var container = new NexusDI();
+            container.Bind<IPoolKeyMediator, PoolKeyBoundMediator>(isSingleton: false);
+            var binder = new ViewBinder(new MockContext(), container);
+            var view = new AbstractionMediatedView();
+
+            binder.RegisterView(view);
+            binder.UnregisterView(view);
+            binder.RegisterView(view);
+
+            if (binder.PoolReturnCount != 1 || binder.PoolPopCount != 1)
+            {
+                Console.WriteLine($"      returned={binder.PoolReturnCount} popped={binder.PoolPopCount}; expected 1 and 1 (the second registration reuses the first mediator)");
+                return false;
+            }
             return true;
         }
 

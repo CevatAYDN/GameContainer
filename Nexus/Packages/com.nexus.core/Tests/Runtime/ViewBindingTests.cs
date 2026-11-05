@@ -423,7 +423,7 @@ namespace Nexus.Tests
             var returnMediatorMethod = typeof(ViewBinder).GetMethod("ReturnMediator",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             Assert.IsNotNull(returnMediatorMethod, "ReturnMediator must exist as a private instance method.");
-            returnMediatorMethod.Invoke(binder, new object[] { mediator });
+            returnMediatorMethod.Invoke(binder, new object[] { mediator, typeof(ResettableMockMediator) });
 
             Assert.AreEqual(1, binder.PoolLeakWarnings,
                 "Returning a mediator that is still tracked as active must increment the leak counter.");

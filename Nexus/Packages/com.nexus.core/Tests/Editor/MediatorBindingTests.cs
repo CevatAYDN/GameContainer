@@ -11,7 +11,7 @@ namespace Nexus.Editor.Tests
     /// - Concrete-only [Mediator] attribute works unchanged (backward compat).
     /// - Abstraction-based [Mediator(type, abstraction)] resolves through DI.
     /// - Missing abstraction binding produces an error.
-    /// - Pooling keys off concrete type, not abstraction.
+    /// - Pooling keys off the abstraction, the key DI resolves (#281).
     /// - Invalid abstraction assignment is caught at attribute construction.
     /// - Concrete and abstraction binding paths coexist in the same context.
     /// </summary>
@@ -27,6 +27,9 @@ namespace Nexus.Editor.Tests
             public int BindCount { get; private set; }
             protected override void OnBind() => BindCount++;
         }
+
+        // a second concrete for ITestMediator, so a binding can differ from the type a view's attribute names
+        public class OtherTestMediator : Mediator<TestView>, ITestMediator { }
 
         public class TestView : IView
         {
@@ -99,14 +102,16 @@ namespace Nexus.Editor.Tests
             Assert.IsNull(view.Context, "a view without its mediator was bound");
         }
 
-        // ─── MA4: Pooling keys off concrete type, not abstraction ───
+        // ─── MA4: Pooling keys off the abstraction, the key DI resolves (#281) ───
 
         [Test]
-        public void MediatorBinding_Abstraction_PoolsByConcreteType()
+        public void MediatorBinding_Abstraction_ReusesThePooledMediator_WhenBoundToAnotherConcrete()
         {
+            // The attribute names TestMediator; DI builds OtherTestMediator. The mediator went back to a pool
+            // keyed by OtherTestMediator while the view took from TestMediator's, so it was never reused.
             using var testContext = NexusTestHarness.CreateContext(builder =>
             {
-                builder.Bind<ITestMediator, TestMediator>();
+                builder.Bind<ITestMediator, OtherTestMediator>();
             });
 
             var view1 = new AbstractionBindingView();

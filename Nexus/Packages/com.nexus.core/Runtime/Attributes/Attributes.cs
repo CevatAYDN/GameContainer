@@ -227,7 +227,7 @@ namespace Nexus.Core
     /// The abstraction must be registered in DI (e.g. <c>builder.Bind&lt;IMediator, ConcreteMediator&gt;()</c>).
     /// Every view gets its own mediator: a binding that names a type is constructed once per view, whatever its
     /// lifetime; an instance or factory binding is used as bound.
-    /// Pooling still keys off the concrete <paramref name="mediatorType"/>.
+    /// Mediators are pooled per DI key: the abstraction when set, the concrete type otherwise.
     /// </summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
     public sealed class MediatorAttribute : Attribute
@@ -237,8 +237,8 @@ namespace Nexus.Core
 
         /// <summary>
         /// Optional abstraction type (interface or abstract class) for DI resolution.
-        /// When set, the mediator is resolved through this type — the concrete
-        /// <see cref="MediatorType"/> must be registered in DI under this abstraction.
+        /// When set, the mediator is resolved through this type, which must be registered in DI
+        /// (usually to <see cref="MediatorType"/>; the binding decides the concrete).
         /// When null (default), the mediator is bound and resolved by concrete type.
         /// </summary>
         public Type Abstraction { get; }
@@ -255,7 +255,7 @@ namespace Nexus.Core
         /// Associates a view with its mediator by concrete type AND abstraction interface.
         /// The mediator is resolved through <paramref name="abstractionType"/> in DI, enabling
         /// interface-based binding (StrangeIoC-style <c>ToAbstraction&lt;IMediator&gt;()</c>).
-        /// Pooling still keys off the concrete <paramref name="mediatorType"/>.
+        /// The mediator is pooled under <paramref name="abstractionType"/>, the key it is resolved with.
         /// </summary>
         /// <param name="mediatorType">The concrete <see cref="Mediator{TView}"/> type.</param>
         /// <param name="abstractionType">

@@ -182,8 +182,7 @@ namespace Nexus.Core
                 return;
             }
 
-            var mediatorAttr = s_mediatorAttributeCache.GetOrAdd(view.GetType(),
-                static t => t.GetCustomAttribute<MediatorAttribute>());
+            var mediatorAttr = MediatorAttributeOf(view);
             if (mediatorAttr == null)
             {
                 NexusRuntime.Logger?.Log($"[Nexus] View '{view.GetType().Name}' has no MediatorAttribute. Binding only the context.");
@@ -235,7 +234,7 @@ namespace Nexus.Core
                 try { view.Unbind(); } catch (Exception unbindEx) { NexusRuntime.Logger?.LogException(unbindEx); }
                 _activeMediators.Remove(view);
                 _activeMediatorSet.Remove(mediator);
-                ReturnMediator(mediator);
+                ReturnMediator(mediator, PoolKey(mediatorAttr));
                 NexusRuntime.Logger?.LogException(ex);
                 return;
             }
@@ -265,7 +264,7 @@ namespace Nexus.Core
                 }
                 _activeMediators.Remove(view);
                 _activeMediatorSet.Remove(mediator);
-                ReturnMediator(mediator);
+                ReturnMediator(mediator, PoolKey(mediatorAttr));
                 NexusRuntime.Logger?.LogError(
                     $"[Nexus] RegisterView failed for '{view.GetType().Name}': mediator {mediatorType?.Name} could not bind. " +
                     $"{ex.Message}");
@@ -284,7 +283,7 @@ namespace Nexus.Core
                 {
                     _activeMediatorSet.Remove(mediator);
                     mediator.Unbind();
-                    ReturnMediator(mediator);
+                    ReturnMediator(mediator, PoolKey(MediatorAttributeOf(view)));
                 }
                 else
                 {
@@ -304,18 +303,27 @@ namespace Nexus.Core
             }
         }
 
+        private static MediatorAttribute MediatorAttributeOf(IView view) =>
+            s_mediatorAttributeCache.GetOrAdd(view.GetType(), static t => t.GetCustomAttribute<MediatorAttribute>());
+
+        // A pool holds what DI gives for one key, so a pooled mediator is the one a fresh resolve would produce (#281).
+        private static Type PoolKey(MediatorAttribute attribute) => attribute.Abstraction ?? attribute.MediatorType;
+
         /// <summary>
         /// Gets or creates a mediator instance for the given concrete type.
         /// When <paramref name="abstractionType"/> is provided, the mediator is resolved through
         /// DI using the abstraction (StrangeIoC-style <c>ToAbstraction&lt;IMediator&gt;()</c>),
-        /// but pooling still keys off the concrete <paramref name="mediatorType"/>.
+        /// and the pool is keyed by that abstraction too: DI may bind it to a concrete other than
+        /// <paramref name="mediatorType"/>.
         /// </summary>
         private IMediator GetMediator(Type mediatorType, Type abstractionType = null)
         {
-            if (!_mediatorPools.TryGetValue(mediatorType, out var pool))
+            // Determine the DI key — use abstraction when provided, concrete type otherwise
+            var resolveType = abstractionType ?? mediatorType;
+            if (!_mediatorPools.TryGetValue(resolveType, out var pool))
             {
                 pool = new Stack<IMediator>();
-                _mediatorPools[mediatorType] = pool;
+                _mediatorPools[resolveType] = pool;
             }
 
             if (pool.Count > 0)
@@ -330,9 +338,6 @@ namespace Nexus.Core
                 _container.Inject(mediator);
                 return mediator;
             }
-
-            // Determine the DI key — use abstraction when provided, concrete type otherwise
-            var resolveType = abstractionType ?? mediatorType;
 
             // When resolving through an abstraction, the user must have registered the binding.
             // Do NOT auto-bind dynamically for abstraction resolution.
@@ -351,13 +356,13 @@ namespace Nexus.Core
             return (IMediator)_container.Resolve(resolveType);
         }
 
-        private void ReturnMediator(IMediator mediator)
+        /// <param name="poolKey">The DI key the mediator was taken with, <see cref="PoolKey"/>.</param>
+        private void ReturnMediator(IMediator mediator, Type poolKey)
         {
-            var type = mediator.GetType();
-            if (!_mediatorPools.TryGetValue(type, out var pool))
+            if (!_mediatorPools.TryGetValue(poolKey, out var pool))
             {
                 pool = new Stack<IMediator>();
-                _mediatorPools[type] = pool;
+                _mediatorPools[poolKey] = pool;
             }
 
             _poolReturnCount++;
@@ -369,7 +374,7 @@ namespace Nexus.Core
             {
                 _poolLeakWarnings++;
                 Services.NexusLog.WarnAlways(
-                    $"[Nexus] Mediator '{type.Name}' returned to the pool while still tracked as active — " +
+                    $"[Nexus] Mediator '{mediator.GetType().Name}' returned to the pool while still tracked as active — " +
                     "possible mediator leak (double-unregister). The binding map was not cleared for this instance.");
             }
 
