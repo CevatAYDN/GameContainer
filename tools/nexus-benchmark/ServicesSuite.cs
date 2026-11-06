@@ -1231,10 +1231,11 @@ namespace NexusBench
         private static void RunShare()
         {
             var ctx = NexusTestHarness.CreateContext();
-            string missing = Path.Combine(Path.GetTempPath(), "nexus-share-missing-" + Guid.NewGuid().ToString("N") + ".json");
-            string existing = Path.GetTempFileName();
+            string missing = Path.Combine(Program.TempRoot, "nexus-share-missing-" + Guid.NewGuid().ToString("N") + ".json");
+            string existing = Path.Combine(Program.TempRoot, Path.GetRandomFileName());
             try
             {
+                File.WriteAllText(existing, string.Empty);
                 var logger = new SvcLoggerRecorder();
                 ctx.Context.Container.BindInstance<ILoggerService>(logger);
                 ctx.Context.Container.Bind<IShareService, ShareService>(isSingleton: true);

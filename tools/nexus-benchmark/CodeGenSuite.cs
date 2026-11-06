@@ -303,7 +303,7 @@ namespace NexusBench.CG2Source
             string detail;
             NexusDI container = null;
             // Dedicated scratch dir for the stub assembly (persisted so it loads via LoadFrom).
-            string cg2Dir = Path.Combine(Path.GetTempPath(), "nexus-sg-cg2");
+            string cg2Dir = Path.Combine(Program.TempRoot, "nexus-sg-cg2");
             try
             {
                 // Clear stale factories/injectors so the generated binder is authoritative.
@@ -870,7 +870,7 @@ public sealed class SdkLocalIntegration { [Inject] public CodeGenDep Dep; }
         private static string[] LoadPackageAndGameFixtures()
         {
             if (_fixtureErrors != null) return _fixtureErrors;
-            string fixtureDir = Path.Combine(Path.GetTempPath(), "nexus-cg6");
+            string fixtureDir = Path.Combine(Program.TempRoot, "nexus-cg6");
             Directory.CreateDirectory(fixtureDir);
             var errors = new List<string>();
             var fixtures = new[]
@@ -1570,7 +1570,7 @@ namespace NexusBench.Parity
         {
             const string name = "CG10. Reflection_EditorBinder_SourceGenerator_Agree";
             string rootDir = NexusEditorSettings.OutputRoot;
-            string dir = Path.Combine(Path.GetTempPath(), "nexus-parity");
+            string dir = Path.Combine(Program.TempRoot, "nexus-parity");
             var problems = new List<string>();
             int compared = 0;
             try
@@ -1765,7 +1765,7 @@ namespace NexusBench.InvalidInject
                 int sg003 = diagnostics.Count(d => d.Id == "NEXUS_SG003");
                 if (sg003 != members.Length) problems.Add($"source generator reported {sg003} NEXUS_SG003 errors for {members.Length} members ({string.Join(" | ", diagnostics.Select(d => d.Id + " " + d.GetMessage()))})");
 
-                string dir = Path.Combine(Path.GetTempPath(), "nexus-invalid-inject");
+                string dir = Path.Combine(Program.TempRoot, "nexus-invalid-inject");
                 try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch { }
                 Directory.CreateDirectory(dir);
                 string[] errors = EmitSource(InvalidInjectSource, "NexusBench.InvalidInject", out byte[] pe);
@@ -1869,7 +1869,7 @@ namespace NexusBench.Conditions
             const string name = "CG12. Binder_Lists_Every_Type_It_Leaves_To_Reflection";
             var problems = new List<string>();
             string rootDir = NexusEditorSettings.OutputRoot;
-            string dir = Path.Combine(Path.GetTempPath(), "nexus-conditions");
+            string dir = Path.Combine(Program.TempRoot, "nexus-conditions");
             var warnings = new List<string>();
             Action<string, string> listener = (level, text) => { if (level == "Warning") warnings.Add(text); };
             try

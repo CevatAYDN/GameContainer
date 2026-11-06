@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -48,6 +49,19 @@ namespace NexusBench
 
     public static class Program
     {
+        internal static readonly string TempRoot = Path.Combine(Path.GetTempPath(),
+            "nexus-bench-" + Environment.ProcessId + "-" + Guid.NewGuid().ToString("N"));
+
+        static Program()
+        {
+            Directory.CreateDirectory(TempRoot);
+            AppDomain.CurrentDomain.ProcessExit += (_, __) =>
+            {
+                // Loaded fixture assemblies can remain locked on Windows; cleanup is best-effort.
+                try { Directory.Delete(TempRoot, true); } catch { }
+            };
+        }
+
         private static NexusDI _container;
         private static CommandPoolManager _poolManager;
         private static SignalBus _signalBus;

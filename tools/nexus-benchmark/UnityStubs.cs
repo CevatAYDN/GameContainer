@@ -45,12 +45,12 @@ namespace UnityEngine
         public static string version => "9.9.9";
         // Distinct from persistentDataPath so tests that need data-vs-save path
         // separation don't collide (also lets the editor codegen stub compile).
-        public static string dataPath => Path.Combine(Path.GetTempPath(), "NexusBenchmarkData");
+        public static string dataPath => Path.Combine(NexusBench.Program.TempRoot, "NexusBenchmarkData");
         public static string persistentDataPath
         {
             get
             {
-                var dir = Path.Combine(Path.GetTempPath(), "NexusBenchmark");
+                var dir = Path.Combine(NexusBench.Program.TempRoot, "NexusBenchmark");
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
                 return dir;
             }

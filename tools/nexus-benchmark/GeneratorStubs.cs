@@ -135,7 +135,7 @@ namespace Nexus.Editor
     /// </summary>
     public sealed class NexusEditorSettings
     {
-        public static readonly string OutputRoot = Path.Combine(Path.GetTempPath(), "NexusCodeGenHarness");
+        public static readonly string OutputRoot = Path.Combine(NexusBench.Program.TempRoot, "NexusCodeGenHarness");
         public string BinderOutputPath => OutputRoot;
         public string LinkXmlOutputPath => OutputRoot;
         public static NexusEditorSettings GetOrCreateSettings() => new NexusEditorSettings();
