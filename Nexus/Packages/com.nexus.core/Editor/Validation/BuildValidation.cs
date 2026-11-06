@@ -534,22 +534,7 @@ namespace Nexus.Editor
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
                 var data = AssetDatabase.LoadAssetAtPath<ContextData>(path);
-                if (data != null)
-                {
-                    string contextName = data.name.Replace("ContextData", "");
-                    if (!dependenciesByName.TryGetValue(contextName, out var deps))
-                    {
-                        deps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                        dependenciesByName[contextName] = deps;
-                    }
-                    if (data.DependsOn != null)
-                    {
-                        foreach (var dep in data.DependsOn)
-                        {
-                            if (!string.IsNullOrEmpty(dep)) deps.Add(dep);
-                        }
-                    }
-                }
+                if (data != null) AddContextDataDependencies(dependenciesByName, data.ScopeTag, data.name, data.DependsOn);
             }
 
             // 2. Gather from IContextLifecycle Attributes (git-friendly distributed registration)
@@ -591,6 +576,36 @@ namespace Nexus.Editor
                 if (HasDependencyCycle(kvp.Key, dependenciesByName, visiting, visited, new List<string>()))
                 {
                     errorCount++;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Adds the DependsOn of one ContextData under the names it answers to in another context's DependsOn, the names
+        /// <c>NexusRuntime.OrderContextsByDependencies</c> matches: its scope tag (else its asset name without "ContextData",
+        /// the key <c>ValidateContextDataConfiguration</c> uses) and its asset name as it is. The asset name alone missed every
+        /// asset the inspector creates ("Menu_ContextData" for scope "Menu"), so a cycle the player logs and falls back from
+        /// passed the build (#304).
+        /// </summary>
+        internal static void AddContextDataDependencies(Dictionary<string, HashSet<string>> dependenciesByName, string scopeTag, string assetName, string[] dependsOn)
+        {
+            string scope = string.IsNullOrEmpty(scopeTag) ? assetName.Replace("ContextData", "") : scopeTag;
+            foreach (var key in new[] { scope, assetName })
+            {
+                if (string.IsNullOrEmpty(key)) continue;
+                if (!dependenciesByName.TryGetValue(key, out var deps))
+                {
+                    deps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    dependenciesByName[key] = deps;
+                }
+                if (dependsOn == null) continue;
+                foreach (var dep in dependsOn)
+                {
+                    // The runtime skips a dependency that resolves to the context itself (depCtx != ctx), so it is no cycle here either.
+                    if (string.IsNullOrEmpty(dep)
+                        || string.Equals(dep, scope, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(dep, assetName, StringComparison.OrdinalIgnoreCase)) continue;
+                    deps.Add(dep);
                 }
             }
         }
