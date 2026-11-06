@@ -63,6 +63,8 @@ namespace Nexus.Iap.Unity
         public bool OwnershipKnown { get; private set; }
 
         public string GetLocalizedPrice(string productId) => _store?.GetProductById(productId)?.metadata?.localizedPriceString;
+        /// <summary>A purchase fetch only adds ownership and never removes it, because a successful store fetch can be empty or partial
+        /// (StoreKit 1 empty receipt, StoreKit 2 skipped unverified transactions); refunds and revocations are a server-side concern.</summary>
         public bool IsOwned(string productId) => _owned.Contains(productId);
 
         /// <summary>True while a purchase of the product is granted but not yet confirmed (acknowledged) with the store. Google Play
