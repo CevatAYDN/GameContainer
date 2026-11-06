@@ -151,15 +151,22 @@ namespace Nexus.Core.Services
 
         private void Changed()
         {
-            Current.Value = _entries.Count == 0 ? default : _entries[_entries.Count - 1];
-            if (_applying) return; // the running loop below reads the new history on its next step
-            _applying = true;
-            try
+            // An observer's exception reaches the caller after the screens were told: the history already holds the entry,
+            // so skipping the loop would leave a current screen that was never shown (issue #326).
+            try { Current.Value = _entries.Count == 0 ? default : _entries[_entries.Count - 1]; }
+            finally
             {
-                // One screen call per step, the shown list updated before it, the target read again after it.
-                while (ApplyOne()) { }
+                if (!_applying) // else the running loop below reads the new history on its next step
+                {
+                    _applying = true;
+                    try
+                    {
+                        // One screen call per step, the shown list updated before it, the target read again after it.
+                        while (ApplyOne()) { }
+                    }
+                    finally { _applying = false; }
+                }
             }
-            finally { _applying = false; }
         }
 
         private bool ApplyOne()

@@ -78,6 +78,7 @@ namespace NexusBench
             failures += AssertPass("SS8. AScreenThatChangesTheHistoryWhenShown_LeavesItConsistent", ReentrantShow);
             failures += AssertPass("SS9. AChildContextsChain_RunsFirstInItsParents_WithoutItsOwnRootBehaviour", ChildChain);
             failures += AssertPass("SS10. ACallFromAShowHandler_KeepsTheTransitionsOfTheCallThatIsRunning", NestedCallTransitions);
+            failures += AssertPass("SS11. AThrowingCurrentObserver_StillChangesTheScreens_AndItsExceptionReachesTheCaller", ThrowingCurrentObserver);
 
             if (failures == 0)
                 Console.WriteLine("\n[ScreenStack] ALL SCREEN STACK TESTS PASSED ✓");
@@ -315,6 +316,34 @@ namespace NexusBench
                 & Check(h.Depth == 3 && h.Current.Value.Screen == typeof(Privacy), "the push from the show handler was lost")
                 & Check(s[typeof(Privacy)].IsShown && !s[typeof(Settings)].IsShown && !s[typeof(World)].IsShown, "the screens shown do not match the history")
                 & Check(h.Back() == BackResult.Popped && s[typeof(Settings)].IsShown && !s[typeof(Privacy)].IsShown, "Back after the re-entrant push did not show Settings again");
+        }
+
+        // ObservableProperty tells every observer, then rethrows the first failure: that must not skip the screens, which the
+        // history already says are current (issue #326). Back hides what was shown, Push shows: both must still happen.
+        private static bool ThrowingCurrentObserver()
+        {
+            var (h, s) = NewHistory(typeof(World), typeof(Settings));
+            bool armed = false;
+            h.Current.OnChanged((_, _) => { if (armed) throw new InvalidOperationException("observer"); });
+            h.ReplaceRoot(typeof(World), null);
+            h.Push(typeof(Settings), null);
+            armed = true;
+
+            Exception backFailure = Failure(() => h.Back());
+            bool ok = Check(backFailure is InvalidOperationException, "the observer's exception did not reach the caller of Back: " + backFailure)
+                & Check(h.Depth == 1 && s[typeof(World)].IsShown && !s[typeof(Settings)].IsShown, "the popped screen was not hidden, or the one beneath not shown again");
+
+            Exception pushFailure = Failure(() => h.Push(typeof(Settings), null));
+            return ok & Check(pushFailure is InvalidOperationException, "the observer's exception did not reach the caller of Push: " + pushFailure)
+                & Check(h.Depth == 2 && h.Current.Value.Screen == typeof(Settings), "the history did not hold the pushed screen")
+                & Check(s[typeof(Settings)].Shows == 2 && s[typeof(Settings)].IsShown && !s[typeof(World)].IsShown,
+                    "the pushed screen was not shown (Shows=" + s[typeof(Settings)].Shows + ", want 2) or World stayed shown");
+        }
+
+        private static Exception Failure(Action action)
+        {
+            try { action(); return null; }
+            catch (Exception ex) { return ex; }
         }
 
         // ScreenStack's calls: a sync one changes the history then drops the transitions; an async one drops, changes and
