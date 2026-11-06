@@ -331,6 +331,7 @@ namespace NexusBench
             Test_A23_FailedOneShotComposite_SurfacesAndFiresAgain();
             Test_A23_SameTypeOverrides_FillInOrder();
             Test_I24_LegacyMinusSigns_ReadBack();
+            Test_SAVE02_SetStringNull_DeletesAnUnreadableKeysFile();
             Test_I26_ConventionLifecycle_TornDownOnce();
             Test_I28_FailedAsyncOneShotComposite_FiresAgain();
             Test_I29_ReInject_RunsUserCodeOutsideItsLock();
@@ -1190,6 +1191,44 @@ namespace NexusBench
             {
                 DeleteSecureData(salt);
             }
+        }
+
+        private static void Test_SAVE02_SetStringNull_DeletesAnUnreadableKeysFile()
+        {
+            string detail = "";
+            bool ok = true;
+            foreach (bool autoSave in new[] { false, true })
+            {
+                string salt = "HarnessSalt_SAVE02_" + autoSave;
+                string dir = System.IO.Path.Combine(Application.persistentDataPath, "SecureData_" + salt);
+                UnityEngine.PlayerPrefs.ClearAll();
+                DeleteSecureData(salt);
+                try
+                {
+                    var writer = new EncryptedStorageService(salt) { AutoSave = true };
+                    writer.SetString("coins", "42");
+                    writer.Dispose();
+                    string[] files = System.IO.Directory.GetFiles(dir);
+                    foreach (var file in files) System.IO.File.WriteAllBytes(file, new byte[1]);
+
+                    var store = new EncryptedStorageService(salt) { AutoSave = autoSave };
+                    var before = store.TryGetString("coins", out _);
+                    store.SetString("coins", null);
+                    store.Save();
+                    int filesAfter = System.IO.Directory.GetFiles(dir).Length;
+                    var after = store.TryGetString("coins", out _);
+                    store.Dispose();
+
+                    ok &= files.Length > 0 && before == StorageReadStatus.Unreadable && filesAfter == 0 && after == StorageReadStatus.Absent;
+                    detail += $"AutoSave={autoSave}: files={files.Length} read before={before}, files left after SetString(null)+Save={filesAfter} (expected 0), read after={after} (expected Absent); ";
+                }
+                finally
+                {
+                    DeleteSecureData(salt);
+                }
+            }
+            Check("SAVE-02. SetStringNull_DeletesAnUnreadableKeysFile", ok,
+                detail + "(pre-fix: the null write matched the cached null of the unreadable read, nothing was dirty, the corrupt file stayed and the key stayed Unreadable)");
         }
 
         private static void Test_I26_ConventionLifecycle_TornDownOnce()

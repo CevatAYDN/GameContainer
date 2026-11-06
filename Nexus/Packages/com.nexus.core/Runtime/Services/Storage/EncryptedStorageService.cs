@@ -773,8 +773,10 @@ namespace Nexus.Core.Services
                 if (_disposed || _disposing) goto disposed;
                 // Only skip when the cache actually holds the same value: an unread key
                 // must not swallow SetString(key, null) (the tombstone still has to
-                // propagate to Save() so the on-disk file is deleted).
-                if (_cache.TryGetValue(key, out string oldVal) && oldVal == value) return;
+                // propagate to Save() so the on-disk file is deleted). An unreadable key is cached as null too,
+                // but its file is still there: the null write must delete it (issue #324).
+                if (_cache.TryGetValue(key, out string oldVal) && oldVal == value
+                    && !(value == null && _unreadable.Contains(key))) return;
 
                 _cache[key] = value;
                 version = BumpKeyVersionLocked(key);
