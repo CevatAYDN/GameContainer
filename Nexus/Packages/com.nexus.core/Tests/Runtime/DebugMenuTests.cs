@@ -147,12 +147,13 @@ namespace Nexus.Tests
         [UnityTest]
         public IEnumerator AThrowingButton_IsLogged_AndTheMenuStaysOpen()
         {
-            NexusLog.Reset(); // the exception alone, without a context's formatted line
+            NexusLog.Reset(); // no logger: the exception and the formatted line both reach the console (#314)
             var menu = StartMenu();
             menu.AddButton("Economy", "Broken", () => throw new InvalidOperationException("debug menu test"));
 
             yield return OpenWithKey();
             LogAssert.Expect(LogType.Exception, new Regex("debug menu test"));
+            LogAssert.Expect(LogType.Error, new Regex(@"\[DebugMenu\]\[Broken\] debug menu test"));
             Submit(Find<Button>(menu, b => b.text == "Broken"));
 
             Assert.IsTrue(menu.Overlay.IsOpen);

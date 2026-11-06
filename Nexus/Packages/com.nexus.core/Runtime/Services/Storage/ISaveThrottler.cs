@@ -3,13 +3,11 @@ using System;
 namespace Nexus.Core.Services
 {
     /// <summary>
-    /// Disk ve bulut kayıt işlemlerini throttle (kısıtlayarak) gerçekleştiren servis.
-    /// Modellerden tamamen bağımsız çalışır ve Action delegate'lerini geciktirir.
+    /// Throttles disk and cloud saves. It is independent of the models and delays Action delegates.
     ///
-    /// Multi-owner: owner parametreli overload'lar, çağıran servisin kendi pending
-    /// slot'una sahip olmasını sağlar — iki farklı servis aynı throttler'ı paylaştığında
-    /// biri diğerinin bekleyen kaydını üzerine yazamaz (veri kaybı). Owner'sız overload'lar
-    /// "default" slot'a gider ve eski davranışı korur.
+    /// Multi-owner: the overloads that take an owner give the calling service its own pending slot,
+    /// so when two services share one throttler neither can overwrite the other's pending save (data
+    /// loss). The overloads without an owner use the "default" slot and keep the old behaviour.
     /// </summary>
     public interface ISaveThrottler
     {

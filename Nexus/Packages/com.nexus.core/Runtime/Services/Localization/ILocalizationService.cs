@@ -5,6 +5,8 @@ namespace Nexus.Core.Services
 {
     public interface ILocalizationTableProvider
     {
+        /// <summary>The table of <paramref name="langCode"/>. A table that throws (a malformed JSON file) is logged by
+        /// the localization service and skipped; the other languages still load.</summary>
         bool TryGetTable(string langCode, out System.Collections.Generic.IDictionary<string, string> table);
 
         /// <summary>

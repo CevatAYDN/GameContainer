@@ -403,7 +403,16 @@ namespace Nexus.Core.Services
             foreach (var lang in languages)
             {
                 if (string.IsNullOrEmpty(lang)) continue;
-                if (TableProvider.TryGetTable(lang, out var table) && table != null)
+                IDictionary<string, string> table;
+                bool found;
+                // one malformed table is skipped, not the whole start (#314 R3-09)
+                try { found = TableProvider.TryGetTable(lang, out table); }
+                catch (Exception ex)
+                {
+                    NexusLog.WarnAlways($"[LocalizationService] The table of '{lang}' could not be read and is skipped: {ex.Message}");
+                    continue;
+                }
+                if (found && table != null)
                 {
                     RegisterLanguageTable(lang, table);
                 }

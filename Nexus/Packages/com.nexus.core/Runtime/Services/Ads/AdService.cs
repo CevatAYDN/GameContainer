@@ -45,6 +45,8 @@ namespace Nexus.Core.Services
 
     public interface IAdService
     {
+        /// <summary>Sets and initializes the network adapter. A replaced adapter's banner is hidden and, when it is
+        /// <see cref="IDisposable"/>, it is disposed; its late initialize callback is ignored.</summary>
         void SetNetworkAdapter(IAdNetworkAdapter adapter);
         void SetInterstitialCooldown(float seconds);
         bool IsInterstitialAvailable(string placement);
@@ -137,6 +139,8 @@ namespace Nexus.Core.Services
 
             previous?.HideBanner();
             if (previous is IAdReadinessAdapter previousReadiness) previousReadiness.ReadyChanged -= _forwardReadyChanged;
+            // a replaced adapter is disposed, as IapService does (#118, #314 R3-05)
+            if (previous is IDisposable replaced && !ReferenceEquals(previous, adapter)) replaced.Dispose();
             if (adapter is IAdReadinessAdapter readiness) readiness.ReadyChanged += _forwardReadyChanged;
 
             // Initialize OUTSIDE the lock: adapter SDKs may block or re-enter this service
@@ -146,8 +150,10 @@ namespace Nexus.Core.Services
             {
                 adapter.Initialize(() =>
                 {
-                    lock (_lock) { _isInitialized = true; }
-                    ReadyChanged?.Invoke();
+                    // a late answer of a replaced adapter does not mark the current one (#314 R3-05)
+                    bool current;
+                    lock (_lock) { current = ReferenceEquals(_adapter, adapter); if (current) _isInitialized = true; }
+                    if (current) ReadyChanged?.Invoke();
                 });
             }
             else ReadyChanged?.Invoke();

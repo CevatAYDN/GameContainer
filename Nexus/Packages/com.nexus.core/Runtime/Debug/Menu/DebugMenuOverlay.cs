@@ -168,14 +168,14 @@ namespace Nexus.Core.Services
             try
             {
                 action();
+                // a button may change what a toggle shows; a Get that throws is caught too (#314 R3-15)
+                foreach (var (toggle, shown) in _toggles)
+                    toggle.SetValueWithoutNotify(shown.Get());
             }
             catch (Exception ex)
             {
                 NexusLog.Error("DebugMenu", entry.Label, null, ex); // the menu stays usable
             }
-            // a button may change what a toggle shows
-            foreach (var (toggle, shown) in _toggles)
-                toggle.SetValueWithoutNotify(shown.Get());
         }
     }
 }

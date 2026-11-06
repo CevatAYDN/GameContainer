@@ -132,8 +132,10 @@ namespace Nexus.Core.Services
         // collection itself). A promoted currency's long observable remains the same instance, projecting its
         // canonical BigDouble balance.
         private readonly object _balanceLock = new object();
-        // Under _balanceLock: the BigDouble currencies whose legacy long key a flush has deleted (#300).
+        // Under _balanceLock: the BigDouble currencies whose legacy long key a flush has deleted (#300), and the long
+        // currencies whose Earn reached long.MaxValue and was logged (R3-13, #314).
         private readonly HashSet<string> _legacyKeyDeleted = new();
+        private HashSet<string> _cappedLogged;
         // A currency's first touch reads storage (file I/O and decryption with EncryptedStorageService). The read
         // runs before the balance lock (PrefetchSaved) and the create path under the lock takes its result.
         private readonly ConcurrentDictionary<string, SavedBalance> _prefetched = new();
@@ -490,9 +492,16 @@ namespace Nexus.Core.Services
         {
             var prop = LazyLoadBalance(currencyId);
             if (_bigBalances.TryGetValue(currencyId, out var big)) big.SetByService(Normalize(big.Value + new BigDouble(amount)));
+            else if (amount > long.MaxValue - prop.Value)
+            {
+                prop.SetByService(long.MaxValue);
+                // the rest of the amount is lost: every build's log says so once per currency (R3-13, #314)
+                if ((_cappedLogged ??= new HashSet<string>()).Add(currencyId))
+                    NexusLog.WarnAlways($"[Economy] '{currencyId}' reached long.MaxValue; Earn drops what does not fit. Use EarnBig for this currency.");
+            }
             else
             {
-                prop.SetByService(amount > long.MaxValue - prop.Value ? long.MaxValue : prop.Value + amount);
+                prop.SetByService(prop.Value + amount);
             }
         }
         /// <summary>

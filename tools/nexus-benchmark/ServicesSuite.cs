@@ -71,7 +71,8 @@ namespace NexusBench
 
         protected override void OnScreenOpening(object args) { LastArgs = args; Events.Add("opening"); }
         protected override void OnScreenOpened(object args) { Events.Add("opened"); }
-        protected override void OnScreenClosing() { Events.Add("closing"); }
+        public static Action ClosingHook;
+        protected override void OnScreenClosing() { Events.Add("closing"); ClosingHook?.Invoke(); }
         protected override void OnScreenClosed() { Events.Add("closed"); }
     }
 
@@ -167,6 +168,22 @@ namespace NexusBench
         public GameObject GetOrCreateRoot() => Root;
     }
 
+    /// <summary>Ad adapter whose Initialize answers only when the test calls <see cref="Answer"/> (R3-05).</summary>
+    public sealed class SvcDeferredAdAdapter : IAdNetworkAdapter, IDisposable
+    {
+        private Action _onInitialized;
+        public bool Disposed;
+        public void Answer() => _onInitialized?.Invoke();
+        public void Dispose() => Disposed = true;
+        public void Initialize(Action onInitialized) => _onInitialized = onInitialized;
+        public bool IsInterstitialReady(string placement) => true;
+        public void ShowInterstitial(string placement, Action onClosed) => onClosed?.Invoke();
+        public bool IsRewardedReady(string placement) => true;
+        public void ShowRewarded(string placement, Action<bool> onCompleted) => onCompleted?.Invoke(true);
+        public void ShowBanner(string placement, string position) { }
+        public void HideBanner() { }
+    }
+
     /// <summary>Key-value store that counts DeleteKey calls per key (#300).</summary>
     public sealed class SvcDeleteCountingPrefs : IPlayerPrefsService
     {
@@ -239,6 +256,7 @@ namespace NexusBench
                 UnityEngine.PlayerPrefs.ClearAll();
                 SceneManager.SimulateReset();
                 SvcScreenView.Events.Clear();
+                SvcScreenView.ClosingHook = null;
                 Time.realtimeSinceStartup = 0f;
                 foreach (var clip in s_clipsToDestroy) UnityEngine.Object.Destroy(clip);
                 s_clipsToDestroy.Clear();
@@ -1415,6 +1433,12 @@ namespace NexusBench
                 RunR3_Economy(logger);
                 RunR3_Progression();
                 RunR3_Audio();
+                RunR3_UIManager(ctx, logger);
+                RunR3_Ads(ctx);
+                RunR3_NexusLog();
+                RunR3_Analytics(logger);
+                RunR3_BigDouble();
+                RunR3_Localization(logger);
             }
             finally
             {
@@ -1435,6 +1459,18 @@ namespace NexusBench
                 deletes == 1 && !prefs.HasKey("NT_Eco_r3gems") && Math.Abs((double)saved - 17) < 1e-9,
                 $"deletes={deletes} legacyKey={prefs.HasKey("NT_Eco_r3gems")} saved={saved} (expected 1, False, 17)");
             economy.Dispose();
+
+            // R3-13: an Earn capped at long.MaxValue logs once per currency in every build, naming EarnBig.
+            var capped = new EconomyService { PlayerPrefsService = new FakeSessionPrefs() };
+            capped.Earn("r3cap", long.MaxValue - 5);
+            int before = logger.Messages.Count;
+            capped.Earn("r3cap", 10);
+            capped.Earn("r3cap", 10);
+            var capWarnings = logger.Messages.Skip(before).Where(m => m != null && m.Contains("EarnBig")).ToList();
+            Check("R3-13. Economy_Earn_Capped_At_Long_Max_Logs_Once",
+                capped.GetBalance("r3cap") == long.MaxValue && capWarnings.Count == 1,
+                $"balance={capped.GetBalance("r3cap")} warnings=[{string.Join(" | ", capWarnings)}]");
+            capped.Dispose();
         }
 
         private static void RunR3_Progression()
@@ -1476,6 +1512,136 @@ namespace NexusBench
             {
                 UnityEngine.Object.Destroy(keeper.Root);
             }
+        }
+
+        private static void RunR3_UIManager(NexusTestContext ctx, SvcLoggerRecorder logger)
+        {
+            // R3-04: an open of a screen that is closing returns null and says so in every build.
+            ctx.Context.Container.BindInstance<IUIAssetProvider>(new SvcScreenProvider());
+            ctx.Context.Container.Bind<IUIManager, UIManager>(isSingleton: true);
+            var ui = ctx.Context.Resolve<IUIManager>() as UIManager;
+            ui.InitializeAsync(default).GetAwaiter().GetResult();
+            ui.OpenScreenAsync<SvcScreenView>().GetAwaiter().GetResult();
+            Task<SvcScreenView> reopen = null;
+            SvcScreenView.ClosingHook = () => reopen = ui.OpenScreenAsync<SvcScreenView>();
+            int before = logger.Messages.Count;
+            try { ui.CloseScreenAsync<SvcScreenView>().GetAwaiter().GetResult(); }
+            finally { SvcScreenView.ClosingHook = null; }
+            var reopened = reopen?.GetAwaiter().GetResult();
+            var warned = logger.Messages.Skip(before).Where(m => m != null && m.Contains("SvcScreenView") && m.Contains("closing")).ToList();
+            Check("R3-04. UIManager_Open_While_Closing_Returns_Null_And_Logs",
+                reopen != null && reopened == null && warned.Count == 1,
+                $"called={reopen != null} reopened={(reopened == null ? "null" : "screen")} warnings=[{string.Join(" | ", warned)}]");
+            ui.Dispose();
+        }
+
+        private static void RunR3_Ads(NexusTestContext ctx)
+        {
+            // R3-05: the late init answer of a replaced adapter does not mark the service initialized, and the replaced one is disposed.
+            ctx.Context.Container.Bind<AdService>(isSingleton: true);
+            var ads = ctx.Context.Resolve<AdService>();
+            var first = new SvcDeferredAdAdapter();
+            var second = new SvcDeferredAdAdapter();
+            ads.SetNetworkAdapter(first);
+            ads.SetNetworkAdapter(second);
+            int readyChanges = 0;
+            ads.ReadyChanged += () => readyChanges++;
+            first.Answer();
+            bool ignored = !ads.IsInitialized && readyChanges == 0;
+            second.Answer();
+            Check("R3-05. Ads_Replaced_Adapter_Late_Init_Ignored_And_Disposed",
+                ignored && ads.IsInitialized && first.Disposed && !second.Disposed,
+                $"ignored={ignored} initializedAfterCurrent={ads.IsInitialized} firstDisposed={first.Disposed} secondDisposed={second.Disposed}");
+        }
+
+        private static void RunR3_NexusLog()
+        {
+            // R3-06: NexusLog.Error logs the exception and the context line with and without a logger, and never logs a null exception.
+            var unity = new List<string>();
+            Action<string, string> onLog = (level, message) => unity.Add($"{level}:{message}");
+            UnityEngine.Debug.Logged += onLog;
+            var recorder = new SvcLoggerRecorder();
+            try
+            {
+                NexusLog.Reset();
+                NexusLog.Error("R3", "op", null, new InvalidOperationException("boom"));
+                NexusLog.Error("R3", "op", null, "msg", new InvalidOperationException("bang"));
+                NexusLog.Error("R3", "op", null, "plain", null);
+                var withoutLogger = string.Join(",", unity);
+                NexusLog.Initialize(recorder);
+                NexusLog.Error("R3", "op", null, new InvalidOperationException("boom"));
+                NexusLog.Error("R3", "op", null, "msg", new InvalidOperationException("bang"));
+                NexusLog.Error("R3", "op", null, "plain", null);
+                var withLogger = string.Join(",", recorder.Messages.Select(m => m ?? "<null>"));
+                const string expectedUnity = "Exception:boom,Error:[Nexus][R3][op] boom,Exception:bang,Error:[Nexus][R3][op] msg | bang,Error:[Nexus][R3][op] plain";
+                const string expectedLogger = "boom,[Nexus][R3][op] boom,bang,[Nexus][R3][op] msg | bang,[Nexus][R3][op] plain";
+                Check("R3-06. NexusLog_Error_Logs_The_Same_With_And_Without_A_Logger",
+                    withoutLogger == expectedUnity && withLogger == expectedLogger,
+                    $"without=[{withoutLogger}] with=[{withLogger}]");
+            }
+            finally
+            {
+                UnityEngine.Debug.Logged -= onLog;
+                NexusLog.Reset();
+            }
+        }
+
+        private static void RunR3_Analytics(SvcLoggerRecorder logger)
+        {
+            // R3-07: with the log dropped (a release player's logger), the default analytics builds nothing.
+            var analytics = new AnalyticsService();
+            var parameters = new Dictionary<string, object> { { "item", "gems_100" }, { "price", 1.99 } };
+            logger.IsEnabled = false;
+            try
+            {
+                analytics.LogEvent("warm", parameters);
+                long alloc = MeasuredAllocations(() =>
+                {
+                    for (int i = 0; i < 100; i++)
+                    {
+                        analytics.LogEvent("level_start");
+                        analytics.LogEvent("purchase", parameters);
+                        analytics.SetUserProperty("tier", "whale");
+                    }
+                });
+                Check("R3-07. Analytics_Builds_Nothing_When_The_Log_Is_Dropped", alloc == 0,
+                    $"allocated={alloc} bytes for 300 calls (expected 0)");
+            }
+            finally
+            {
+                logger.IsEnabled = true;
+            }
+        }
+
+        private static void RunR3_BigDouble()
+        {
+            // R3-08: a value that rounds up to 1000 of a suffix moves to the next suffix.
+            string rounded = new BigDouble(999999).ToString();
+            string below = new BigDouble(999994).ToString();
+            Check("R3-08. BigDouble_Rounding_Up_To_1000_Moves_To_The_Next_Suffix",
+                rounded == "1.00M" && below == "999.99K",
+                $"999999='{rounded}' 999994='{below}' (expected '1.00M', '999.99K')");
+        }
+
+        private static void RunR3_Localization(SvcLoggerRecorder logger)
+        {
+            // R3-09: one malformed language table is logged and skipped; the others load and the service starts.
+            var provider = new JsonLocalizationTableProvider(new Dictionary<string, string>
+            {
+                { "de", "{ not json" },
+                { "fr", "{\"r3_hello\": \"bonjour\"}" }
+            });
+            var localization = new LocalizationService(new FakeSessionPrefs(), provider);
+            int before = logger.Messages.Count;
+            string error = null;
+            try { localization.InitializeAsync(default).GetAwaiter().GetResult(); }
+            catch (Exception ex) { error = $"{ex.GetType().Name}: {ex.Message}"; }
+            localization.SetLanguage("fr");
+            string text = localization.GetString("r3_hello");
+            var warned = logger.Messages.Skip(before).Where(m => m != null && m.Contains("'de'")).ToList();
+            Check("R3-09. Localization_Malformed_Table_Is_Logged_And_Skipped",
+                error == null && text == "bonjour" && warned.Count == 1,
+                $"error={error ?? "none"} fr='{text}' warnings=[{string.Join(" | ", warned)}]");
         }
 
         private static void RunZeroGc()

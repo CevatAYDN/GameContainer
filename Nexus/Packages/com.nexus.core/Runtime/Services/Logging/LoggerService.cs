@@ -72,32 +72,26 @@ namespace Nexus.Core.Services
 
         public static void Error(string source, string operation, string contextId, Exception ex)
         {
-            // Pass the full exception (with stack trace) via LogException.
-            // Previously only ex.Message was logged, making production debugging impossible.
-            if (s_instance != null)
-                s_instance.LogException(ex);
-            else
-                Debug.LogException(ex);
-            var msg = ex?.Message ?? "null";
-            var entry = new NexusLogEntry(source, operation, contextId, msg);
-            s_instance?.LogError(entry.Format());
+            WriteError(new NexusLogEntry(source, operation, contextId, ex?.Message ?? "null"), ex);
         }
 
         public static void Error(string source, string operation, string contextId, string message, Exception ex)
         {
-            // Preserve stack trace via LogException in addition to the formatted message.
-            var entry = new NexusLogEntry(source, operation, contextId, ex != null ? string.Concat(message, " | ", ex.Message) : message);
+            WriteError(new NexusLogEntry(source, operation, contextId, ex != null ? string.Concat(message, " | ", ex.Message) : message), ex);
+        }
+
+        // The exception (with its stack trace) and the formatted line, the same with and without a logger; no
+        // LogException(null) (#314 R3-06).
+        private static void WriteError(NexusLogEntry entry, Exception ex)
+        {
             if (s_instance != null)
             {
-                s_instance.LogException(ex);
+                if (ex != null) s_instance.LogException(ex);
                 s_instance.LogError(entry.Format());
-            }
-            else if (ex != null)
-            {
-                Debug.LogException(ex);
             }
             else
             {
+                if (ex != null) Debug.LogException(ex);
                 Debug.LogError(entry.Format());
             }
         }

@@ -23,16 +23,14 @@ namespace Nexus.Core.Services
     }
 
     /// <summary>
-    /// Disk ve bulut kayıt işlemlerini throttle (kısıtlayarak) gerçekleştiren servis.
-    /// Modellerden tamamen bağımsız çalışır ve Action delegate'lerini geciktirir.
+    /// Throttles disk and cloud saves. It is independent of the models and delays Action delegates.
     ///
-    /// Multi-owner: her mantıksal sahip (EconomyService, ProgressionService, ...) kendi
-    /// pending slot'una sahiptir. Tek-slot tasarımında ikinci sahibin TryRequestSave çağrısı
-    /// birincinin bekleyen kaydını üzerine yazar ve pencere dolmadan flush olmazsa ilk
-    /// sahibin yazımı SESSİZCE KAYBOLUYORDU — iki throttled servis aynı singleton'ı
-    /// paylaştığında gerçek veri kaybı. Hata yedeği + yeniden deneme tavanı (M1) de
-    /// owner başına izole edilmiştir: sürekli başarısız olan bir sahibin tavanı, diğer
-    /// sahibin bekleyen bayrağını temizleyemez.
+    /// Multi-owner: each logical owner (EconomyService, ProgressionService, ...) has its own pending
+    /// slot. In the single-slot design the second owner's TryRequestSave overwrote the first owner's
+    /// pending save, and unless the window flushed first, the first owner's write was SILENTLY LOST:
+    /// real data loss when two throttled services shared the singleton. The failure backoff and the
+    /// retry cap (M1) are per owner too: the cap of an owner that keeps failing cannot clear another
+    /// owner's pending flag.
     /// </summary>
     public class SaveThrottler : ISaveThrottler, INexusService, IUnpausableTickable
     {

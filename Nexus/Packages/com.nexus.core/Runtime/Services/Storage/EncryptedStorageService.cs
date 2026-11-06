@@ -365,9 +365,6 @@ namespace Nexus.Core.Services
                 var logger = NexusRuntime.Logger;
                 // Use Task.Run for true background I/O so the Unity main thread is never
                 // blocked waiting for disk writes during focus loss.
-                // The lambda captures only the logger (value-type copy) — not `this` —
-                // so there is no risk of the service being GC'd while I/O is in flight
-                // because the service's lifetime is tied to the context (singleton).
                 // NOTE: the lambda intentionally captures `this` (via self) so the service
                 // cannot be garbage-collected while background I/O is in flight — its
                 // lifetime is tied to the owning context singleton anyway, but the explicit
@@ -523,12 +520,15 @@ namespace Nexus.Core.Services
                 if (_cache.TryGetValue(key, out string cachedVal))
                     return CachedLocked(key, cachedVal, out value);
 
-                filePath = ResolveExistingFilePath(key);
-                mainPath = GetFilePath(key);
                 _keyVersions.TryGetValue(key, out readVersion);
             }
 
             // ── Slow path, outside the lock ──
+            // The path lookup (File.Exists, the legacy MD5 name) runs here too (#314 R3-11): writers serialize on
+            // _writeLock, not _lock, so _lock never kept the files still, and a write after readVersion fails the version
+            // check below, which keeps the cache from taking a stale value.
+            filePath = ResolveExistingFilePath(key);
+            mainPath = GetFilePath(key);
             if (!File.Exists(filePath))
             {
                 CacheNegativeResult(key);

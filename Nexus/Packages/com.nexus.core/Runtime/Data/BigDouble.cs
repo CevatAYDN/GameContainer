@@ -325,7 +325,15 @@ namespace Nexus.Core
             const long MaxDynamicSuffixIndex = 1000000;
             if (suffixIndex <= MaxDynamicSuffixIndex)
             {
-                return $"{displayValue.ToString("F2", culture)}{GetSuffix(suffixIndex)}";
+                string digits = displayValue.ToString("F2", culture);
+                // 999.999K rounds to "1000.00": it is shown as "1.00M" (#314 R3-08). The check reads the formatted
+                // text, so it follows the runtime's own rounding.
+                if (Math.Abs(displayValue) >= 999 && digits.TrimStart('-').StartsWith("1000", StringComparison.Ordinal))
+                {
+                    digits = (displayValue / 1000).ToString("F2", culture);
+                    suffixIndex++;
+                }
+                return $"{digits}{GetSuffix(suffixIndex)}";
             }
 
             return $"{Mantissa.ToString("F2", culture)}e{Exponent}";

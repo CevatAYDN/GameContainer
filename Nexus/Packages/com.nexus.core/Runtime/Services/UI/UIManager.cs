@@ -40,7 +40,8 @@ namespace Nexus.Core.Services
         /// <summary>
         /// Opens a screen of type <typeparamref name="TScreen"/>. The screen prefab is resolved
         /// from the registered prefab map or through the <see cref="IUIAssetProvider"/> by the
-        /// screen name. Returns the opened screen (or null if it could not be opened). A pooled open reuses an instance a
+        /// screen name. Returns the opened screen, or null if it could not be opened or the same screen is still
+        /// closing (logged; await <c>CloseScreenAsync</c> first). A pooled open reuses an instance a
         /// close kept; with <paramref name="pooled"/> false the screen is a new instance and its close destroys it.
         /// </summary>
         Task<TScreen> OpenScreenAsync<TScreen>(object args = null, UILayer layer = UILayer.Screen, bool pooled = true)
@@ -173,7 +174,12 @@ namespace Nexus.Core.Services
             // acquisition so no concurrent OpenScreenAsync can slip between the two checks.
             lock (_lock)
             {
-                if (_pendingCloses.Contains(key)) return null;
+                if (_pendingCloses.Contains(key))
+                {
+                    // A failed open is logged in every build (#314 R3-04).
+                    NexusLog.WarnAlways($"[UIManager] Screen '{key}' is closing; the open returns null. Await CloseScreenAsync before opening it again.");
+                    return null;
+                }
                 // 1. Already open → bring to front, refresh, return existing instance.
                 if (_activeScreens.TryGetValue(key, out var existing) && existing != null)
                 {

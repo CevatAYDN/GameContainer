@@ -3,12 +3,11 @@ using UnityEngine;
 namespace Nexus.Core.Services
 {
     /// <summary>
-    /// Gerçek Unity PlayerPrefs implementasyonu.
-    /// Tüm SetInt/SetBool çağrılarında hemen disk'e yazmak yerine,
-    /// oyuncu önemli bir eylem yaptığında (level tamamlama, tema değiştirme vb.)
-    /// çağrılabilecek bir Save() metodu sunar. Set* çağrıları yalnızca bellekteki
-    /// PlayerPrefs değerini günceller; kalıcılık gereken noktalar Save() çağırmalıdır
-    /// (Unity ayrıca uygulama kapanışında otomatik flush eder).
+    /// The real Unity PlayerPrefs implementation.
+    /// Instead of writing to disk on every SetInt/SetBool call, it offers a Save() method to call
+    /// when the player does something that matters (completes a level, changes the theme, and so on).
+    /// Set* calls change only the in-memory PlayerPrefs value; a point that needs the value kept must
+    /// call Save() (Unity also saves when the application quits).
     /// </summary>
     public sealed class UnityPlayerPrefsService : IPlayerPrefsService
     {
