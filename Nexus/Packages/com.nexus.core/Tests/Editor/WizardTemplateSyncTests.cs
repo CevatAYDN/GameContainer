@@ -213,9 +213,16 @@ namespace Nexus.Editor.Tests
                 using (var process = Process.Start(startInfo))
                 {
                     Assert.IsNotNull(process, "Failed to start the Unity Roslyn compiler.");
-                    string stdout = process.StandardOutput.ReadToEnd();
-                    string stderr = process.StandardError.ReadToEnd();
-                    Assert.IsTrue(process.WaitForExit(120000), "Compiler timed out after 120s.");
+                    // read both pipes while the process runs: ReadToEnd before WaitForExit never lets the timeout fire, and a full stderr pipe blocks the child
+                    var stdoutRead = process.StandardOutput.ReadToEndAsync();
+                    var stderrRead = process.StandardError.ReadToEndAsync();
+                    if (!process.WaitForExit(120000))
+                    {
+                        try { process.Kill(); } catch (InvalidOperationException) { } // it exited between the wait and the kill
+                        Assert.Fail("Compiler timed out after 120s.");
+                    }
+                    string stdout = stdoutRead.Result;
+                    string stderr = stderrRead.Result;
                     Assert.AreEqual(0, process.ExitCode,
                         $"Generated files failed to compile (exit {process.ExitCode}).\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}");
                     Assert.IsTrue(File.Exists(outputDll),

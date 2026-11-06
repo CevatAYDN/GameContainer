@@ -13,7 +13,6 @@ namespace Nexus.Tests
         {
             public bool ConfigureCalled;
             public bool InitializeCalled;
-            public bool StartCalled;
             public bool DisposeCalled;
 
             public void OnConfigure(IContextBuilder builder)
@@ -21,17 +20,14 @@ namespace Nexus.Tests
                 ConfigureCalled = true;
             }
 
-            public async ValueTask OnInitializeAsync(CancellationToken ct)
+            // Configure and Dispose only: the test never initializes or starts the context (ArchitecturalDeepeningTests runs the full lifecycle)
+            public ValueTask OnInitializeAsync(CancellationToken ct)
             {
-                await Task.Delay(10, ct);
                 InitializeCalled = true;
+                return default;
             }
 
-            public async ValueTask OnStartAsync(CancellationToken ct)
-            {
-                await Task.Delay(10, ct);
-                StartCalled = true;
-            }
+            public ValueTask OnStartAsync(CancellationToken ct) => default;
 
             public void OnDispose()
             {

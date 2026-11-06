@@ -13,7 +13,6 @@ namespace Nexus.Tests
     /// Verifies that:
     /// - PC1: IPostContextLifecycle.OnPostContext fires after all standard lifecycle phases
     /// - PC2: PostContext fires in context registration order across multiple contexts
-    /// - PC3: No PostContext when no lifecycle opts in (graceful non-participation)
     /// - PC4: Cross-context wiring through PostContext (StrangeIoC-style)
     /// - PC5: PostContext receives a valid ContextBuilder for late bindings
     /// </summary>
@@ -193,8 +192,6 @@ namespace Nexus.Tests
             Assert.AreEqual(7, PostContextCounter.CallOrder[0]);
             context.Dispose();
         }
-
-        // ─── PC3: No PostContext when lifecycle does not implement IPostContextLifecycle ───
 
         // ─── PC4: Cross-context wiring via PostContext ───
 

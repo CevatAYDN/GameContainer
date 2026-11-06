@@ -169,8 +169,8 @@ namespace Nexus.Tests.Runtime
         {
             var first = new UIManager();
             var second = new UIManager();
-            first.InitializeAsync(default);
-            second.InitializeAsync(default);
+            first.InitializeAsync(default).GetAwaiter().GetResult();
+            second.InitializeAsync(default).GetAwaiter().GetResult();
             var created = GameObject.Find("[Nexus_UICanvas]");
             Assert.IsNotNull(created);
 
@@ -184,7 +184,7 @@ namespace Nexus.Tests.Runtime
 
             var sceneCanvas = new GameObject("[Nexus_UICanvas]");
             var third = new UIManager();
-            third.InitializeAsync(default);
+            third.InitializeAsync(default).GetAwaiter().GetResult();
             third.Dispose();
             yield return null;
             Assert.IsTrue(sceneCanvas != null, "a canvas the scene holds is the scene's");

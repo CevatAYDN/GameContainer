@@ -21,7 +21,7 @@ testleridir (`Tests/Editor/CrossBoundaryTests.cs`, `Tests/Editor/MediatorBinding
 | `Bind(X).To<Cmd>().Once()` | `BindCommandOnce` / `BindAsyncCommandOnce` / `.Once()` | ✅ Kapalı (`BinderSuite` ON1–ON5, ONC1–ONC2) |
 | Polimorfik binding (`Bind<A>().Bind<B>().To<Impl>()`) | `BindMultiple<T1,T2[,T3],TImpl>()` (paylaşılan singleton) | ✅ Kapalı (`BinderSuite` PM1–PM3) |
 | `crossContextInjectionBinder` | `BindCrossBoundary<TInterface,TImpl>()` + `ResolveCrossBoundary<T>()` | ✅ Kapalı (`CrossBoundaryTests` CB1–CB8) |
-| `ToAbstraction<IMediator>()` | `[Mediator(typeof(Concrete), typeof(IMediator))]` | ✅ Kapalı (`MediatorBindingTests` MA1–MA8) |
+| `ToAbstraction<IMediator>()` | `[Mediator(typeof(Concrete), typeof(IMediator))]` | ✅ Kapalı (`MediatorBindingTests` MA1–MA6) |
 | `PostContexts` (tüm bağlamlar hazır olunca) | `IPostContextLifecycle` + `NexusRuntime.FinalizeInitializationAsync()` | ✅ Kapalı (`PostContextTests` PC1–PC5) |
 
 Aşağıdaki bölümler Strange'in **hâlâ farklı** olduğu alanları ve Nexus'un bu

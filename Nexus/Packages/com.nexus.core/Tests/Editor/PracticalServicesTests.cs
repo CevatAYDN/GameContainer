@@ -9,6 +9,13 @@ namespace Nexus.Editor.Tests
     [TestFixture]
     public class PracticalServicesTests
     {
+        // the tests' `using` stores are disposed by now: what they left in persistentDataPath and PlayerPrefs goes too
+        [TearDown]
+        public void ForgetTheStores()
+        {
+            foreach (var salt in new[] { "Test_Cloud_Salt", "Test_Cloud_Validation_Salt", "Test_Offline_Salt" }) StorageTestSupport.ForgetStore(salt);
+        }
+
         [Test]
         public void EncryptedStorageService_CloudExportAndImport_RoundTripsData()
         {
@@ -69,7 +76,8 @@ namespace Nexus.Editor.Tests
 
             // A8: the clock was pushed forward: the wall clock says 1000 s, the monotonic tick recorded at the quit says ~0
             storage.SetLong("NT_LastQuitTimestamp", now - 1000);
-            Assert.LessOrEqual(OfflineTimeCalculator.CalculateOfflineSeconds(storage, 3600), 1,
+            // far below the 1000 s a forward clock claims, far above any editor stall between the quit record and this call
+            Assert.LessOrEqual(OfflineTimeCalculator.CalculateOfflineSeconds(storage, 3600), 60,
                 "a forward clock granted the wall clock's 1000 s");
             UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
 

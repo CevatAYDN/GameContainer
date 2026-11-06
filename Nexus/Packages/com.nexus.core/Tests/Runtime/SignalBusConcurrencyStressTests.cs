@@ -56,7 +56,6 @@ namespace Nexus.Tests
         {
             const int parallel = 20;
             var executed = 0;
-            var lockObj = new object();
 
             // Bind a factory that produces a command instance which increments executed atomically
             _container.BindFactory<ConcurrentAsyncCommand>(() => new ConcurrentAsyncCommand(() => Interlocked.Increment(ref executed)));

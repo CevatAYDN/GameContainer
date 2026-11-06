@@ -1,7 +1,7 @@
 using NUnit.Framework;
 using Nexus.Core;
 
-namespace Nexus.Editor.Tests.Editor
+namespace Nexus.Editor.Tests
 {
     /// <summary>
     /// Smoke tests for the Nexus profiler instrumentation in the editor: a signal fire moves
@@ -16,7 +16,7 @@ namespace Nexus.Editor.Tests.Editor
         public void Fire_IncrementsSignalsDispatchedCounter()
         {
             // the warnings this test causes, in the order it causes them (#198)
-            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Editor\.Tests\.Editor\.NexusProfilerTests\+ProfilerSmokeSignal'\ fired\ but\ has\ no\ subscribers"));
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus.Editor.Tests.NexusProfilerTests\+ProfilerSmokeSignal'\ fired\ but\ has\ no\ subscribers"));
             var container = new NexusDI();
             var poolManager = new CommandPoolManager(container);
             var bus = new SignalBus(container, poolManager, new MockContext());

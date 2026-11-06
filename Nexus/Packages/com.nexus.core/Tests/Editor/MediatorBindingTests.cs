@@ -168,8 +168,6 @@ namespace Nexus.Editor.Tests
             Assert.IsNotNull(abstractionView.Context, "Abstraction-bound view must work in same context");
         }
 
-        // ─── MA7: Multiple concrete mediators under same abstraction ───
-
         // ─── An abstraction bound as a singleton still gives every view its own mediator (issue #190) ───
 
         public class OwnMediatorView : TestView
@@ -207,7 +205,5 @@ namespace Nexus.Editor.Tests
             Assert.IsFalse(first.Mediator.Bound);
             Assert.IsTrue(second.Mediator.Bound, "unregistering one view unbound the other view's mediator");
         }
-
-        // ─── MA8: Mediator with abstraction receives OnBind ───
     }
 }

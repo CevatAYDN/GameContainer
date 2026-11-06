@@ -43,12 +43,25 @@ namespace Nexus.Tests.Runtime
             public void OnDispose() { }
         }
 
+        private readonly List<ContextData> _data = new List<ContextData>();
+
+        private ContextData NewData(string scopeTag)
+        {
+            var data = ScriptableObject.CreateInstance<ContextData>();
+            data.ScopeTag = scopeTag;
+            data.AssemblyScopes = Array.Empty<string>();
+            _data.Add(data);
+            return data;
+        }
+
         [TearDown]
         public void TearDown()
         {
             foreach (var root in UnityEngine.Object.FindObjectsByType<Root>(FindObjectsInactive.Include))
                 UnityEngine.Object.DestroyImmediate(root.gameObject);
             Root.ClearRegistry();
+            foreach (var data in _data) UnityEngine.Object.DestroyImmediate(data);
+            _data.Clear();
         }
 
         [Test]
@@ -74,10 +87,7 @@ namespace Nexus.Tests.Runtime
             var go = new GameObject("PauseRoot");
             go.SetActive(false);
             var root = go.AddComponent<Root>();
-            var data = ScriptableObject.CreateInstance<ContextData>();
-            data.ScopeTag = "PauseRoot";
-            data.AssemblyScopes = Array.Empty<string>();
-            root.SetUp(data);
+            root.SetUp(NewData("PauseRoot"));
             root.RegisterLifecycle(gate);
             go.SetActive(true);
 
@@ -104,10 +114,7 @@ namespace Nexus.Tests.Runtime
             var go = new GameObject("QuitRoot");
             go.SetActive(false);
             var root = go.AddComponent<Root>();
-            var data = ScriptableObject.CreateInstance<ContextData>();
-            data.ScopeTag = "QuitRoot";
-            data.AssemblyScopes = Array.Empty<string>();
-            root.SetUp(data);
+            root.SetUp(NewData("QuitRoot"));
             root.RegisterLifecycle(gate);
             go.SetActive(true);
 

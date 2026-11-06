@@ -3,7 +3,7 @@ using NUnit.Framework;
 using UnityEngine;
 using Nexus.Core;
 
-namespace Nexus.Editor.Tests.Editor
+namespace Nexus.Editor.Tests
 {
     /// <summary>
     /// Locks the Scene-view overlay's data layer (<see cref="NexusSceneOverlayData"/>): the

@@ -37,28 +37,34 @@ namespace Nexus.Editor.Tests
         {
             // 1. Create context
             var context = new Context();
-            
+
             // 2. Create DummyModelData instance
             var modelData = ScriptableObject.CreateInstance<DummyModelData>();
             modelData.name = "TestDummyModelData";
+            try
+            {
+                // 3. Bind model
+                context.Container.BindInstance(modelData);
+                context.Container.Bind<DummyModel>();
 
-            // 3. Bind model
-            context.Container.BindInstance(modelData);
-            context.Container.Bind<DummyModel>();
+                // 4. Resolve dummy model to register in resolved singletons
+                var dummyModel = context.Container.Resolve<DummyModel>();
+                Assert.IsFalse(dummyModel.Reloaded);
 
-            // 4. Resolve dummy model to register in resolved singletons
-            var dummyModel = context.Container.Resolve<DummyModel>();
-            Assert.IsFalse(dummyModel.Reloaded);
+                // 5. Trigger live reload via reflection
+                var method = typeof(LiveReloadProcessor).GetMethod("TriggerLiveReload", BindingFlags.NonPublic | BindingFlags.Static);
+                Assert.IsNotNull(method, "LiveReloadProcessor.TriggerLiveReload was renamed or removed: update this test");
+                method.Invoke(null, new object[] { modelData });
 
-            // 5. Trigger live reload via reflection
-            var method = typeof(LiveReloadProcessor).GetMethod("TriggerLiveReload", BindingFlags.NonPublic | BindingFlags.Static);
-            method?.Invoke(null, new object[] { modelData });
-
-            // 6. Verify OnLiveReload was triggered
-            Assert.IsTrue(dummyModel.Reloaded);
-
-            // 7. Cleanup
-            context.Dispose();
+                // 6. Verify OnLiveReload was triggered
+                Assert.IsTrue(dummyModel.Reloaded);
+            }
+            finally
+            {
+                // 7. Cleanup
+                context.Dispose();
+                Object.DestroyImmediate(modelData);
+            }
         }
 
         [Test]
@@ -67,10 +73,12 @@ namespace Nexus.Editor.Tests
             var modelData = ScriptableObject.CreateInstance<DummyModelData>();
 
             var method = typeof(LiveReloadProcessor).GetMethod("TriggerLiveReload", BindingFlags.NonPublic | BindingFlags.Static);
-
-            Assert.DoesNotThrow(() => method?.Invoke(null, new object[] { modelData }));
-
-            Object.DestroyImmediate(modelData);
+            try
+            {
+                Assert.IsNotNull(method, "LiveReloadProcessor.TriggerLiveReload was renamed or removed: update this test");
+                Assert.DoesNotThrow(() => method.Invoke(null, new object[] { modelData }));
+            }
+            finally { Object.DestroyImmediate(modelData); }
         }
     }
 }

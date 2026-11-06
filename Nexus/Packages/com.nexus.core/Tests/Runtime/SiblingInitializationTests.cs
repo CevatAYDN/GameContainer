@@ -202,7 +202,7 @@ namespace Nexus.Tests
             parentGo.SetActive(true);
             yield return WaitForEntries(3);
 
-            Assert.That(_initOrder.Count, Is.EqualTo(3).Or.EqualTo(4));
+            Assert.That(_initOrder.Count, Is.EqualTo(3), "only ChildA logs: ChildB has no lifecycle and is inactive");
             Assert.AreEqual("ChildA_InitStart", _initOrder[0]);
             Assert.AreEqual("ChildA_InitEnd", _initOrder[1]);
             Assert.AreEqual("ChildA_Start", _initOrder[2]);

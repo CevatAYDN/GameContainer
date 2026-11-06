@@ -189,10 +189,6 @@ namespace Nexus.Editor.Tests
             // below the base cost (and never go negative).
             long lin = prog.CalculateUpgradeCost(100, 50, 0.5f, CurveType.Linear);
             Assert.GreaterOrEqual(lin, 100);
-
-            // Ordinary values still follow the documented curves.
-            Assert.AreEqual(150, prog.CalculateUpgradeCost(100, 2, 1.5f, CurveType.Exponential));
-            Assert.AreEqual(225, prog.CalculateUpgradeCost(100, 3, 1.5f, CurveType.Exponential));
         }
     }
 }

@@ -113,11 +113,15 @@ namespace Nexus.Editor.Tests
         }
         private sealed class UnsupportedReplaceStorage : EncryptedStorageService
         {
-            internal UnsupportedReplaceStorage() : base("hardening-" + Guid.NewGuid().ToString("N")) { AutoSave = true; }
+            internal UnsupportedReplaceStorage(string salt) : base(salt) { AutoSave = true; }
             protected override void ReplaceCurrentFile(string staged, string current, string backup)
                 => throw new PlatformNotSupportedException("Controlled platform seam");
         }
         private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+        // each storage test keeps its salt here, and TearDown deletes what the store left in persistentDataPath and PlayerPrefs
+        private readonly List<string> _salts = new List<string>();
+        private string NewSalt(string prefix) { var salt = prefix + "-" + Guid.NewGuid().ToString("N"); _salts.Add(salt); return salt; }
+        [TearDown] public void ForgetTheStores() { foreach (var salt in _salts) StorageTestSupport.ForgetStore(salt); _salts.Clear(); }
         public sealed class FactoryCommand : ICommand<First>, ICompositeCommand
         {
             private readonly Action _execute;
@@ -532,7 +536,7 @@ namespace Nexus.Editor.Tests
         [Test]
         public void Migration_DoesNotOverwriteNewerAutoSave()
         {
-            using var storage = new EncryptedStorageService("hardening-" + Guid.NewGuid().ToString("N")) { AutoSave = true };
+            using var storage = new EncryptedStorageService(NewSalt("hardening")) { AutoSave = true };
             const string key = "migration";
             try
             {
@@ -563,7 +567,7 @@ namespace Nexus.Editor.Tests
         {
             // the warnings this test causes, in the order it causes them (#198)
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[EncryptedStorage\]\ File\.Replace\ not\ supported;\ preserving\ a\ recoverable\ backup\ during\ commit\."));
-            using var storage = new UnsupportedReplaceStorage(); const string key = "backup";
+            using var storage = new UnsupportedReplaceStorage(NewSalt("hardening")); const string key = "backup";
             try
             {
                 storage.SetString(key, "old"); storage.SetString(key, "new"); string path = PathFor(storage, key);
@@ -582,7 +586,7 @@ namespace Nexus.Editor.Tests
         {
             // the queued import refuses on its worker thread, with a warning (#198)
             UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[EncryptedStorage\] Import of key 'save' refused: the key was written while the import waited"));
-            using var storage = new EncryptedStorageService("import-" + Guid.NewGuid().ToString("N")) { AutoSave = true };
+            using var storage = new EncryptedStorageService(NewSalt("import")) { AutoSave = true };
             const string key = "save";
             try
             {

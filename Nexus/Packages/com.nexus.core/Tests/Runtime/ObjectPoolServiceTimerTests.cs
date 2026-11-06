@@ -21,7 +21,7 @@ namespace Nexus.Tests.Runtime
         {
             _prefab = new GameObject("PooledFx");
             _pool = new ObjectPoolService();
-            _pool.InitializeAsync(default);
+            _pool.InitializeAsync(default).GetAwaiter().GetResult();
         }
 
         [TearDown]

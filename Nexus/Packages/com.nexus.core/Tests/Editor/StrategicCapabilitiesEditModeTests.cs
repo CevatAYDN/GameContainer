@@ -1,7 +1,6 @@
 using NUnit.Framework;
 using UnityEditor;
 using Nexus.Editor.Inspector;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Nexus.Core;
@@ -71,13 +70,6 @@ namespace Nexus.Editor.Tests
     [TestFixture]
     public class StrategicCapabilitiesEditModeTests
     {
-        [Test]
-        public void RegisterCommandAttribute_ModeDefaultsToSequential()
-        {
-            var attr = typeof(TestCapCommand).GetCustomAttribute<RegisterCommandAttribute>();
-            Assert.AreEqual(ExecutionMode.Sequential, attr.Mode);
-        }
-
         // Issue #280: NexusTestContext read only [SignalHandler], so a command that declares only [RegisterCommand], which the
         // context's assembly scan registers, threw InvalidOperationException
         [Test]

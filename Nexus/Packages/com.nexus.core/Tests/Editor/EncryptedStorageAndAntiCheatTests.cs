@@ -3,6 +3,7 @@ using System.Threading;
 using NUnit.Framework;
 using Nexus.Core;
 using Nexus.Core.Services;
+using static Nexus.Editor.Tests.StorageTestSupport;
 
 namespace Nexus.Editor.Tests
 {
@@ -10,14 +11,6 @@ namespace Nexus.Editor.Tests
     public class EncryptedStorageAndAntiCheatTests
     {
         // ── Issue #79: a backup restored on another phone ──
-
-        private static void ForgetStore(string salt)
-        {
-            UnityEngine.PlayerPrefs.DeleteKey($"NT_StorageSeed_{salt}");
-            UnityEngine.PlayerPrefs.DeleteKey($"NT_StorageSeed_{salt}_App");
-            var folder = Path.Combine(UnityEngine.Application.persistentDataPath, $"SecureData_{salt}");
-            if (Directory.Exists(folder)) Directory.Delete(folder, true);
-        }
 
         private static void Write(string salt, StorageKeyBinding binding, string device, int coins)
         {
@@ -403,38 +396,45 @@ namespace Nexus.Editor.Tests
         [Test]
         public void EncryptedStorageService_EncryptsAndDecryptsValues()
         {
-            var storage = new EncryptedStorageService("Test_Salt_99");
-            storage.AutoSave = true;
+            const string salt = "Test_Salt_99";
+            ForgetStore(salt);
+            var storage = new EncryptedStorageService(salt);
+            try
+            {
+                storage.AutoSave = true;
 
-            storage.SetInt("PlayerCoins", 9999);
-            storage.SetString("PlayerName", "Hero");
+                storage.SetInt("PlayerCoins", 9999);
+                storage.SetString("PlayerName", "Hero");
 
-            Assert.AreEqual(9999, storage.GetInt("PlayerCoins"));
-            Assert.AreEqual("Hero", storage.GetString("PlayerName"));
-            StringAssert.DoesNotContain("Hero", System.Text.Encoding.UTF8.GetString(File.ReadAllBytes(Private<string>(storage, "GetFilePath", "PlayerName"))),
-                "the save file holds the value encrypted");
-            Assert.IsTrue(storage.HasKey("PlayerCoins"));
+                Assert.AreEqual(9999, storage.GetInt("PlayerCoins"));
+                Assert.AreEqual("Hero", storage.GetString("PlayerName"));
+                StringAssert.DoesNotContain("Hero", System.Text.Encoding.UTF8.GetString(File.ReadAllBytes(Private<string>(storage, "GetFilePath", "PlayerName"))),
+                    "the save file holds the value encrypted");
+                Assert.IsTrue(storage.HasKey("PlayerCoins"));
 
-            storage.DeleteKey("PlayerCoins");
-            Assert.AreEqual(0, storage.GetInt("PlayerCoins"));
-            storage.Dispose();
+                storage.DeleteKey("PlayerCoins");
+                Assert.AreEqual(0, storage.GetInt("PlayerCoins"));
+            }
+            finally { storage.Dispose(); ForgetStore(salt); }
         }
 
         [Test]
         public void EncryptedStorageService_DataTypesSupported()
         {
-            var storage = new EncryptedStorageService("Test_Salt_DataTypes");
-            storage.AutoSave = true;
+            const string salt = "Test_Salt_DataTypes";
+            ForgetStore(salt);
+            var storage = new EncryptedStorageService(salt);
+            try
+            {
+                storage.AutoSave = true;
 
-            storage.SetFloat("Volume", 0.75f);
-            storage.SetBool("IsVip", true);
+                storage.SetFloat("Volume", 0.75f);
+                storage.SetBool("IsVip", true);
 
-            Assert.AreEqual(0.75f, storage.GetFloat("Volume"));
-            Assert.IsTrue(storage.GetBool("IsVip"));
-
-            storage.DeleteKey("Volume");
-            storage.DeleteKey("IsVip");
-            storage.Dispose();
+                Assert.AreEqual(0.75f, storage.GetFloat("Volume"));
+                Assert.IsTrue(storage.GetBool("IsVip"));
+            }
+            finally { storage.Dispose(); ForgetStore(salt); }
         }
 
         [Test]
@@ -442,32 +442,33 @@ namespace Nexus.Editor.Tests
         {
             // the warnings this test causes, in the order it causes them (#198)
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[EncryptedStorage\]\ Save\ file\ tampering\ detected\ for\ key:\ SecretScore!\ Reverting\ to\ default\."));
-            var storage = new EncryptedStorageService("Test_Salt_Tamper");
-            storage.AutoSave = true; // Make sure it saves to disk immediately
+            const string salt = "Test_Salt_Tamper";
+            ForgetStore(salt);
+            var storage = new EncryptedStorageService(salt);
+            EncryptedStorageService newStorage = null;
+            try
+            {
+                storage.AutoSave = true; // Make sure it saves to disk immediately
 
-            // Clear old runs
-            storage.DeleteKey("SecretScore");
+                storage.SetInt("SecretScore", 5000);
 
-            storage.SetInt("SecretScore", 5000);
+                // Corrupt file bytes directly on disk to simulate hacker editing
+                var getFilePathMethod = typeof(EncryptedStorageService).GetMethod("GetFilePath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                string fileToTamper = getFilePathMethod.Invoke(storage, new object[] { "SecretScore" }) as string;
+                Assert.IsTrue(File.Exists(fileToTamper));
 
-            // Corrupt file bytes directly on disk to simulate hacker editing
-            var getFilePathMethod = typeof(EncryptedStorageService).GetMethod("GetFilePath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            string fileToTamper = getFilePathMethod.Invoke(storage, new object[] { "SecretScore" }) as string;
-            Assert.IsTrue(File.Exists(fileToTamper));
+                byte[] corruptedBytes = File.ReadAllBytes(fileToTamper);
+                corruptedBytes[corruptedBytes.Length - 1] ^= 0xFF; // Flip bits
+                File.WriteAllBytes(fileToTamper, corruptedBytes);
 
-            byte[] corruptedBytes = File.ReadAllBytes(fileToTamper);
-            corruptedBytes[corruptedBytes.Length - 1] ^= 0xFF; // Flip bits
-            File.WriteAllBytes(fileToTamper, corruptedBytes);
-
-            // Create a new instance to read it back from the tampered disk file, bypassing the cache; the first one is
-            // disposed so two live stores do not share the folder
-            storage.Dispose();
-            var newStorage = new EncryptedStorageService("Test_Salt_Tamper");
-            int result = newStorage.GetInt("SecretScore", 0);
-            Assert.AreEqual(0, result);
-
-            newStorage.DeleteKey("SecretScore");
-            newStorage.Dispose();
+                // Create a new instance to read it back from the tampered disk file, bypassing the cache; the first one is
+                // disposed so two live stores do not share the folder
+                storage.Dispose();
+                newStorage = new EncryptedStorageService(salt);
+                int result = newStorage.GetInt("SecretScore", 0);
+                Assert.AreEqual(0, result);
+            }
+            finally { storage.Dispose(); newStorage?.Dispose(); ForgetStore(salt); }
         }
 
         private static object SecureCore(object property)
@@ -644,7 +645,10 @@ namespace Nexus.Editor.Tests
             Assert.AreEqual(0f, secureFloat.Value, 0.0001f);
 
             secureFloat.Value = -0f;
-            Assert.AreEqual(0f, secureFloat.Value, 0.0001f); // -0.0 bit pattern XOR round-trips to -0.0
+            Assert.AreEqual(0f, secureFloat.Value, 0.0001f); // -0.0 equals 0.0, so this write is skipped as no change: the sign is not stored
+
+            // the sign bit that a first value carries survives the XOR storage
+            Assert.AreEqual(int.MinValue, System.BitConverter.SingleToInt32Bits(new SecureObservableFloat(-0f).Value), "-0.0 keeps its sign bit");
         }
 
         [Test]
@@ -732,36 +736,33 @@ namespace Nexus.Editor.Tests
         public void EncryptedStorageService_LongAndCachingBehavior()
         {
             var salt = "Test_Salt_LongAndCaching";
-            
-            // Clean up any old test run files
-            var storageTemp = new EncryptedStorageService(salt);
-            storageTemp.DeleteKey("CachedLongKey");
-            storageTemp.Save();
-            storageTemp.Dispose();
+            ForgetStore(salt); // a file an earlier run left
 
             var storage = new EncryptedStorageService(salt);
-            storage.AutoSave = false;
+            try
+            {
+                storage.AutoSave = false;
 
-            long bigVal = 987654321012345L;
-            storage.SetLong("CachedLongKey", bigVal);
+                long bigVal = 987654321012345L;
+                storage.SetLong("CachedLongKey", bigVal);
 
-            // Verify in-memory retrieval
-            Assert.AreEqual(bigVal, storage.GetLong("CachedLongKey"));
+                // Verify in-memory retrieval
+                Assert.AreEqual(bigVal, storage.GetLong("CachedLongKey"));
 
-            // Verify that the file doesn't exist on disk yet because AutoSave is false
-            var getFilePathMethod = typeof(EncryptedStorageService).GetMethod("GetFilePath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            var filePath = getFilePathMethod.Invoke(storage, new object[] { "CachedLongKey" }) as string;
-            
-            Assert.IsFalse(File.Exists(filePath), "File should not exist on disk before Save() is called");
+                // Verify that the file doesn't exist on disk yet because AutoSave is false
+                var getFilePathMethod = typeof(EncryptedStorageService).GetMethod("GetFilePath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                var filePath = getFilePathMethod.Invoke(storage, new object[] { "CachedLongKey" }) as string;
 
-            // Save and verify file exists
-            storage.Save();
-            Assert.IsTrue(File.Exists(filePath), "File should exist on disk after Save() is called");
+                Assert.IsFalse(File.Exists(filePath), "File should not exist on disk before Save() is called");
 
-            // Clean up
-            storage.DeleteKey("CachedLongKey");
-            Assert.IsFalse(File.Exists(filePath), "File should be deleted from disk");
-            storage.Dispose();
+                // Save and verify file exists
+                storage.Save();
+                Assert.IsTrue(File.Exists(filePath), "File should exist on disk after Save() is called");
+
+                storage.DeleteKey("CachedLongKey");
+                Assert.IsFalse(File.Exists(filePath), "File should be deleted from disk");
+            }
+            finally { storage.Dispose(); ForgetStore(salt); }
         }
 
         [Test]
@@ -769,44 +770,47 @@ namespace Nexus.Editor.Tests
         {
             const string salt = "Test_Salt_SaveVersionRace";
             const string key = "VersionedKey";
+            ForgetStore(salt);
             var storage = new EncryptedStorageService(salt) { AutoSave = false };
-            storage.DeleteKey(key);
-            storage.SetString(key, "old-value");
-
-            var writeLock = typeof(EncryptedStorageService).GetField("_writeLock",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(storage);
-            Assert.IsNotNull(writeLock);
-
-            var started = new ManualResetEventSlim(false);
-            var saver = new Thread(() =>
+            EncryptedStorageService reloaded = null;
+            try
             {
-                started.Set();
+                storage.SetString(key, "old-value");
+
+                var writeLock = typeof(EncryptedStorageService).GetField("_writeLock",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(storage);
+                Assert.IsNotNull(writeLock);
+
+                var started = new ManualResetEventSlim(false);
+                var saver = new Thread(() =>
+                {
+                    started.Set();
+                    storage.Save();
+                }) { IsBackground = true };
+
+                // Hold the write gate while Save starts.  The fixed implementation snapshots only
+                // after acquiring this gate; the old implementation snapshots old-value first,
+                // then blocks inside its per-key atomic write.  Updating the key while the saver
+                // is waiting deterministically exercises the stale-write/dirty-clear window.
+                lock (writeLock)
+                {
+                    saver.Start();
+                    Assert.IsTrue(started.Wait(1000));
+                    Assert.IsTrue(SpinWait.SpinUntil(
+                        () => (saver.ThreadState & ThreadState.WaitSleepJoin) != 0, 1000),
+                        "Save thread did not reach the serialized write gate.");
+                    storage.SetString(key, "new-value");
+                }
+
+                Assert.IsTrue(saver.Join(5000), "Save thread did not complete.");
                 storage.Save();
-            }) { IsBackground = true };
+                storage.Dispose();
 
-            // Hold the write gate while Save starts.  The fixed implementation snapshots only
-            // after acquiring this gate; the old implementation snapshots old-value first,
-            // then blocks inside its per-key atomic write.  Updating the key while the saver
-            // is waiting deterministically exercises the stale-write/dirty-clear window.
-            lock (writeLock)
-            {
-                saver.Start();
-                Assert.IsTrue(started.Wait(1000));
-                Assert.IsTrue(SpinWait.SpinUntil(
-                    () => (saver.ThreadState & ThreadState.WaitSleepJoin) != 0, 1000),
-                    "Save thread did not reach the serialized write gate.");
-                storage.SetString(key, "new-value");
+                reloaded = new EncryptedStorageService(salt);
+                Assert.AreEqual("new-value", reloaded.GetString(key),
+                    "A newer SetString must remain dirty until its value reaches disk.");
             }
-
-            Assert.IsTrue(saver.Join(5000), "Save thread did not complete.");
-            storage.Save();
-            storage.Dispose();
-
-            var reloaded = new EncryptedStorageService(salt);
-            Assert.AreEqual("new-value", reloaded.GetString(key),
-                "A newer SetString must remain dirty until its value reaches disk.");
-            reloaded.DeleteKey(key);
-            reloaded.Dispose();
+            finally { storage.Dispose(); reloaded?.Dispose(); ForgetStore(salt); }
         }
 
         // Issue #147: a value that failed its check and a key never written both returned the default, so a game could not tell a

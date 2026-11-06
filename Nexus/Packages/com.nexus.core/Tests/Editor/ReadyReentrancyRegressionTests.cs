@@ -58,6 +58,9 @@ namespace Nexus.Editor.Tests
 
     public class ReadyReentrancyRegressionTests
     {
+        // The automatic-attachment test reads the static registry as the only context: a context another fixture leaked must not fail it
+        [SetUp] public void Reset() => NexusRuntime.Reset();
+
         private static Context BootImmediateContext(string name)
         {
             var boot = ContextFactory.StartAsync(name, _ => { });

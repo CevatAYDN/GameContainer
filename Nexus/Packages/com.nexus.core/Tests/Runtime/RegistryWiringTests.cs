@@ -55,7 +55,7 @@ namespace Nexus.Tests.Runtime
         }
 
         [Test]
-        public void SignalBus_Unsubscribe_DuringDispatch_DeferredToUnwind()
+        public void SignalBus_Unsubscribe_DuringDispatch_SiblingDisposedMidDispatchNeverFires()
         {
             using var di = new NexusDI();
             var bus = new SignalBus(di, new CommandPoolManager(di), new MockContext());

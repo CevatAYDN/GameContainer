@@ -21,7 +21,7 @@ tests (`Tests/Editor/CrossBoundaryTests.cs`, `Tests/Editor/MediatorBindingTests.
 | `Bind(X).To<Cmd>().Once()` | `BindCommandOnce` / `BindAsyncCommandOnce` / `.Once()` | ✅ Closed (`BinderSuite` ON1–ON5, ONC1–ONC2) |
 | Polymorphic binding (`Bind<A>().Bind<B>().To<Impl>()`) | `BindMultiple<T1,T2[,T3],TImpl>()` (shared singleton) | ✅ Closed (`BinderSuite` PM1–PM3) |
 | `crossContextInjectionBinder` | `BindCrossBoundary<TInterface,TImpl>()` + `ResolveCrossBoundary<T>()` | ✅ Closed (`CrossBoundaryTests` CB1–CB8) |
-| `ToAbstraction<IMediator>()` | `[Mediator(typeof(Concrete), typeof(IMediator))]` | ✅ Closed (`MediatorBindingTests` MA1–MA8) |
+| `ToAbstraction<IMediator>()` | `[Mediator(typeof(Concrete), typeof(IMediator))]` | ✅ Closed (`MediatorBindingTests` MA1–MA6) |
 | `PostContexts` (once all contexts are ready) | `IPostContextLifecycle` + `NexusRuntime.FinalizeInitializationAsync()` | ✅ Closed (`PostContextTests` PC1–PC5) |
 
 The sections below examine the areas where Strange is **still different** and the

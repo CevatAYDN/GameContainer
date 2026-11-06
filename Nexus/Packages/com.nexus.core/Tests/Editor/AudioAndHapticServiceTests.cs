@@ -12,15 +12,25 @@ namespace Nexus.Editor.Tests
     {
         private class TestAudioRootProvider : IAudioRootProvider
         {
+            internal static readonly List<GameObject> Roots = new List<GameObject>();
             private GameObject _root;
 
             public GameObject GetOrCreateRoot()
             {
                 if (_root != null) return _root;
                 _root = new GameObject("[Nexus_AudioService_Test]");
+                Roots.Add(_root);
                 // Skip DontDestroyOnLoad for EditMode tests
                 return _root;
             }
+        }
+
+        // The service's Dispose does not destroy a provider's root, so the roots no test destroyed stay in the editor scene
+        [TearDown]
+        public void DestroyTheRoots()
+        {
+            foreach (var root in TestAudioRootProvider.Roots) if (root != null) UnityEngine.Object.DestroyImmediate(root);
+            TestAudioRootProvider.Roots.Clear();
         }
 
         [Test]
