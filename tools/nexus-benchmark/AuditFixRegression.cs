@@ -321,6 +321,7 @@ namespace NexusBench
             Test_SaveThrottler_FailureBackoff_And_RetryCap();
             Test_SaveThrottler_DisposeDuringInFlightSave_PersistsNewerRequest();
             Test_SaveThrottler_DisposeDuringInFlightSave_FailingNewerRequestRunsOnce();
+            Test_SaveThrottler_RequestsDuringDisposalRetry_AreExplicitlyRejected();
             Test_ObservableList_Reentrant_Notifications_Queued();
             Test_ObservableList_ConcurrentReentrant_DrainIsolation();
             Test_GameSaveManager_ConcurrentSaves_Serialized();
@@ -712,6 +713,76 @@ namespace NexusBench
             Check("SAVE-01b. SaveThrottler_DisposeDuringInFlightSave_FailingNewerRequestRunsOnce",
                 inFlight && joined && attempts == 1,
                 $"attempts={attempts} (expected 1), inFlight={inFlight}, joined={joined}");
+        }
+
+        // A second owner's flush holds disposal open while the first owner's handoff runs.
+        private static void Test_SaveThrottler_RequestsDuringDisposalRetry_AreExplicitlyRejected()
+        {
+            bool passed = true;
+            string details = "";
+            foreach (bool failRetry in new[] { false, true })
+            {
+                var throttler = new SaveThrottler(null, TimeSpan.FromSeconds(1));
+                using var firstEntered = new ManualResetEventSlim(false);
+                using var releaseFirst = new ManualResetEventSlim(false);
+                using var retryEntered = new ManualResetEventSlim(false);
+                using var releaseRetry = new ManualResetEventSlim(false);
+                using var disposeEntered = new ManualResetEventSlim(false);
+                using var releaseDispose = new ManualResetEventSlim(false);
+                int blockerRuns = 0, retryRuns = 0, lateRuns = 0, rejections = 0;
+                Action<string, string> listener = (level, message) =>
+                {
+                    if (level == "Warning" && message.Contains("[SaveThrottler]") && message.Contains("rejected"))
+                        Interlocked.Increment(ref rejections);
+                };
+                var saver = new Thread(() => throttler.ForceSave("owner", () =>
+                {
+                    firstEntered.Set();
+                    releaseFirst.Wait(5000);
+                }));
+                var disposer = new Thread(throttler.OnDispose);
+                bool firstReady = false, disposing = false, retryReady = false, returnedBeforeDispose = false;
+                bool saverJoined, disposerJoined;
+                UnityEngine.Debug.Logged += listener;
+                try
+                {
+                    saver.Start();
+                    firstReady = firstEntered.Wait(5000);
+                    throttler.ForceSave("owner", () =>
+                    {
+                        Interlocked.Increment(ref retryRuns);
+                        retryEntered.Set();
+                        releaseRetry.Wait(5000);
+                        if (failRetry) throw new System.IO.IOException("disk full");
+                    });
+                    throttler.ForceSave("blocker", () =>
+                    {
+                        if (Interlocked.Increment(ref blockerRuns) == 1) return;
+                        disposeEntered.Set();
+                        releaseDispose.Wait(5000);
+                    });
+                    disposer.Start();
+                    disposing = disposeEntered.Wait(5000);
+                    releaseFirst.Set();
+                    retryReady = retryEntered.Wait(5000);
+                    throttler.ForceSave("owner", () => Interlocked.Increment(ref lateRuns));
+                    throttler.TryRequestSave("owner", () => Interlocked.Increment(ref lateRuns));
+                    returnedBeforeDispose = disposer.IsAlive;
+                }
+                finally
+                {
+                    releaseFirst.Set();
+                    releaseRetry.Set();
+                    saverJoined = saver.Join(5000);
+                    releaseDispose.Set();
+                    disposerJoined = disposer.Join(5000);
+                    UnityEngine.Debug.Logged -= listener;
+                }
+                passed &= firstReady && disposing && retryReady && returnedBeforeDispose
+                    && saverJoined && disposerJoined && retryRuns == 1 && lateRuns == 0 && rejections == 2;
+                details += $"failRetry={failRetry}: retryRuns={retryRuns}, lateRuns={lateRuns}, rejections={rejections}; ";
+            }
+            Check("SAVE-01c. SaveThrottler_RequestsDuringDisposalRetry_AreExplicitlyRejected", passed, details);
         }
 
         // ── M-4 ────────────────────────────────────────────────────────────────

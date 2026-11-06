@@ -42,7 +42,7 @@ namespace Nexus.Core.Services
         private ISignalSubscription _pauseSubscription;
         private bool _focusHooked;
         // Guarded by _lock. Set before OnDispose's flush: a save in flight on another thread then writes the newer request
-        // that arrived during it, since no Tick or Flush will (issue #323).
+        // accepted before disposal, since no Tick or Flush will (issue #323). Also closes request admission (#333).
         private bool _disposing;
 
         private readonly float _throttleSeconds = 2f;
@@ -176,6 +176,11 @@ namespace Nexus.Core.Services
             bool flushNow;
             lock (_lock)
             {
+                if (_disposing)
+                {
+                    NexusLog.WarnAlways("[SaveThrottler] Save request rejected: disposal has started.");
+                    return;
+                }
                 slot = GetSlotLocked(owner);
                 slot.LastAction = saveAction;
                 slot.RequestVersion++;
@@ -248,6 +253,11 @@ namespace Nexus.Core.Services
             SaveSlot slot;
             lock (_lock)
             {
+                if (_disposing)
+                {
+                    NexusLog.WarnAlways("[SaveThrottler] Save request rejected: disposal has started.");
+                    return;
+                }
                 slot = GetSlotLocked(owner);
                 slot.LastAction = saveAction;
                 slot.RequestVersion++;
