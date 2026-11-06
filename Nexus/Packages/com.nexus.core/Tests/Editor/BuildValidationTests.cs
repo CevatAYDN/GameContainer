@@ -186,21 +186,25 @@ namespace Nexus.Editor.Tests
         [Test]
         public void ValidateHandlers_DetectsViolationsInTestAssembly()
         {
-            var method = typeof(BuildValidation).GetMethod("ValidateHandlers", BindingFlags.NonPublic | BindingFlags.Static);
-            Assert.IsNotNull(method, "ValidateHandlers method not found via reflection.");
+            // The other fixtures of this class (the Detached ones, the [RegisterCommand] ones) add errors of their own, so a count
+            // would stay satisfied while a rule stopped firing: each documented rule must name its own fixture (#311).
+            var errors = new List<string>();
+            BuildValidation.ErrorLogger = errors.Add;
+            var args = new object[] { 0, 0 };
+            GetPrivateStatic("ValidateHandlers").Invoke(null, args);
 
-            object[] args = new object[] { 0, 0 };
-            method.Invoke(null, args);
-
-            int errorCount = (int)args[0];
-            int warningCount = (int)args[1];
-
-            // Expecting:
-            // 1. Mixed mode error on MixedSignal (Sequential and Concurrent)
-            // 2. Exclusive mode error on ExclusiveSignal (2 handlers registered as Exclusive)
-            // 3. Priority tie error on EqualPrioritySignal (Priority 5 on both)
-            // 4. Concurrent write error on ConcurrentWriteCommand (injects writable ISomeModel)
-            Assert.GreaterOrEqual(errorCount, 4, $"Expected at least 4 errors from handler validation, got {errorCount}.");
+            string all = string.Join("\n", errors);
+            // the count is what fails the build: every logged error is counted, as the old assertion required (at least four)
+            Assert.AreEqual(errors.Count, (int)args[0], "each logged error counts toward the failure:\n" + all);
+            Assert.GreaterOrEqual((int)args[0], 4, all);
+            Assert.IsTrue(errors.Exists(e => e.Contains("Mixed-Mode Violation") && e.Contains(typeof(MixedSignal).FullName)),
+                "Sequential and Concurrent on MixedSignal:\n" + all);
+            Assert.IsTrue(errors.Exists(e => e.Contains("Exclusive Mode Violation") && e.Contains(typeof(ExclusiveSignal).FullName)),
+                "two Exclusive handlers on ExclusiveSignal:\n" + all);
+            Assert.IsTrue(errors.Exists(e => e.Contains("Equal Priority Violation") && e.Contains(typeof(EqualPrioritySignal).FullName)),
+                "priority 5 on both handlers of EqualPrioritySignal:\n" + all);
+            Assert.IsTrue(errors.Exists(e => e.Contains("Concurrent Command Model Write Violation") && e.Contains(typeof(ConcurrentWriteCommand).FullName)),
+                "ConcurrentWriteCommand injects the writable ISomeModel:\n" + all);
         }
 
         [Test]
