@@ -88,6 +88,18 @@ namespace NexusBench
             public void Dispose() => Disposed++;
         }
 
+        private sealed class LateDependency { }
+
+        // fails its [PostConstruct] after injection left a member pending, and publishes itself first, as a registry would
+        private sealed class BrokenPendingResource : IDisposable
+        {
+            public static BrokenPendingResource Last;
+            public bool Disposed;
+            [Inject] public LateDependency Late;
+            [PostConstruct] private void Init() { Last = this; throw new InvalidOperationException("BrokenPendingResource.Init failed"); }
+            public void Dispose() => Disposed = true;
+        }
+
         private sealed class LifetimeProbeLifecycle : IContextLifecycle
         {
             public ContextBuilder Builder;
@@ -128,6 +140,7 @@ namespace NexusBench
             Test_BindInstance_DisposeWithContainer_False_LeavesInstanceAlive();
             Test_ContextBuilder_LifetimeOverloads_ConfigureAndDispose();
             Test_Scoped_PostConstructThrows_InstanceIsEnded_AndErrorReachesCaller();
+            Test_Scoped_EndedAfterAFailedPostConstruct_IsNotReinjected();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -434,6 +447,35 @@ namespace NexusBench
                 try { root.Dispose(); } catch (Exception ex) { Console.WriteLine($"[LifetimeScope] root.Dispose teardown: {ex.Message}"); }
             }
             Report("LT10. Scoped_PostConstructThrows_InstanceIsEnded_AndErrorReachesCaller", ok, detail);
+        }
+
+        // An instance ended because its [PostConstruct] threw kept its pending-injection record, so a later ReInjectAll
+        // injected into the disposed object (issue #325, found by the GPT 6.1 Sol review of the fix).
+        private static void Test_Scoped_EndedAfterAFailedPostConstruct_IsNotReinjected()
+        {
+            BrokenPendingResource.Last = null;
+            var root = new NexusDI();
+            bool ok = false;
+            string detail;
+            try
+            {
+                root.Bind<BrokenPendingResource>(Lifetime.Scoped);
+                try { root.Resolve<BrokenPendingResource>(); } catch (InvalidOperationException) { }
+                var ended = BrokenPendingResource.Last;
+                root.Bind<LateDependency>(Lifetime.Singleton);
+                int reinjected = root.ReInjectAll();
+                ok = ended != null && ended.Disposed && reinjected == 0 && ended.Late == null;
+                detail = $"ended={ended != null} disposed={ended?.Disposed} ReInjectAll={reinjected} field injected after dispose={ended?.Late != null} (expect True True 0 False)";
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            finally
+            {
+                try { root.Dispose(); } catch (Exception ex) { Console.WriteLine($"[LifetimeScope] root.Dispose teardown: {ex.Message}"); }
+            }
+            Report("LT11. Scoped_EndedAfterAFailedPostConstruct_IsNotReinjected", ok, detail);
         }
 
         private static string ResolveError(NexusDI di)

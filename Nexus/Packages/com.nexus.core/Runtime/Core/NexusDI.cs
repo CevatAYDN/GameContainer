@@ -2867,6 +2867,8 @@ namespace Nexus.Core
             try { _injector.Inject(instance); }
             catch
             {
+                // a member left pending before the throw would otherwise be injected into the ended instance by ReInjectAll
+                lock (_pendingInjectionsLock) _pendingInjections?.Remove(instance);
                 var asyncOnly = EndSingleton(instance, awaitable: false);
                 if (asyncOnly != null) _ = DisposeAllAsyncInBackground(new[] { asyncOnly });
                 throw;
