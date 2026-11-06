@@ -192,6 +192,7 @@ everything under Unreleased is in the repository but not yet in a tagged package
   - No time was measured. The inspector and status bar changes have no test, because a test of "a call did not happen" needs a seam the code does not have.
 
 ### Removed
+- **Removed `ErrorEntry.Metadata`** (issue #313). Nothing wrote it; the package, `tools/` and the four known games do not read it (BREAKING_CHANGES 0.7.0).
 - **Runtime members nobody calls** (issue #238).
   - **Public:**
     - `NexusDI.WaitForBackgroundDispose`, with the task field it read; `Dispose()` still disposes the `IAsyncDisposable` singletons on the thread pool;

@@ -428,6 +428,7 @@ Features marked as beta:
 - Issue #135 added `IAdService.OnAdImpression`: a class that implements `IAdService` adds the event.
 - Issue #294: `BindCommand`, `BindCommandOnce`, their async forms and `CommandRegistry.RegisterCommand` refuse a type that implements only the non-generic `ICommand` or `IAsyncCommand`; it implements `ICommand<TSignal>` or `IAsyncCommand<TSignal>`.
 - Issue #299: `RegisterCompositeCommand` refuses a type that implements none of `ICompositeCommand`, `IAsyncCompositeCommand`, `ICommand` and `IAsyncCommand`, and an async-only type registered as sync.
+- Issue #313 removed `ErrorEntry.Metadata`, which nothing wrote.
 
 **Migration:** See [MIGRATION.md](MIGRATION.md#version-060--070-unreleased).
 

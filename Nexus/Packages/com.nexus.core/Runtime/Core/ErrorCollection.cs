@@ -45,7 +45,6 @@ namespace Nexus.Core
             public DateTime Timestamp { get; set; }
             public int Count { get; set; }
             public string RelatedType { get; set; }
-            public Dictionary<string, string> Metadata { get; set; } = new();
         }
 
         // ConcurrentQueue guarantees FIFO ordering: when the cap is exceeded the OLDEST

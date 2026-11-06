@@ -63,6 +63,8 @@ Issue #299: `RegisterCompositeCommand` throws `ArgumentException` for a type the
 implements only `ICommand<T>` or `IAsyncCommand<T>`) and for an async-only type registered as sync. No known game
 registers a composite command.
 
+Issue #313 removed `ErrorEntry.Metadata`; nothing wrote it, and no known game reads it.
+
 #### Regenerate the binder for the constructor check
 
 Issue #290: the editor binder now writes each constructor factory's parameters, and NexusDI drops a factory written for
