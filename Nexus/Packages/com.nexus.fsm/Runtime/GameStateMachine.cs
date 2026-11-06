@@ -215,8 +215,7 @@ namespace Nexus.Core.FSM
             // R2026-FIX: Cancel() on a token source that the superseded flow's finally
             // block has ALREADY disposed throws ObjectDisposedException. The window is
             // narrow (Exchange → Cancel vs the old flow's finally → Dispose) but real.
-            try { superseded?.Cancel(); }
-            catch (ObjectDisposedException) { /* superseded flow already completed and disposed its source */ }
+            CancelAndLog(superseded);
             var token = myCts.Token;
 
             if (token.IsCancellationRequested)
@@ -227,7 +226,7 @@ namespace Nexus.Core.FSM
                 // ObjectDisposedException and would permanently bypass the same-state
                 // fast path (line 177). Clear our own slot before returning.
                 Interlocked.CompareExchange(ref _stateCts, null, myCts);
-                myCts.Cancel();
+                CancelAndLog(myCts);
                 myCts.Dispose();
                 return;
             }
@@ -356,10 +355,20 @@ namespace Nexus.Core.FSM
                 // the old sequence check-then-Exchange was check-then-act and could null
                 // out a NEWER transition's freshly published token.
                 Interlocked.CompareExchange(ref _stateCts, null, myCts);
-                myCts.Cancel();
+                CancelAndLog(myCts);
                 myCts.Dispose();
                 done.TrySetResult(true);
             }
+        }
+
+        // A callback registered on a transition token can throw from Cancel(), after every callback has run. Unguarded,
+        // that skipped the disposal and the queue completion (every later transition waited forever), faulted the
+        // transition that superseded the running one, and made Dispose throw: it is logged instead (issue #321).
+        private static void CancelAndLog(CancellationTokenSource cts)
+        {
+            try { cts?.Cancel(); }
+            catch (ObjectDisposedException) { /* the flow that owns the source already completed and disposed it */ }
+            catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
         }
 
         // The transition token is cancelled by now, so the exit gets its own short timeout, as on Dispose (issue #192).
@@ -439,8 +448,7 @@ namespace Nexus.Core.FSM
             // its finally before Dispose() drained the slot — Cancel() on it throws.
             // The transition that owns the source disposes it in its finally; disposing it here made that
             // finally's Cancel throw (issue #192).
-            try { cts?.Cancel(); }
-            catch (ObjectDisposedException) { /* superseded flow already disposed its source */ }
+            CancelAndLog(cts);
 
             // Best-effort exit hook: give the current state a chance to clean up
             // (fire-and-forget with error capture and a short timeout, mirroring the

@@ -305,6 +305,7 @@ namespace NexusBench
             Test_CrossContext_MultiHierarchy_Routing_ZeroGC();
             Test_CommandPool_MultiType_GetReturn_ZeroGC();
             Test_GameStateMachine_10k_AsyncTransitions_Stress();
+            Test_GameStateMachine_ThrowingCancellationCallback_DoesNotStallTheNextTransition();
             Test_HybridQueue_MultiThreaded_8Workers_Stress();
             Test_PluginSystem_DecoratorChain_Interceptor_Stress();
             Test_DecoratorChain_Order_And_CacheInvalidation();
@@ -794,6 +795,100 @@ namespace NexusBench
             Console.WriteLine($"[Nexus Architecture Stress] FSM 10,000 State Transitions: {nsPerTransition:F2} ns/transition");
             Report("6. GameStateMachine_10k_AsyncTransitions_Stress", nsPerTransition < 50000,
                 $"{nsPerTransition:F2} ns/transition over {transitions} transitions (limit <50000ns)");
+        }
+
+        private abstract class FsmCounted : IGameState
+        {
+            public int Enters, Exits;
+            public virtual ValueTask OnEnterAsync(object args, CancellationToken ct) { Enters++; return default; }
+            public ValueTask OnExitAsync(CancellationToken ct) { Exits++; return default; }
+            public void OnTick(float deltaTime) { }
+        }
+        private sealed class FsmPlainState : FsmCounted { }
+
+        // Registers a callback on the transition token that throws once the token is cancelled.
+        private sealed class FsmThrowingCallbackState : FsmCounted
+        {
+            public TaskCompletionSource<bool> Gate; // null: the enter returns at once
+            public override ValueTask OnEnterAsync(object args, CancellationToken ct)
+            {
+                Enters++;
+                ct.Register(() => throw new InvalidOperationException("fsm02-callback"));
+                return Gate == null ? default : new ValueTask(Gate.Task);
+            }
+        }
+
+        // Bounded: a stalled transition must give a FAIL line, never hang the harness (the pre-commit hook).
+        private static string FsmOutcome(Task task)
+        {
+            try { return task.Wait(TimeSpan.FromSeconds(2)) ? "completed" : "stalled"; }
+            catch (AggregateException ex) { return "faulted:" + ex.InnerException?.GetType().Name; }
+        }
+
+        // ---------------------------------------------------------------------
+        // 6b. A cancellation callback that throws made CancellationTokenSource.Cancel throw: the finished transition
+        //     never completed the queue (every later transition waited forever), the transition that superseded a
+        //     running one faulted, and Dispose threw (issue #321).
+        // ---------------------------------------------------------------------
+        private static void Test_GameStateMachine_ThrowingCancellationCallback_DoesNotStallTheNextTransition()
+        {
+            var ctx = NexusTestHarness.CreateContext();
+            var logger = new CaptureLogger();
+            ctx.Context.Container.BindInstance<ILoggerService>(logger);
+            try
+            {
+                // a. The callback throws in the finished transition's finally.
+                var fsm = new GameStateMachine();
+                var thrower = new FsmThrowingCallbackState();
+                var plain = new FsmPlainState();
+                fsm.RegisterState(thrower);
+                fsm.RegisterState(plain);
+                string first = FsmOutcome(fsm.ChangeStateAsync<FsmThrowingCallbackState>());
+                string next = FsmOutcome(fsm.ChangeStateAsync<FsmPlainState>());
+                bool okA = first == "completed" && next == "completed" && ReferenceEquals(fsm.CurrentState, plain);
+                fsm.Dispose();
+
+                // b. The callback throws when a newer transition supersedes the running one.
+                fsm = new GameStateMachine();
+                var parked = new FsmThrowingCallbackState { Gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously) };
+                plain = new FsmPlainState();
+                fsm.RegisterState(parked);
+                fsm.RegisterState(plain);
+                var supersededTask = fsm.ChangeStateAsync<FsmThrowingCallbackState>();
+                var newestTask = fsm.ChangeStateAsync<FsmPlainState>();
+                parked.Gate.SetResult(true);
+                string superseded = FsmOutcome(supersededTask), newest = FsmOutcome(newestTask);
+                int exitsB = parked.Exits;
+                bool okB = superseded == "completed" && newest == "completed"
+                    && ReferenceEquals(fsm.CurrentState, plain) && exitsB == 1;
+                fsm.Dispose();
+
+                // c. The callback throws when Dispose cancels the running transition.
+                fsm = new GameStateMachine();
+                parked = new FsmThrowingCallbackState { Gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously) };
+                fsm.RegisterState(parked);
+                var disposedTask = fsm.ChangeStateAsync<FsmThrowingCallbackState>();
+                string dispose = "returned";
+                try { fsm.Dispose(); } catch (Exception ex) { dispose = "threw:" + ex.GetType().Name; }
+                parked.Gate.SetResult(true);
+                string disposed = FsmOutcome(disposedTask);
+                bool okC = dispose == "returned" && disposed == "completed" && parked.Exits == 1 && fsm.CurrentState == null;
+
+                int logged = logger.Errors.FindAll(e => e.Contains("fsm02-callback")).Count;
+                Report("6b. GameStateMachine_A_Throwing_Cancellation_Callback_Is_Logged_And_Does_Not_Stall_The_Next_Transition",
+                    okA && okB && okC && logged == 3,
+                    $"finished: first={first} next={next} | superseded: old={superseded} new={newest} exits={exitsB} | " +
+                    $"dispose={dispose} transition={disposed} exits={parked.Exits} | callback failures logged={logged} (want 3)");
+            }
+            catch (Exception ex)
+            {
+                Report("6b. GameStateMachine_A_Throwing_Cancellation_Callback_Is_Logged_And_Does_Not_Stall_The_Next_Transition",
+                    false, $"threw {ex.GetType().Name}: {ex.Message}");
+            }
+            finally
+            {
+                ctx.Dispose();
+            }
         }
 
         // ---------------------------------------------------------------------
