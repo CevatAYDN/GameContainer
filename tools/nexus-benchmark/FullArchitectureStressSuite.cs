@@ -306,6 +306,7 @@ namespace NexusBench
             Test_CommandPool_MultiType_GetReturn_ZeroGC();
             Test_GameStateMachine_10k_AsyncTransitions_Stress();
             Test_GameStateMachine_ThrowingCancellationCallback_DoesNotStallTheNextTransition();
+            Test_GameStateMachine_CallerCancelledDuringAnEnter_DoesNotCommitTheState();
             Test_HybridQueue_MultiThreaded_8Workers_Stress();
             Test_PluginSystem_DecoratorChain_Interceptor_Stress();
             Test_DecoratorChain_Order_And_CacheInvalidation();
@@ -805,6 +806,20 @@ namespace NexusBench
             public void OnTick(float deltaTime) { }
         }
         private sealed class FsmPlainState : FsmCounted { }
+        private sealed class FsmErrorState : FsmCounted { } // its enter ignores the token
+
+        // Ignores the token: returns when Gate opens, then throws Throw when it is set.
+        private sealed class FsmGatedState : FsmCounted
+        {
+            public readonly TaskCompletionSource<bool> Gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            public Exception Throw;
+            public override async ValueTask OnEnterAsync(object args, CancellationToken ct)
+            {
+                Enters++;
+                await Gate.Task;
+                if (Throw != null) throw Throw;
+            }
+        }
 
         // Registers a callback on the transition token that throws once the token is cancelled.
         private sealed class FsmThrowingCallbackState : FsmCounted
@@ -883,6 +898,73 @@ namespace NexusBench
             catch (Exception ex)
             {
                 Report("6b. GameStateMachine_A_Throwing_Cancellation_Callback_Is_Logged_And_Does_Not_Stall_The_Next_Transition",
+                    false, $"threw {ex.GetType().Name}: {ex.Message}");
+            }
+            finally
+            {
+                ctx.Dispose();
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // 6c. A caller's token cancelled while a state's enter ignored it: the transition committed Success, while
+        //     the checks before the exit and before the enter treat the same token as Superseded (issue #322).
+        // ---------------------------------------------------------------------
+        private static void Test_GameStateMachine_CallerCancelledDuringAnEnter_DoesNotCommitTheState()
+        {
+            var ctx = NexusTestHarness.CreateContext();
+            var logger = new CaptureLogger(); // keeps the enter failure of case b out of the console
+            ctx.Context.Container.BindInstance<ILoggerService>(logger);
+            try
+            {
+                // a. The enter returns normally after the caller cancelled.
+                var fsm = new GameStateMachine();
+                var gated = new FsmGatedState();
+                fsm.RegisterState(gated);
+                using (var cts = new CancellationTokenSource())
+                {
+                    var transition = fsm.ChangeStateAsync(typeof(FsmGatedState), cts.Token);
+                    cts.Cancel();
+                    gated.Gate.SetResult(true);
+                    string outcome = FsmOutcome(transition);
+                    var history = fsm.GetRecentTransitions();
+                    var status = history[history.Count - 1].Status;
+                    string currentA = fsm.CurrentState?.GetType().Name ?? "null";
+                    int exitsA = gated.Exits; // before Dispose, which exits a committed state
+                    bool okA = outcome == "completed" && fsm.CurrentState == null
+                        && status == StateTransitionStatus.Superseded && exitsA == 1;
+                    fsm.Dispose();
+
+                    // b. The enter fails after the caller cancelled; the error state's enter ignores the token.
+                    fsm = new GameStateMachine();
+                    var failing = new FsmGatedState { Throw = new InvalidOperationException("fsm01-enter") };
+                    var error = new FsmErrorState();
+                    fsm.RegisterState(failing);
+                    fsm.RegisterState(error);
+                    fsm.SetErrorState<FsmErrorState>();
+                    using var cts2 = new CancellationTokenSource();
+                    var failed = fsm.ChangeStateAsync(typeof(FsmGatedState), cts2.Token);
+                    cts2.Cancel();
+                    failing.Gate.SetResult(true);
+                    string failedOutcome = FsmOutcome(failed);
+                    history = fsm.GetRecentTransitions();
+                    var failedStatus = history[history.Count - 1].Status;
+                    string currentB = fsm.CurrentState?.GetType().Name ?? "null";
+                    int errorExits = error.Exits;
+                    bool okB = failedOutcome == "completed" && fsm.CurrentState == null
+                        && error.Enters == 1 && errorExits == 1 && failedStatus == StateTransitionStatus.Failed;
+                    fsm.Dispose();
+
+                    Report("6c. GameStateMachine_A_Caller_Cancelled_During_An_Enter_That_Ignores_It_Does_Not_Commit_The_State",
+                        okA && okB,
+                        $"enter returned: outcome={outcome} current={currentA} status={status} exits={exitsA} | " +
+                        $"enter failed: outcome={failedOutcome} current={currentB} status={failedStatus} errorEnters={error.Enters} errorExits={errorExits} " +
+                        "(want null/Superseded/1, null/Failed/1/1)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Report("6c. GameStateMachine_A_Caller_Cancelled_During_An_Enter_That_Ignores_It_Does_Not_Commit_The_State",
                     false, $"threw {ex.GetType().Name}: {ex.Message}");
             }
             finally

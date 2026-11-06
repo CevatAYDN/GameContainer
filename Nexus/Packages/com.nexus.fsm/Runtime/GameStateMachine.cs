@@ -311,7 +311,9 @@ namespace Nexus.Core.FSM
                         try
                         {
                             await errorState.OnEnterAsync(ex, token);
-                            if (mySequence == Volatile.Read(ref _transitionSequence))
+                            // An error state that ignored the caller's cancelled token is exited, as one that honours it
+                            // is below; the transition stays Failed, the machine without a state (issue #322).
+                            if (mySequence == Volatile.Read(ref _transitionSequence) && !token.IsCancellationRequested)
                                 Volatile.Write(ref _currentState, errorState);
                             else
                                 await ExitSupersededAsync(errorState);
@@ -333,8 +335,11 @@ namespace Nexus.Core.FSM
                 }
 
                 // A state that ignores cancellation may return from OnEnterAsync normally after a newer transition
-                // superseded us: it is exited here, and the history does not claim a Success (issue #192).
-                if (mySequence != Volatile.Read(ref _transitionSequence))
+                // superseded us: it is exited here, and the history does not claim a Success (issue #192). So is one that
+                // ignored the caller's cancelled token, as the checks before the exit and the enter treat it; a Failed
+                // transition keeps its status, its error state was handled above (issue #322).
+                if (mySequence != Volatile.Read(ref _transitionSequence)
+                    || (status == StateTransitionStatus.Success && token.IsCancellationRequested))
                 {
                     if (status == StateTransitionStatus.Success) await ExitSupersededAsync(nextState);
                     RecordTransition(fromName, toName, argsSummary, StateTransitionStatus.Superseded, startTime);
