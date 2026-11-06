@@ -1442,8 +1442,29 @@ namespace Nexus.Editor
     {
         public int callbackOrder => 0;
 
+        /// <summary>
+        /// The warning for a build that is not a development build and has NEXUS_DEBUG among its scripting defines, else null.
+        /// NEXUS_DEBUG compiles causal tracing into the player (an event and a profiler marker per command), outside the
+        /// allocation contract the release gates prove with the define absent. The Tracer tab's Enable button writes it into
+        /// the player settings, where it stayed for the next release build (#306).
+        /// </summary>
+        internal static string TracingDefineWarning(string scriptingDefines, bool developmentBuild)
+        {
+            if (developmentBuild || string.IsNullOrEmpty(scriptingDefines)) return null;
+            foreach (var define in scriptingDefines.Split(';'))
+                if (define.Trim() == "NEXUS_DEBUG")
+                    return "[Nexus Warning] This is not a development build, but NEXUS_DEBUG is among its scripting define symbols: the player records causal trace events for every signal and command, and tracing allocates. Remove it with the Tracer tab's Disable button (Nexus window, Live) or in Player Settings > Scripting Define Symbols.";
+            return null;
+        }
+
         public void OnPreprocessBuild(UnityEditor.Build.Reporting.BuildReport report)
         {
+            // The pre-build hook tests call this without a report.
+            var tracingWarning = report == null ? null : TracingDefineWarning(
+                UnityEditor.PlayerSettings.GetScriptingDefineSymbols(UnityEditor.Build.NamedBuildTarget.FromBuildTargetGroup(report.summary.platformGroup)),
+                (report.summary.options & UnityEditor.BuildOptions.Development) != 0);
+            if (tracingWarning != null) UnityEngine.Debug.LogWarning(tracingWarning);
+
             bool disableValidation = NexusBinderBuildGuard.IsSet("NEXUS_DISABLE_VALIDATION");
             bool warnOnly = NexusBinderBuildGuard.IsSet("NEXUS_VALIDATION_WARN_ONLY");
 

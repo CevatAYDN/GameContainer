@@ -594,7 +594,10 @@ namespace Nexus.Editor
             s_strings["tracer_type_filter"] = " Type:";
             s_strings["tracer_status_filter"] = " Status:";
             s_strings["tracer_debug_disabled_title"] = "CAUSAL TRACING: NEXUS_DEBUG DISABLED";
-            s_strings["tracer_debug_disabled_desc"] = "Causal tracing is compiled out, so this tab records no events. Add NEXUS_DEBUG to record signals, commands and model changes with their parent/child chains.";
+            s_strings["tracer_debug_disabled_desc"] = "Causal tracing is compiled out, so this tab records no events. Add NEXUS_DEBUG to record signals, commands and model changes with their parent/child chains. The define is written to the player settings of the selected build target and stays there until you disable it; a release build that carries it warns.";
+            s_strings["tracer_debug_enabled_title"] = "CAUSAL TRACING: NEXUS_DEBUG ENABLED";
+            s_strings["tracer_debug_enabled_desc"] = "NEXUS_DEBUG is among the scripting define symbols of the selected build target, so the editor and every player built for it record trace events, which allocate. Disable it before a release build.";
+            s_strings["tracer_disable"] = "Disable Causal Tracing & Recompile";
 
 
             s_strings["gamemanager_open_wizard"] = "Open Context Wizard";

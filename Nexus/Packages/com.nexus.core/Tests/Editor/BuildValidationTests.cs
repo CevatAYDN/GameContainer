@@ -536,6 +536,29 @@ namespace Nexus.Editor.Tests
             serialized.ApplyModifiedPropertiesWithoutUndo();
         }
 
+        // #306: the Tracer tab's Enable button writes NEXUS_DEBUG into the player settings of the build target.
+        [Test]
+        public void ANonDevelopmentBuildThatCarriesNexusDebug_Warns_ButADevelopmentBuildAndALookalikeSymbolDoNot()
+        {
+            StringAssert.Contains("NEXUS_DEBUG", NexusBuildPreProcessor.TracingDefineWarning("UNITY_X;NEXUS_DEBUG;OTHER", developmentBuild: false));
+            Assert.IsNull(NexusBuildPreProcessor.TracingDefineWarning("UNITY_X;NEXUS_DEBUG;OTHER", developmentBuild: true));
+            Assert.IsNull(NexusBuildPreProcessor.TracingDefineWarning("NEXUS_DEBUG_LOG;MY_NEXUS_DEBUG", developmentBuild: false));
+            Assert.IsNull(NexusBuildPreProcessor.TracingDefineWarning("", developmentBuild: false));
+        }
+
+        [Test]
+        public void TracerDefine_EnableAddsNexusDebugOnce_AndDisableRemovesOnlyThatSymbol()
+        {
+            Assert.AreEqual("A;B;NEXUS_DEBUG", TracerPlugin.WithDebugDefine("A;B", enabled: true));
+            Assert.AreEqual("A;NEXUS_DEBUG;B", TracerPlugin.WithDebugDefine("A;NEXUS_DEBUG;B", enabled: true), "enabling it twice changes nothing");
+            Assert.AreEqual("A;B", TracerPlugin.WithDebugDefine("A;NEXUS_DEBUG;B", enabled: false));
+            Assert.AreEqual("NEXUS_DEBUG_LOG;A", TracerPlugin.WithDebugDefine("NEXUS_DEBUG_LOG;A", enabled: false), "a symbol that only starts with it stays");
+            Assert.AreEqual("", TracerPlugin.WithDebugDefine("", enabled: false));
+            // a padded entry carries the symbol too (the pre-build warning trims it): Disable removes it, Enable does not add a second
+            Assert.AreEqual("A", TracerPlugin.WithDebugDefine("A; NEXUS_DEBUG ", enabled: false));
+            Assert.AreEqual("A; NEXUS_DEBUG", TracerPlugin.WithDebugDefine("A; NEXUS_DEBUG", enabled: true));
+        }
+
         public sealed class OwnedScoreModel { }
 
         // #243: only " Name ", "Name;", "Name:" and "Name," counted, so every generic binding failed the build with a

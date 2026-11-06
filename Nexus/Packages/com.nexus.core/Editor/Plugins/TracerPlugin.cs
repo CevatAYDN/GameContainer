@@ -60,22 +60,16 @@ namespace Nexus.Editor
                 NexusEditorStyles.CardBgYellow,
                 NexusLang.Get("tracer_debug_disabled_desc"));
 
-            var enableBtn = NexusEditorStyles.CreateButton(NexusLang.Get("tracer_enable"), () =>
-            {
-                BuildTargetGroup group = EditorUserBuildSettings.selectedBuildTargetGroup;
-                var namedTarget = UnityEditor.Build.NamedBuildTarget.FromBuildTargetGroup(group);
-                string defines = PlayerSettings.GetScriptingDefineSymbols(namedTarget);
-                var defineList = new List<string>(defines.Split(';', StringSplitOptions.RemoveEmptyEntries));
-                if (!defineList.Contains("NEXUS_DEBUG"))
-                {
-                    defineList.Add("NEXUS_DEBUG");
-                    PlayerSettings.SetScriptingDefineSymbols(namedTarget, string.Join(";", defineList));
-                }
-                AssetDatabase.SaveAssets();
-                Debug.Log("[Nexus] Added NEXUS_DEBUG scripting define symbol. Recompiling...");
-            }, NexusEditorStyles.BtnBlue);
-
-            warningCard.Add(enableBtn);
+            warningCard.Add(NexusEditorStyles.CreateButton(NexusLang.Get("tracer_enable"), () => SetDebugDefine(true), NexusEditorStyles.BtnBlue));
+#else
+            // the define lives in the player settings of the selected build target, so it needs a way out (#306)
+            var enabledCard = NexusEditorStyles.CreateInfoCard(
+                _view,
+                NexusLang.Get("tracer_debug_enabled_title"),
+                NexusEditorStyles.AccentYellow,
+                NexusEditorStyles.CardBgYellow,
+                NexusLang.Get("tracer_debug_enabled_desc"));
+            enabledCard.Add(NexusEditorStyles.CreateButton(NexusLang.Get("tracer_disable"), () => SetDebugDefine(false), NexusEditorStyles.BtnRed));
 #endif
 
             // Filter Bar
@@ -170,6 +164,24 @@ namespace Nexus.Editor
             NexusTrace.AddSink(this);
 
             return _view;
+        }
+
+        /// <summary>The scripting define symbols with NEXUS_DEBUG added or removed; every other symbol stays, in its order.</summary>
+        internal static string WithDebugDefine(string defines, bool enabled)
+        {
+            var list = new List<string>((defines ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries));
+            // Trimmed, as the pre-build warning matches the token: "A; NEXUS_DEBUG" carries it and Disable must remove it.
+            if (enabled) { if (!list.Exists(define => define.Trim() == "NEXUS_DEBUG")) list.Add("NEXUS_DEBUG"); }
+            else list.RemoveAll(define => define.Trim() == "NEXUS_DEBUG");
+            return string.Join(";", list);
+        }
+
+        private static void SetDebugDefine(bool enabled)
+        {
+            var target = UnityEditor.Build.NamedBuildTarget.FromBuildTargetGroup(EditorUserBuildSettings.selectedBuildTargetGroup);
+            PlayerSettings.SetScriptingDefineSymbols(target, WithDebugDefine(PlayerSettings.GetScriptingDefineSymbols(target), enabled));
+            AssetDatabase.SaveAssets();
+            Debug.Log(enabled ? "[Nexus] Added NEXUS_DEBUG scripting define symbol. Recompiling..." : "[Nexus] Removed NEXUS_DEBUG scripting define symbol. Recompiling...");
         }
 
         public override void OnUpdate()
