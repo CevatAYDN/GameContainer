@@ -109,20 +109,24 @@ namespace Nexus.Core.Lifecycle
                         NexusRuntime.Logger?.LogException(ex);
                     }
                 }
-                // Also check IAsyncStoppable. The sync path cannot await, so we
-                // fire-and-forget the async stop via SafeAsyncRunner pattern. This ensures
-                // services implementing ONLY IAsyncStoppable (not IStoppable) still get
-                // their cleanup called on synchronous Dispose (e.g. Root.OnDestroy).
+                // Also check IAsyncStoppable. The sync path cannot await and must not block the main
+                // thread, so it starts the async stop and returns: services implementing ONLY
+                // IAsyncStoppable (not IStoppable) still get their cleanup called on synchronous
+                // Dispose (e.g. Root.OnDestroy), but only the part before their first incomplete
+                // await runs before the context disposes its singletons (#291).
                 else if (inst is IAsyncStoppable asyncStoppable)
                 {
                     try
                     {
-                        // Fire-and-forget the async stop — best-effort cleanup.
                         // StopAsyncInternal supplies its own fresh 5-second timeout token
                         // (independent of the context's already-cancelled _cts), giving the
                         // stop a bounded grace window to finish real cleanup work instead of
                         // observing immediate cancellation.
-                        _ = StopAsyncInternal(asyncStoppable);
+                        var stop = StopAsyncInternal(asyncStoppable);
+                        if (!stop.IsCompleted)
+                            Services.NexusLog.WarnAlways($"[Nexus] {inst.GetType().FullName}.StopAsync is still running while the context " +
+                                "disposes its singletons (synchronous Dispose: Root.OnDestroy, NexusRuntime.Reset). After its first await " +
+                                "it must not use injected services; Context.DisposeAsync awaits it before the singletons.");
                     }
                     catch (Exception ex)
                     {

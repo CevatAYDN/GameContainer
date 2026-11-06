@@ -41,7 +41,10 @@ namespace Nexus.Core
 
     /// <summary>
     /// Lifecycle interface for domain components that require asynchronous teardown cleanup.
-    /// Executed during <see cref="Context"/> disposal before singleton destruction.
+    /// <see cref="Context.DisposeAsync"/> awaits it (up to 5 s) before singleton destruction. The synchronous
+    /// <see cref="Context.Dispose"/> (Root.OnDestroy, NexusRuntime.Reset) does not block: it starts the stop, and the
+    /// part after the first incomplete await runs while or after the singletons are disposed, so that part must not use
+    /// injected services. A stop still running then is named in a warning (#291).
     /// </summary>
     [Preserve]
     public interface IAsyncStoppable

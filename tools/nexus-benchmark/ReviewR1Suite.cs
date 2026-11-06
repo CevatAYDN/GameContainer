@@ -29,6 +29,7 @@ namespace NexusBench
             Console.WriteLine("[ReviewR1] DI AND LIFECYCLE DEFECTS OF THE 2026-11-06 REVIEW");
             Console.WriteLine("===============================================================================");
             Guard("R1-01", StaleConstructorFactory_GivesWayToTheConstructorItNoLongerMatches);
+            Guard("R1-03", SyncDispose_NamesTheAsyncStopperStillRunningWhenItsSingletonsAreDisposed);
             Console.WriteLine(_failures == 0 ? "[ReviewR1] ALL PASSED" : $"[ReviewR1] {_failures} FAILED");
             return _failures;
         }
@@ -98,6 +99,42 @@ namespace NexusBench
             {
                 ctx.Dispose();
                 NexusDI.ClearGeneratedRegistrations();
+            }
+        }
+
+        // ── #291 (R1-03) ─────────────────────────────────────────────────────
+
+        public sealed class R1SlowStopper : IAsyncStoppable
+        {
+            public readonly TaskCompletionSource<bool> Release = new();
+            public async ValueTask StopAsync(CancellationToken ct) => await Release.Task;
+        }
+        public sealed class R1FastStopper : IAsyncStoppable
+        {
+            public ValueTask StopAsync(CancellationToken ct) => default;
+        }
+
+        private static void SyncDispose_NamesTheAsyncStopperStillRunningWhenItsSingletonsAreDisposed()
+        {
+            var ctx = NexusTestHarness.CreateContext();
+            var logger = new SvcLoggerRecorder();
+            ctx.Context.Container.BindInstance<ILoggerService>(logger);
+            ctx.Context.Container.Bind<R1SlowStopper>();
+            ctx.Context.Container.Bind<R1FastStopper>();
+            var slow = ctx.Context.Resolve<R1SlowStopper>();
+            ctx.Context.Resolve<R1FastStopper>();
+            try
+            {
+                ctx.Context.Dispose(); // the sync path: Root.OnDestroy, NexusRuntime.Reset
+                bool slowNamed = logger.Messages.Exists(m => m.Contains(nameof(R1SlowStopper)) && m.Contains("still running"));
+                bool fastNamed = logger.Messages.Exists(m => m.Contains(nameof(R1FastStopper)));
+                Report("R1-03 Sync_Dispose_Names_The_Async_Stopper_Still_Running_When_Its_Singletons_Are_Disposed",
+                    slowNamed && !fastNamed, $"slowNamed={slowNamed} fastNamed={fastNamed} log=[{string.Join(" | ", logger.Messages)}]");
+            }
+            finally
+            {
+                slow.Release.TrySetResult(true);
+                ctx.Dispose();
             }
         }
     }

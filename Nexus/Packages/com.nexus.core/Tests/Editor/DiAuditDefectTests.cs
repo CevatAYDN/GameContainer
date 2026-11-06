@@ -159,11 +159,14 @@ namespace Nexus.Editor.Tests
             {
                 new ContextLifecycleOrchestrator().ExecuteStoppableLifecyclesSync(new object[] { new StopThatNeverEnds() });
                 var deadline = DateTime.UtcNow.AddSeconds(8);
-                while (DateTime.UtcNow < deadline && !warnings.Any(w => w.Contains(nameof(StopThatNeverEnds)))) await Task.Delay(100);
+                while (DateTime.UtcNow < deadline && !warnings.Any(w => w.Contains(nameof(StopThatNeverEnds)) && w.Contains("did not finish within 5 s"))) await Task.Delay(100);
             }
             finally { Application.logMessageReceivedThreaded -= capture; }
 
             Assert.IsTrue(warnings.Any(w => w.Contains(nameof(StopThatNeverEnds)) && w.Contains("did not finish within 5 s")),
+                string.Join("\n", warnings));
+            // #291: the synchronous Dispose names the stop that outlives it before it disposes the singletons
+            Assert.IsTrue(warnings.Any(w => w.Contains(nameof(StopThatNeverEnds)) && w.Contains("is still running while the context disposes its singletons")),
                 string.Join("\n", warnings));
         }
     }
