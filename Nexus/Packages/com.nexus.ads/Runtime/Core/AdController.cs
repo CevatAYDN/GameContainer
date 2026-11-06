@@ -115,6 +115,7 @@ namespace Nexus.Ads
             _provider.Opened += OnOpened;
             _provider.Revenue += OnRevenue;
             _visibility.Changed += OnVisibilityChanged;
+            if (_consent != null) _consent.Changed += OnConsentChanged;
             if (_adFree != null) _adFree.Changed += OnAdFreeChanged;
             if (_remote != null)
             {
@@ -349,12 +350,7 @@ namespace Nexus.Ads
             if (_consent == null) { onClosed?.Invoke(); return; }
             _consent.ShowPrivacyOptions(() => OnMain(() =>
             {
-                // Consent may have been granted or withdrawn: a refused provider starts now; a running one, or one waiting to retry its
-                // start, stops until the player grants again: it stayed Running and showed ads (issue #328). A start still out
-                // re-reads consent when it answers, in OnInitAnswered; a pending consent request decides in OnConsentCompleted.
-                if (_consent.CanRequestAds) { if (State == Phase.ConsentRefused) InitializeProvider(); }
-                else if (State == Phase.Running || State == Phase.InitFailed) RefuseConsent();
-                RaiseReadyChanged();
+                ReconcileConsent();
                 onClosed?.Invoke();
             }));
         }
@@ -370,6 +366,7 @@ namespace Nexus.Ads
             _provider.Opened -= OnOpened;
             _provider.Revenue -= OnRevenue;
             _visibility.Changed -= OnVisibilityChanged;
+            if (_consent != null) _consent.Changed -= OnConsentChanged;
             if (_adFree != null) _adFree.Changed -= OnAdFreeChanged;
             if (_remote != null) _remote.Changed -= OnRemoteChanged;
             foreach (var slot in _slots.Values) { slot.Retry?.Dispose(); slot.Retry = null; }
@@ -385,6 +382,18 @@ namespace Nexus.Ads
         }
 
         // ----- consent and initialization
+
+        private void OnConsentChanged() => OnMain(ReconcileConsent);
+
+        private void ReconcileConsent()
+        {
+            // A pending consent request decides in OnConsentCompleted.
+            if (_disposed || State == Phase.Stopped || State == Phase.AwaitingConsent) return;
+            // A start still out re-reads consent in OnInitAnswered.
+            if (_consent.CanRequestAds) { if (State == Phase.ConsentRefused) InitializeProvider(); }
+            else if (State == Phase.Running || State == Phase.InitFailed) RefuseConsent();
+            RaiseReadyChanged();
+        }
 
         private void OnConsentCompleted()
         {

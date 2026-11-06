@@ -135,6 +135,7 @@ namespace NexusBench
         public readonly HashSet<AdFormat> Ready = new();
         public ProviderConfig Config;
         public Action<bool> InitCallback;
+        public int InitializeCalls;
         public Action<AdResult> ShowCallback;
         public AdFormat ShowFormat;
         public string ShowPlacement;
@@ -149,6 +150,7 @@ namespace NexusBench
         public Exception InitThrows;
         public void Initialize(ProviderConfig config, Action<bool> onReady)
         {
+            InitializeCalls++;
             if (InitThrows != null) { var ex = InitThrows; InitThrows = null; throw ex; }
             Config = config;
             InitCallback = onReady;
@@ -187,10 +189,27 @@ namespace NexusBench
         public bool CanRequestAds { get; set; }
         public bool PrivacyOptionsRequired { get; set; }
         public Action Pending;
+        public int Subscribers => Changed?.GetInvocationList().Length ?? 0;
+        public bool NotifyOnPrivacyClose;
+        public bool NotifyAfterPrivacyClose;
+        public bool SkipPrivacyClose;
         public event Action Changed;
         public void Request(Action onCompleted) => Pending = onCompleted;
-        public void ShowPrivacyOptions(Action onClosed) => onClosed();
+        public void ShowPrivacyOptions(Action onClosed)
+        {
+            if (NotifyOnPrivacyClose) Changed?.Invoke();
+            if (!SkipPrivacyClose) onClosed();
+            if (NotifyAfterPrivacyClose) Changed?.Invoke();
+        }
         public void Answer(bool canRequest) { Completed = true; CanRequestAds = canRequest; Changed?.Invoke(); var p = Pending; Pending = null; p?.Invoke(); }
+    }
+
+    public sealed class AdsQueuedMainThread : IMainThread
+    {
+        public bool IsCurrent { get; set; } = true;
+        private readonly Queue<Action> _pending = new();
+        public void Post(Action action) => _pending.Enqueue(action);
+        public void Drain() { IsCurrent = true; while (_pending.Count > 0) _pending.Dequeue()(); }
     }
 
     /// <summary>One wired controller with every port in reach of the test.</summary>
@@ -712,6 +731,92 @@ namespace NexusBench
                 int asked = rig.Provider.Loads.Count - before;
                 Check("AC65. ALoadOutAtAWithdrawal_IsAskedAgainAtTheNextGrant", before == 2 && asked == 2,
                     $"loads at the start={before}, after the grant={asked} (expected 2 2; pre-fix 2 0)");
+            }
+
+            {
+                var consent = new AdsFakeConsent { Completed = true, CanRequestAds = true };
+                var cfg = AdsRig.Config(null, BuildKind.Development, AdsRig.Rewarded, AdsRig.LevelEnd, new AdPlacement("hud", AdFormat.Banner));
+                using var rig = new AdsRig(cfg, consent: consent).Running();
+                rig.Controller.ShowBanner("hud", BannerPosition.Bottom);
+                consent.Answer(false);
+                bool refused = rig.Controller.State == AdController.Phase.ConsentRefused && !rig.Provider.BannerShown
+                    && !rig.Controller.IsReady("shop_refill") && rig.Show("hud") == AdResult.NotReady;
+                consent.Answer(true);
+                bool starting = rig.Controller.State == AdController.Phase.Initializing;
+                rig.Provider.InitCallback(true);
+                Check("AC66. ExternalConsentWithdrawalStopsAds_AndALateGrantRestartsThem",
+                    refused && starting && rig.Controller.IsReady("shop_refill"),
+                    $"withdrawal stopped ads={refused}, grant started SDK={starting}, state={rig.Controller.State}");
+            }
+            {
+                var consent = new AdsFakeConsent { Completed = true, CanRequestAds = true };
+                using var rig = new AdsRig(consent: consent);
+                rig.Controller.Start();
+                rig.Provider.InitCallback(false);
+                consent.Answer(false);
+                rig.Provider.InitCallback = null;
+                rig.Scheduler.Advance(60);
+                Check("AC67. ExternalConsentWithdrawalStopsAFailedStartsRetry",
+                    rig.Controller.State == AdController.Phase.ConsentRefused && rig.Provider.InitCallback == null,
+                    $"state={rig.Controller.State}, retried={rig.Provider.InitCallback != null}");
+            }
+            {
+                var consent = new AdsFakeConsent { NotifyOnPrivacyClose = true };
+                using var rig = new AdsRig(consent: consent);
+                rig.Controller.Start();
+                consent.Answer(false);
+                bool once = rig.Telemetry.Count(AdEventKind.ConsentRefused) == 1;
+                consent.CanRequestAds = true;
+                rig.Controller.ShowPrivacyOptions(null);
+                rig.Provider.InitCallback(true);
+                consent.CanRequestAds = false;
+                rig.Controller.ShowPrivacyOptions(null);
+                bool beforeClose = rig.Telemetry.Count(AdEventKind.ConsentRefused) == 2 && rig.Provider.InitializeCalls == 1;
+                consent.NotifyOnPrivacyClose = false;
+                consent.NotifyAfterPrivacyClose = true;
+                consent.CanRequestAds = true;
+                rig.Controller.ShowPrivacyOptions(null);
+                rig.Provider.InitCallback(true);
+                consent.CanRequestAds = false;
+                rig.Controller.ShowPrivacyOptions(null);
+                Check("AC68. ConsentNotificationsBeforeOrAfterPrivacyClose_RefuseAndInitializeOncePerChange",
+                    once && beforeClose && rig.Telemetry.Count(AdEventKind.ConsentRefused) == 3 && rig.Provider.InitializeCalls == 2,
+                    $"request refused once={once}, before-close effects once={beforeClose}, refusals={rig.Telemetry.Count(AdEventKind.ConsentRefused)}, initializations={rig.Provider.InitializeCalls}");
+            }
+            {
+                var consent = new AdsFakeConsent { Completed = true, CanRequestAds = true, SkipPrivacyClose = true };
+                using var rig = new AdsRig(consent: consent).Running();
+                rig.Controller.ShowPrivacyOptions(null);
+                rig.Controller.ShowPrivacyOptions(null);
+                consent.Answer(false);
+                bool refused = rig.Controller.State == AdController.Phase.ConsentRefused;
+                consent.Answer(true);
+                Check("AC70. PrivacyOptionsThatNeverClose_DoNotBlockExternalConsentChanges",
+                    refused && rig.Controller.State == AdController.Phase.Initializing && rig.Provider.InitializeCalls == 2,
+                    $"withdrawal refused={refused}, state={rig.Controller.State}, initializations={rig.Provider.InitializeCalls}");
+            }
+            {
+                var consent = new AdsFakeConsent { Completed = true, CanRequestAds = false };
+                var main = new AdsQueuedMainThread();
+                var clock = new AdsClock();
+                var provider = new AdsFakeProvider();
+                using var controller = new AdController(AdsRig.Config(), provider, clock, new AdsVisibility(), main,
+                    new AdsScheduler(clock), new AdsStore(), new AdsTelemetry(), consent);
+                controller.Start();
+                main.IsCurrent = false;
+                consent.Answer(true);
+                bool deferred = controller.State == AdController.Phase.ConsentRefused && provider.InitCallback == null;
+                main.Drain();
+                bool started = controller.State == AdController.Phase.Initializing;
+                main.IsCurrent = false;
+                consent.Answer(false);
+                controller.Dispose();
+                bool detached = consent.Subscribers == 0;
+                main.Drain();
+                consent.Answer(true);
+                Check("AC69. ExternalConsentChanges_RunOnMainThread_AndDetachOnDispose",
+                    deferred && started && detached && controller.State == AdController.Phase.Stopped,
+                    $"deferred={deferred}, started={started}, detached={detached}, state={controller.State}");
             }
 
             // kill switch and ad-free: NotReady, never a violation; remote only tightens
