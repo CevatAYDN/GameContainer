@@ -116,6 +116,28 @@ namespace NexusBench
                 failures.Count == 0 ? "release and development: monitor defaults, fallback logger, LoggerService, one no-subscriber warning" : string.Join("; ", failures));
         }
 
+        // Issue #309: a setter call pinned the fallback logger for the rest of the run, so a test that expects a release player's
+        // logger after Reset() read the pinned value (SignalBusTests pinned it enabled). Reset must let it follow the build again.
+        private static void FallbackLogger_ResetLetsItFollowTheBuildAgain()
+        {
+            NexusRuntime.Reset();
+            bool ok;
+            try
+            {
+                NexusRuntime.Logger.IsEnabled = true;
+                NexusBuild.OverrideForTests(false);
+                NexusRuntime.Reset();
+                ok = !NexusRuntime.Logger.IsEnabled;
+            }
+            finally
+            {
+                NexusBuild.OverrideForTests(null);
+                NexusRuntime.Reset();
+            }
+            Report(nameof(FallbackLogger_ResetLetsItFollowTheBuildAgain), ok,
+                ok ? "IsEnabled=true set, Reset, release build: the fallback logger is disabled again" : "the fallback logger kept IsEnabled=true after Reset in a release build");
+        }
+
         private static void Setup()
         {
             _counter = new TestCounter();
@@ -532,6 +554,7 @@ namespace NexusBench
             _failures = 0;
             Run("ReleasePlayer_MonitorsStayOffUntilTheGameTurnsThemOn", ReleasePlayer_MonitorsStayOffUntilTheGameTurnsThemOn);
             Run("DevelopmentBuild_DefaultsAndDiagnostics_FollowTheBuild", DevelopmentBuild_DefaultsAndDiagnostics_FollowTheBuild);
+            Run("FallbackLogger_ResetLetsItFollowTheBuildAgain", FallbackLogger_ResetLetsItFollowTheBuildAgain);
             Run("Dispatch1000Signals_CompletesUnderTime", Dispatch1000Signals_CompletesUnderTime);
             Run("Subscribe1000AndFire_AllReceived", Subscribe1000AndFire_AllReceived);
             Run("CommandPool_ReusesInstances", CommandPool_ReusesInstances);

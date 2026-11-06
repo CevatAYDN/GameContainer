@@ -232,7 +232,7 @@ namespace Nexus.Core
         }
 
         private static Services.ILoggerService s_cachedLogger;
-        private static readonly Services.ILoggerService s_fallbackLogger = new FallbackLogger();
+        private static readonly FallbackLogger s_fallbackLogger = new FallbackLogger();
 
         private sealed class FallbackLogger : Services.ILoggerService
         {
@@ -240,6 +240,7 @@ namespace Nexus.Core
             // when the logger is built, which can be before NexusBuild has read the build (#140).
             private bool? _enabled;
             public bool IsEnabled { get => _enabled ?? NexusBuild.IsDevelopment; set => _enabled = value; }
+            public void FollowBuildAgain() => _enabled = null; // Reset: a setter call pins the value, and the pin must not outlive the run (#309)
             public void Log(string message) { if (IsEnabled) Debug.Log(message); }
             public void LogWarning(string message) { if (IsEnabled) Debug.LogWarning(message); }
             public void LogError(string message) => Debug.LogError(message);
@@ -401,7 +402,7 @@ namespace Nexus.Core
             return result;
         }
 
-        /// <summary>Disposes all active contexts and clears the registry. Called automatically on domain reload.</summary>
+        /// <summary>Disposes all active contexts and clears the registry, and returns the fallback logger to the build's setting (a test that set its <c>IsEnabled</c> no longer pins it; #309). Called automatically on domain reload.</summary>
         public static void Reset()
         {
             // Subscriber lists are captured and detached BEFORE the lock —
@@ -428,6 +429,7 @@ namespace Nexus.Core
                 s_activeContextsCacheDirty = false;
                 s_activeContextCount = 0;
                 System.Threading.Volatile.Write(ref s_cachedLogger, null);
+                s_fallbackLogger.FollowBuildAgain();
             }
 
             for (int i = snapshot.Length - 1; i >= 0; i--)
