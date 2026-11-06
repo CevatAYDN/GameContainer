@@ -925,7 +925,9 @@ namespace Nexus.Core
                 catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
             }
 
-            _viewBinder.Dispose();
+            // a failure here must not skip the singletons' and modules' disposal that follows (#293)
+            try { _viewBinder.Dispose(); }
+            catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
         }
 
         /// <summary>Teardown after the singletons: the plugins, then the signal bus, queue and pools.</summary>

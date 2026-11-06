@@ -419,7 +419,16 @@ namespace Nexus.Core
         /// <summary>Disposes all active mediators and unbinds all views, then clears all pools.</summary>
         public void Dispose()
         {
-            foreach (var kvp in _activeMediators)
+            // Snapshot and clear first: a view's Unbind can unregister views (a View that disables itself in OnUnbind
+            // reaches UnregisterView through OnDisable), which modified the collections under the loop (#293).
+            var mediated = new KeyValuePair<IView, IMediator>[_activeMediators.Count];
+            ((ICollection<KeyValuePair<IView, IMediator>>)_activeMediators).CopyTo(mediated, 0);
+            var boundOnly = _boundOnlyViews.ToArray();
+            _boundOnlyViews.Clear();
+            _activeMediators.Clear();
+            _activeMediatorSet.Clear();
+            _mediatorPools.Clear();
+            foreach (var kvp in mediated)
             {
                 // Each unbind is guarded on its own (like UnregisterView): a throwing view must
                 // not leave its mediator's signal subscriptions alive.
@@ -428,15 +437,11 @@ namespace Nexus.Core
                 try { kvp.Value.Unbind(); }
                 catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
             }
-            for (int i = _boundOnlyViews.Count - 1; i >= 0; i--)
+            for (int i = boundOnly.Length - 1; i >= 0; i--)
             {
-                try { _boundOnlyViews[i].Unbind(); }
+                try { boundOnly[i].Unbind(); }
                 catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
             }
-            _boundOnlyViews.Clear();
-            _activeMediators.Clear();
-            _activeMediatorSet.Clear();
-            _mediatorPools.Clear();
         }
     }
 }

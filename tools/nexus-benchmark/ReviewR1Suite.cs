@@ -30,6 +30,7 @@ namespace NexusBench
             Console.WriteLine("===============================================================================");
             Guard("R1-01", StaleConstructorFactory_GivesWayToTheConstructorItNoLongerMatches);
             Guard("R1-04", ToNameAfterTo_AddsTheNamedEntryAndKeepsTheKeysDefault);
+            Guard("R1-08", ViewThatUnregistersInItsUnbind_DoesNotBreakViewBinderDispose);
             Guard("R1-03", SyncDispose_NamesTheAsyncStopperStillRunningWhenItsSingletonsAreDisposed);
             Console.WriteLine(_failures == 0 ? "[ReviewR1] ALL PASSED" : $"[ReviewR1] {_failures} FAILED");
             return _failures;
@@ -155,6 +156,57 @@ namespace NexusBench
                 slow.Release.TrySetResult(true);
                 ctx.Dispose();
             }
+        }
+
+        // ── #293 (R1-08) ─────────────────────────────────────────────────────
+
+        public class R1CountingMediator : IMediator
+        {
+            public int Unbinds;
+            public void Bind(object view, ISignalBus signalBus) { }
+            public void Unbind() => Unbinds++;
+        }
+        public sealed class R1OtherMediator : R1CountingMediator { }
+
+        // As a View whose OnUnbind disables its GameObject: OnDisable calls Context.UnregisterView, inside Dispose's loop.
+        [Mediator(typeof(R1CountingMediator))]
+        public sealed class R1SelfUnregisteringView : IView
+        {
+            public ViewBinder Binder;
+            private bool _bound = true;
+            public void Bind(IContext context) { }
+            public void Unbind()
+            {
+                if (!_bound) return;
+                _bound = false;
+                Binder.UnregisterView(this);
+            }
+        }
+
+        [Mediator(typeof(R1OtherMediator))]
+        public sealed class R1PlainView : IView
+        {
+            public void Bind(IContext context) { }
+            public void Unbind() { }
+        }
+
+        private static void ViewThatUnregistersInItsUnbind_DoesNotBreakViewBinderDispose()
+        {
+            var selfMediator = new R1CountingMediator();
+            var otherMediator = new R1OtherMediator();
+            using var container = new NexusDI();
+            container.BindInstance(selfMediator);
+            container.BindInstance(otherMediator);
+            var binder = new ViewBinder(new MockContext(), container);
+            binder.RegisterView(new R1SelfUnregisteringView { Binder = binder });
+            binder.RegisterView(new R1PlainView());
+
+            string error = "none";
+            try { binder.Dispose(); }
+            catch (Exception ex) { error = ex.GetType().Name + ": " + ex.Message; }
+            Report("R1-08 A_View_That_Unregisters_In_Its_Unbind_Does_Not_Break_ViewBinder_Dispose",
+                error == "none" && selfMediator.Unbinds == 1 && otherMediator.Unbinds == 1 && binder.ActiveMediatorCount == 0,
+                $"error={error} unbinds={selfMediator.Unbinds},{otherMediator.Unbinds} (want 1,1) active={binder.ActiveMediatorCount}");
         }
     }
 }
