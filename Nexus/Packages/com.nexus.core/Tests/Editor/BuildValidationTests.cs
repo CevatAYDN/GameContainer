@@ -479,6 +479,63 @@ namespace Nexus.Editor.Tests
             Assert.IsTrue(InvokeBool(method, typeof(DiScanPlainType), set), "Plain scanned type must resolve.");
         }
 
+        // #305: a batch build runs with an empty scene open, so a scene of the build settings has to be opened to be checked.
+        [Test]
+        public void ABuildSceneThatIsNotLoaded_IsCheckedForRootCycles_AndLeftAsItWas()
+        {
+            const string folder = "Assets/NexusSceneValidationTest";
+            const string scenePath = folder + "/ParentCycle.unity";
+            var openBefore = UnityEditor.SceneManagement.EditorSceneManager.GetSceneManagerSetup();
+            var buildScenesBefore = UnityEditor.EditorBuildSettings.scenes;
+            try
+            {
+                UnityEditor.AssetDatabase.CreateFolder("Assets", "NexusSceneValidationTest");
+                var scene = UnityEditor.SceneManagement.EditorSceneManager.NewScene(UnityEditor.SceneManagement.NewSceneSetup.EmptyScene, UnityEditor.SceneManagement.NewSceneMode.Single);
+                var first = new UnityEngine.GameObject("CycleFirst").AddComponent<Root>();
+                var second = new UnityEngine.GameObject("CycleSecond").AddComponent<Root>();
+                SetParentRoot(first, second);
+                SetParentRoot(second, first);
+                Assert.IsTrue(UnityEditor.SceneManagement.EditorSceneManager.SaveScene(scene, scenePath));
+                // an empty untitled scene is all that is open, as in a batch build
+                UnityEditor.SceneManagement.EditorSceneManager.NewScene(UnityEditor.SceneManagement.NewSceneSetup.EmptyScene, UnityEditor.SceneManagement.NewSceneMode.Single);
+                UnityEditor.EditorBuildSettings.scenes = new[] { new UnityEditor.EditorBuildSettingsScene(scenePath, true) };
+
+                var errors = new List<string>();
+                BuildValidation.ErrorLogger = errors.Add;
+                int scenesOpen = UnityEngine.SceneManagement.SceneManager.sceneCount;
+
+                GetPrivateStatic("ValidateSceneHierarchy").Invoke(null, new object[] { 0, 0 });
+
+                Assert.IsTrue(errors.Exists(e => e.Contains("Circular Context Violation") && e.Contains("CycleFirst")),
+                    "the parentRoot cycle of the closed build scene must be reported: " + string.Join(" | ", errors));
+                Assert.AreEqual(scenesOpen, UnityEngine.SceneManagement.SceneManager.sceneCount, "the scene opened for the check is closed again");
+                Assert.IsFalse(UnityEngine.SceneManagement.SceneManager.GetSceneByPath(scenePath).IsValid(), "a scene that was not in the hierarchy is removed again");
+
+                // The same scene in the user's hierarchy but unloaded: loaded for the check, then unloaded again, never removed from it.
+                var unloaded = UnityEditor.SceneManagement.EditorSceneManager.OpenScene(scenePath, UnityEditor.SceneManagement.OpenSceneMode.Additive);
+                UnityEditor.SceneManagement.EditorSceneManager.CloseScene(unloaded, false);
+                errors.Clear();
+                GetPrivateStatic("ValidateSceneHierarchy").Invoke(null, new object[] { 0, 0 });
+
+                Assert.IsTrue(errors.Exists(e => e.Contains("Circular Context Violation") && e.Contains("CycleFirst")), string.Join(" | ", errors));
+                var after = UnityEngine.SceneManagement.SceneManager.GetSceneByPath(scenePath);
+                Assert.IsTrue(after.IsValid() && !after.isLoaded, "an unloaded scene of the hierarchy stays in it, unloaded");
+            }
+            finally
+            {
+                UnityEditor.EditorBuildSettings.scenes = buildScenesBefore;
+                UnityEditor.AssetDatabase.DeleteAsset(folder);
+                if (openBefore.Length > 0) UnityEditor.SceneManagement.EditorSceneManager.RestoreSceneManagerSetup(openBefore);
+            }
+        }
+
+        private static void SetParentRoot(Root root, Root parent)
+        {
+            var serialized = new UnityEditor.SerializedObject(root);
+            serialized.FindProperty("parentRoot").objectReferenceValue = parent;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
         public sealed class OwnedScoreModel { }
 
         // #243: only " Name ", "Name;", "Name:" and "Name," counted, so every generic binding failed the build with a

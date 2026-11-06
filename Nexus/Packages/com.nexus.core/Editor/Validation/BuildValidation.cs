@@ -5,7 +5,9 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using Nexus.Core;
 using Nexus.Editor.Validation.Rules;
 
@@ -186,15 +188,24 @@ namespace Nexus.Editor
             ? $"{LastErrorCount} errors, {LastWarningCount} warnings"
             : "Not run yet";
 
-        /// <summary>Runs <see cref="Validate"/> without writing to the console; the findings are in <see cref="LastResults"/>.</summary>
+        // Validate opens each build scene that is not open to check its Roots (#305); the Status tab runs RunSilent on every
+        // refresh and must not load scenes in the user's editor each time.
+        private static bool s_checkClosedBuildScenes = true;
+
+        /// <summary>
+        /// Runs <see cref="Validate"/> without writing to the console; the findings are in <see cref="LastResults"/>. It does
+        /// not open the build scenes that are closed (the Status tab runs it on every refresh), so it checks the Roots of the
+        /// open scenes only: <see cref="Validate"/>, a player build and <see cref="ValidateOrThrow"/> check every enabled build scene.
+        /// </summary>
         public static void RunSilent()
         {
             var prevInfo = InfoLogger;
             var prevWarn = WarningLogger;
             var prevErr = ErrorLogger;
             InfoLogger = WarningLogger = ErrorLogger = _ => { };
+            s_checkClosedBuildScenes = false;
             try { Validate(); }
-            finally { InfoLogger = prevInfo; WarningLogger = prevWarn; ErrorLogger = prevErr; }
+            finally { s_checkClosedBuildScenes = true; InfoLogger = prevInfo; WarningLogger = prevWarn; ErrorLogger = prevErr; }
         }
 
         // Every finding a validation step reports becomes an entry of LastResults and goes to the loggers.
@@ -698,23 +709,60 @@ namespace Nexus.Editor
 
         private static void ValidateSceneHierarchy(ref int errorCount, ref int warningCount)
         {
-            var roots = GameObject.FindObjectsByType<Root>(FindObjectsInactive.Exclude);
-            if (roots.Length == 0) return;
+            CheckSceneRoots(GameObject.FindObjectsByType<Root>(FindObjectsInactive.Exclude), ref errorCount);
 
-            var rootList = new List<Root>(roots);
+            // The enabled build scenes that are not open (#305): a batch build runs with an empty scene open, so only the open
+            // scenes were checked and a build scene whose parentRoot chain is a cycle passed, then threw from Root.Awake in the
+            // player. Each one is opened additively, checked and closed again; the scenes the user has open stay as they are.
+            if (!s_checkClosedBuildScenes) return;
+            foreach (var buildScene in EditorBuildSettings.scenes)
+            {
+                if (!buildScene.enabled || string.IsNullOrEmpty(buildScene.path)) continue;
+                var open = SceneManager.GetSceneByPath(buildScene.path);
+                if (open.IsValid() && open.isLoaded) continue; // checked above
+                // A scene in the hierarchy but unloaded is loaded for the check and unloaded again, never removed from the hierarchy.
+                bool inHierarchy = open.IsValid();
 
-            foreach (var root in rootList)
+                Scene scene = default;
+                string notChecked = null;
+                if (EditorApplication.isPlayingOrWillChangePlaymode) notChecked = "scenes cannot be opened in Play Mode";
+                else
+                {
+                    try { scene = EditorSceneManager.OpenScene(buildScene.path, OpenSceneMode.Additive); }
+                    catch (Exception ex) { notChecked = ex.Message; }
+                }
+                if (notChecked != null)
+                {
+                    Debug.LogWarning($"[Nexus Warning] Scene '{buildScene.path}' is in the build settings but was not opened for validation ({notChecked}); its Roots were not checked.");
+                    warningCount++;
+                    continue;
+                }
+
+                try
+                {
+                    var roots = new List<Root>();
+                    foreach (var rootObject in scene.GetRootGameObjects())
+                        roots.AddRange(rootObject.GetComponentsInChildren<Root>(false));
+                    CheckSceneRoots(roots, ref errorCount);
+                }
+                finally { EditorSceneManager.CloseScene(scene, !inHierarchy); }
+            }
+        }
+
+        private static void CheckSceneRoots(IEnumerable<Root> roots, ref int errorCount)
+        {
+            foreach (var root in roots)
             {
                 if (root.ContextData == null)
                 {
-                    Debug.LogError($"[Nexus Error] Missing SO Violation: Root GameObject '{root.gameObject.name}' has a null ContextData configuration.");
+                    Debug.LogError($"[Nexus Error] Missing SO Violation: Root GameObject '{root.gameObject.name}' in scene '{root.gameObject.scene.name}' has a null ContextData configuration.");
                     errorCount++;
                 }
 
                 if (TryDetectCircularHierarchy(root, out var chain))
                 {
                     var chainStr = string.Join(" → ", chain.ConvertAll(r => $"{r.gameObject.name}"));
-                    Debug.LogError($"[Nexus Error] Circular Context Violation: Circular hierarchy detected. Chain: {chainStr}. Fix: Ensure parentRoot references do not form a cycle in the scene.");
+                    Debug.LogError($"[Nexus Error] Circular Context Violation: Circular hierarchy detected in scene '{root.gameObject.scene.name}'. Chain: {chainStr}. Fix: Ensure parentRoot references do not form a cycle in the scene.");
                     errorCount++;
                 }
             }
