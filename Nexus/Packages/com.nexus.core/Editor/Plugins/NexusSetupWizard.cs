@@ -316,7 +316,7 @@ namespace Nexus.Editor
             {
                 if (SessionState.GetBool(PendingSceneKey, false))
                 {
-                    Debug.LogWarning("[Nexus] Scaffold pending scene creation cancelled: editor entered Play Mode before compilation finished. Re-run the setup wizard after exiting Play Mode.");
+                    Debug.LogWarning("[Nexus] Scaffold pending scene creation cancelled: editor entered Play Mode before compilation finished, so the starter scene was not created. " + RestartAdvice);
                     SessionState.SetBool(PendingSceneKey, false);
                 }
             }
@@ -341,7 +341,7 @@ namespace Nexus.Editor
                 int retries = SessionState.GetInt(PendingSceneRetryKey, 0) + 1;
                 if (retries > MaxScaffoldRetries)
                 {
-                    Debug.LogError($"[Nexus] Game.GameView type still not found after {MaxScaffoldRetries} reloads — scaffold aborted. Fix compile errors and re-run the wizard.");
+                    Debug.LogError($"[Nexus] Game.GameView type still not found after {MaxScaffoldRetries} reloads — scaffold aborted, the starter scene was not created. Fix the compile errors. " + RestartAdvice);
                     SessionState.SetBool(PendingSceneKey, false);
                     SessionState.SetInt(PendingSceneRetryKey, 0);
                     return;
@@ -364,6 +364,11 @@ namespace Nexus.Editor
             SessionState.SetBool(PendingSceneKey, false);
             EditorApplication.delayCall += ExecuteDelayedSceneCreation;
         }
+
+        // The wizard refuses to run over its own output, and the folders and the ContextData come before the scene step: a scaffold
+        // that stopped there is started again by removing what it made first. The advice names exactly what HasScaffoldConflict
+        // looks for; "re-run the wizard" alone only met "Starter output already exists" (#307).
+        internal static readonly string RestartAdvice = $"To start again, delete {GameRoot} and {ContextDataPath}, then use Create sample.";
 
         internal static bool HasScaffoldConflict(string projectRoot)
         {

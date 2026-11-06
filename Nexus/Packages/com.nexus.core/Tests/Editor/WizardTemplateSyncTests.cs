@@ -87,6 +87,31 @@ namespace Nexus.Editor.Tests
             finally { Directory.Delete(root, true); }
         }
 
+        // #307: "Re-run the setup wizard" met "Starter output already exists" once the folders and the ContextData were made and the scene was not.
+        [Test]
+        public void ARestartAfterAStoppedScaffold_IsPossibleByRemovingWhatTheAdviceNames()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "NexusScaffoldRestart_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            try
+            {
+                // the state a scaffold leaves when its scene step is cancelled or aborted: folders and ContextData, no scene
+                string folder = Path.Combine(root, NexusSetupWizard.GameRoot);
+                Directory.CreateDirectory(folder);
+                string settings = Path.Combine(root, "Assets/GameContextData.asset");
+                File.WriteAllText(settings, "generated");
+                Assert.IsTrue(NexusSetupWizard.HasScaffoldConflict(root), "the wizard refuses to run over it, so 're-run the wizard' cannot work");
+
+                StringAssert.Contains(NexusSetupWizard.GameRoot, NexusSetupWizard.RestartAdvice);
+                StringAssert.Contains("Assets/GameContextData.asset", NexusSetupWizard.RestartAdvice);
+                Directory.Delete(folder, true);
+                File.Delete(settings);
+
+                Assert.IsFalse(NexusSetupWizard.HasScaffoldConflict(root), "what the advice names is all the wizard looked at");
+            }
+            finally { Directory.Delete(root, true); }
+        }
+
         private static string GetCanonicalPath(string relativePath)
         {
             string gameRoot = NexusSetupWizard.GameRoot;
