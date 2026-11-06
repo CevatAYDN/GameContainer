@@ -88,6 +88,7 @@ namespace Nexus.Tests
                     await manager.LoadAsync("orderSlot");
                     if (model.Text != "newest " + round) misordered++;
                 }
+                // Cannot fail reliably: relies on a 1 MB payload making the older write slower; no write gate seam (#317).
                 Assert.AreEqual(0, misordered, "rounds whose last save was not the one on disk");
             }
             finally

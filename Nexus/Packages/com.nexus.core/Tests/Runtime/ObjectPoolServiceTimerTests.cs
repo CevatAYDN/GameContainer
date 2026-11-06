@@ -45,6 +45,7 @@ namespace Nexus.Tests.Runtime
             Assert.AreSame(fx, reused);
 
             yield return new WaitForSeconds(0.2f);
+            // Cannot fail reliably: an unwanted despawn can arrive after the fixed wait; no clock seam (#317).
             Assert.IsTrue(reused.activeSelf);
         }
 
@@ -60,10 +61,12 @@ namespace Nexus.Tests.Runtime
             Assert.AreSame(fx, respawned);
 
             yield return new WaitForSeconds(0.2f);
+            // Cannot fail reliably: the earlier timer can fire after the fixed wait; no clock seam (#317).
             Assert.IsTrue(respawned.activeSelf, "the earlier spawn's timer despawned the respawned instance");
 
             _pool.DespawnAfter(respawned, 0.05f);
             yield return new WaitForSeconds(0.2f);
+            // Cannot fail reliably: a late earlier timer can satisfy this after the fixed wait; no clock seam (#317).
             Assert.IsFalse(respawned.activeSelf, "the current spawn's timer despawns it");
         }
 

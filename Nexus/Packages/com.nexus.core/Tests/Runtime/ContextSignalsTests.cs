@@ -65,7 +65,7 @@ namespace Nexus.Tests.Runtime
         }
 
         [Test]
-        public async Task ContextStartedFiresOnceAfterServicesAndOnStartAsync()
+        public async Task ContextStartedFiresOnceAfterServicesAndOnStartAsyncBeforeIsInitialized()
         {
             Log.Clear();
             var context = ContextFactory.Create();

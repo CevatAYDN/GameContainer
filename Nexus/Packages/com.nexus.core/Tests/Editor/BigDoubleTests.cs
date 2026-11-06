@@ -7,6 +7,9 @@ namespace Nexus.Editor.Tests
     [TestFixture]
     public class BigDoubleTests
     {
+        [TearDown]
+        public void TearDown() => StorageTestSupport.ForgetStore("Test_Salt_BigDouble");
+
         [Test]
         public void BigDouble_ArithmeticOperations_WorkCorrectly()
         {

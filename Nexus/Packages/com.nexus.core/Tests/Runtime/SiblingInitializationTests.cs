@@ -242,6 +242,7 @@ namespace Nexus.Tests
                 if (entry == "ChildA_InitStart") initStarts++;
             }
 
+            // Cannot fail reliably: a second initialization can start after the ten-frame wait (#317).
             Assert.AreEqual(1, initStarts);
 
             UnityEngine.Object.DestroyImmediate(parentGo);

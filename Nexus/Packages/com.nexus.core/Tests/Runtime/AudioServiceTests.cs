@@ -105,6 +105,7 @@ namespace Nexus.Tests
             _audio.StopBgm();
             yield return WaitSeconds(0.7f);
 
+            // Cannot fail reliably: a late crossfade continuation can change playback after the fixed wait; no clock seam (#317).
             Assert.IsFalse(Array.Exists(Music, s => s.isPlaying), "a track still plays after StopBgm");
         }
 
@@ -120,6 +121,7 @@ namespace Nexus.Tests
             _audio.StopBgm(0.2f);
             yield return WaitSeconds(0.5f);
 
+            // Cannot fail reliably: a late crossfade continuation can change playback after the fixed wait; no clock seam (#317).
             Assert.IsFalse(Array.Exists(Music, s => s.isPlaying), "a track still plays after the fade-out");
         }
 
@@ -136,6 +138,7 @@ namespace Nexus.Tests
             yield return WaitSeconds(0.5f);
 
             var playing = Array.FindAll(Music, s => s.isPlaying);
+            // Cannot fail reliably: the old fade can stop the track after the fixed wait; no clock seam (#317).
             Assert.AreEqual(1, playing.Length, "one track plays");
             Assert.AreSame(_trackA, playing[0].clip);
             Assert.AreEqual(1f, playing[0].volume, 1e-4f);

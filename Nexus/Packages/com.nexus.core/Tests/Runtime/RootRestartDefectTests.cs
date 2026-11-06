@@ -103,6 +103,7 @@ namespace Nexus.Core.Tests
                 second.gameObject.SetActive(true);
                 yield return Frames(5);
 
+                // Cannot fail reliably: repeated configuration can occur after the five-frame wait (#317).
                 Assert.AreEqual(1, FailingConfigure.Configured, "the failed root was configured again");
                 Assert.IsNull(first.Context);
                 Assert.IsNull(second.Context);
@@ -130,11 +131,13 @@ namespace Nexus.Core.Tests
                 parent.gameObject.SetActive(true);
                 child.gameObject.SetActive(true);
                 yield return Frames(3);
+                // Cannot fail reliably: three frames do not prove the child reached its parent wait (#317).
                 Assert.IsNotNull(child.Context, "the child is not waiting for its parent");
 
                 Object.Destroy(child.gameObject);
                 yield return Frames(3);
 
+                // Cannot fail reliably: a destruction error can arrive after the three-frame wait (#317).
                 LogAssert.NoUnexpectedReceived();
             }
             finally

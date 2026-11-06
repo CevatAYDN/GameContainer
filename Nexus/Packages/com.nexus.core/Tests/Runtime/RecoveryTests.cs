@@ -384,6 +384,7 @@ namespace Nexus.Tests
             await Until(() => decisions == 1, "the strategy decided");
             await Task.Delay(100);   // a second line, if any, comes after the decision
             if (mode == FireMode.AsyncAndForget)
+                // Cannot fail reliably: a duplicate error can arrive after the fixed wait and escape this test's log checks (#317).
                 Assert.IsInstanceOf<NexusRecoveryAbortException>(reported, "onError receives the abort");
         }
 
@@ -399,6 +400,7 @@ namespace Nexus.Tests
 
             _signalBus.Dispose();
             await Task.Delay(200);   // past the command's 50 ms timeout
+            // Cannot fail reliably: a failure decision can arrive after the fixed wait; no clock seam (#317).
             Assert.AreEqual(0, decisions, "a shutdown is not a failure");
         }
 
