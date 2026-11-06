@@ -160,6 +160,26 @@ namespace NexusBench
         public bool IsOwned(string productId) => Owned;
     }
 
+    /// <summary>Key-value store that counts DeleteKey calls per key (#300).</summary>
+    public sealed class SvcDeleteCountingPrefs : IPlayerPrefsService
+    {
+        private readonly Dictionary<string, string> _store = new();
+        public readonly Dictionary<string, int> Deletes = new();
+        public int GetInt(string key, int defaultValue = 0) => int.TryParse(GetString(key, null), out int r) ? r : defaultValue;
+        public void SetInt(string key, int value) => SetString(key, value.ToString(CultureInfo.InvariantCulture));
+        public bool GetBool(string key, bool defaultValue = false) => bool.TryParse(GetString(key, null), out bool r) ? r : defaultValue;
+        public void SetBool(string key, bool value) => SetString(key, value.ToString());
+        public string GetString(string key, string defaultValue = "") => _store.TryGetValue(key, out var v) ? v : defaultValue;
+        public void SetString(string key, string value) => _store[key] = value;
+        public float GetFloat(string key, float defaultValue = 0f) => float.TryParse(GetString(key, null), NumberStyles.Float, CultureInfo.InvariantCulture, out float r) ? r : defaultValue;
+        public void SetFloat(string key, float value) => SetString(key, value.ToString(CultureInfo.InvariantCulture));
+        public long GetLong(string key, long defaultValue = 0L) => long.TryParse(GetString(key, null), NumberStyles.Integer, CultureInfo.InvariantCulture, out long r) ? r : defaultValue;
+        public void SetLong(string key, long value) => SetString(key, value.ToString(CultureInfo.InvariantCulture));
+        public bool HasKey(string key) => _store.ContainsKey(key);
+        public void DeleteKey(string key) { Deletes[key] = Deletes.TryGetValue(key, out int n) ? n + 1 : 1; _store.Remove(key); }
+        public void Save() { }
+    }
+
     // ---------------------------------------------------------------------------
     // The suite
     // ---------------------------------------------------------------------------
@@ -199,6 +219,7 @@ namespace NexusBench
                 RunReview();
                 RunAppUpdate();
                 RunNotifications();
+                RunReviewR3();
                 RunZeroGc();
             }
             catch (Exception ex)
@@ -1372,6 +1393,40 @@ namespace NexusBench
         // =========================================================================
         // Zero-GC — steady-state service hot paths must not allocate (<=128 B / 2k ops)
         // =========================================================================
+
+        // =========================================================================
+        // Review R3 (issues #300, #301, #302, #314): services, BigDouble, logging
+        // =========================================================================
+
+        private static void RunReviewR3()
+        {
+            var ctx = NexusTestHarness.CreateContext();
+            var logger = new SvcLoggerRecorder();
+            ctx.Context.Container.BindInstance<ILoggerService>(logger);
+            try
+            {
+                RunR3_Economy(logger);
+            }
+            finally
+            {
+                ctx.Dispose();
+            }
+        }
+
+        private static void RunR3_Economy(SvcLoggerRecorder logger)
+        {
+            // #300: the legacy long key of a BigDouble currency is deleted by the first flush only.
+            var prefs = new SvcDeleteCountingPrefs();
+            prefs.SetLong("NT_Eco_r3gems", 7);
+            var economy = new EconomyService { PlayerPrefsService = prefs };
+            for (int i = 0; i < 10; i++) economy.EarnBig("r3gems", new BigDouble(1));
+            prefs.Deletes.TryGetValue("NT_Eco_r3gems", out int deletes);
+            var saved = ((IPlayerPrefsService)prefs).GetBigDouble("NT_EcoBig_r3gems", BigDouble.Zero);
+            Check("R3-01. Economy_Flush_Deletes_The_Legacy_Key_Of_A_Big_Currency_Once",
+                deletes == 1 && !prefs.HasKey("NT_Eco_r3gems") && Math.Abs((double)saved - 17) < 1e-9,
+                $"deletes={deletes} legacyKey={prefs.HasKey("NT_Eco_r3gems")} saved={saved} (expected 1, False, 17)");
+            economy.Dispose();
+        }
 
         private static void RunZeroGc()
         {

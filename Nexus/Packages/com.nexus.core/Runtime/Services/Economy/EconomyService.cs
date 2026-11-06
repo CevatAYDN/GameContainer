@@ -132,6 +132,8 @@ namespace Nexus.Core.Services
         // collection itself). A promoted currency's long observable remains the same instance, projecting its
         // canonical BigDouble balance.
         private readonly object _balanceLock = new object();
+        // Under _balanceLock: the BigDouble currencies whose legacy long key a flush has deleted (#300).
+        private readonly HashSet<string> _legacyKeyDeleted = new();
         // A currency's first touch reads storage (file I/O and decryption with EncryptedStorageService). The read
         // runs before the balance lock (PrefetchSaved) and the create path under the lock takes its result.
         private readonly ConcurrentDictionary<string, SavedBalance> _prefetched = new();
@@ -528,7 +530,9 @@ namespace Nexus.Core.Services
                 foreach (var kvp in _bigBalances)
                 {
                     store.SetBigDouble($"NT_EcoBig_{kvp.Key}", kvp.Value.Value);
-                    store.DeleteKey($"NT_Eco_{kvp.Key}");
+                    // The legacy long key goes once, after the first write of the big one (#300): each flush deleted it
+                    // again, with the store's disk checks under this lock.
+                    if (_legacyKeyDeleted.Add(kvp.Key)) store.DeleteKey($"NT_Eco_{kvp.Key}");
                 }
             }
             // Flush outside the lock (may hit disk) — mirrors ProgressionService.PersistNow.
