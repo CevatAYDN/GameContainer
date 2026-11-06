@@ -15,7 +15,8 @@ namespace Nexus.Core.Services
         /// <summary>
         /// Called when the audio service is disposed, with the root <see cref="GetOrCreateRoot"/> returned.
         /// The default keeps it (the provider owns its lifetime); a provider whose root should go with the
-        /// service destroys it here, as <see cref="DefaultAudioRootProvider"/> does.
+        /// service destroys it here, as <see cref="DefaultAudioRootProvider"/> does. Before this call the service
+        /// stops and removes the audio sources and components it added to the root.
         /// </summary>
         void ReleaseRoot(GameObject root) { }
     }
@@ -538,15 +539,26 @@ namespace Nexus.Core.Services
         public override void Dispose()
         {
             StopFadeCoroutine();
+            var runner = _fadeRunner;
             _fadeRunner = null;
 
             if (_audioRoot != null)
             {
-                // A root this service created goes with it; a provider's root goes back to the provider.
+                // A root this service created goes with it; a provider's root goes back to the provider, without the
+                // music sources and fade runner this service added to it, which would otherwise pile up and keep
+                // playing on a root the provider keeps (#302).
                 if (_ownsAudioRoot) SafeDestroyUtility.SafeDestroy(_audioRoot);
-                else AudioRootProvider?.ReleaseRoot(_audioRoot);
+                else
+                {
+                    if (_bgmSourceActive != null) { _bgmSourceActive.Stop(); SafeDestroyUtility.SafeDestroy(_bgmSourceActive); }
+                    if (_bgmSourceFade != null) { _bgmSourceFade.Stop(); SafeDestroyUtility.SafeDestroy(_bgmSourceFade); }
+                    if (runner != null) SafeDestroyUtility.SafeDestroy(runner);
+                    AudioRootProvider?.ReleaseRoot(_audioRoot);
+                }
                 _audioRoot = null;
             }
+            _bgmSourceActive = null;
+            _bgmSourceFade = null;
 
             // Destroy pooled AudioSource GameObjects to avoid leaking editor/play-mode objects
             for (int i = 0; i < _sfxPool.Count; i++)

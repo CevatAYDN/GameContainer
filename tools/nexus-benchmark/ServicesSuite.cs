@@ -160,6 +160,13 @@ namespace NexusBench
         public bool IsOwned(string productId) => Owned;
     }
 
+    /// <summary>Audio root provider that keeps its root across service lifetimes (the interface default ReleaseRoot, #302).</summary>
+    public sealed class SvcKeptAudioRoot : IAudioRootProvider
+    {
+        public readonly GameObject Root = new GameObject("SvcKeptAudioRoot");
+        public GameObject GetOrCreateRoot() => Root;
+    }
+
     /// <summary>Key-value store that counts DeleteKey calls per key (#300).</summary>
     public sealed class SvcDeleteCountingPrefs : IPlayerPrefsService
     {
@@ -1407,6 +1414,7 @@ namespace NexusBench
             {
                 RunR3_Economy(logger);
                 RunR3_Progression();
+                RunR3_Audio();
             }
             finally
             {
@@ -1440,6 +1448,34 @@ namespace NexusBench
             Check("R3-02. Progression_UpgradeCost_Rounds_To_The_Designed_Value",
                 l2 == 115 && l5 == 175 && linear3 == 130 && below1 == 100,
                 $"L2={l2} L5={l5} linearL3={linear3} below1={below1} (expected 115, 175, 130, 100)");
+        }
+
+        private static void RunR3_Audio()
+        {
+            // #302: with a root the provider keeps, Dispose stops and removes the sources the service added.
+            var keeper = new SvcKeptAudioRoot();
+            try
+            {
+                for (int reload = 0; reload < 2; reload++)
+                {
+                    var audio = new AudioService { AudioRootProvider = keeper };
+                    audio.InitializeAsync(default).GetAwaiter().GetResult();
+                    var clip = new AudioClip("r3_bgm");
+                    s_clipsToDestroy.Add(clip);
+                    audio.PlayBgm(clip);
+                    audio.Dispose();
+                }
+                var live = keeper.Root.GetComponents<AudioSource>().Where(s => s).ToArray();
+                int playing = live.Count(s => s.isPlaying);
+                bool rootAlive = keeper.Root;
+                Check("R3-03. Audio_Dispose_Removes_Its_Sources_From_A_Kept_Root",
+                    live.Length == 0 && playing == 0 && rootAlive,
+                    $"liveSources={live.Length} playing={playing} rootAlive={rootAlive} (expected 0, 0, True)");
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(keeper.Root);
+            }
         }
 
         private static void RunZeroGc()
