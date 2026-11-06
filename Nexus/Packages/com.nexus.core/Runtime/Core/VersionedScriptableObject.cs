@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -11,8 +13,14 @@ namespace Nexus.Core
     /// <c>OnValidate</c> in the Editor, so an asset that ships at an older version — loaded from a
     /// build, an AssetBundle or Addressables and never opened in the Editor — is still migrated
     /// before use. Player-side migration is in-memory only; the asset on disk is read-only there.
+    /// A new instance (<c>CreateInstance</c>, a new asset) starts at <see cref="CurrentVersion"/> and never runs
+    /// <see cref="Migrate"/>: its field defaults are already the current layout. Only data Unity deserialized (an asset,
+    /// an <c>Instantiate</c> copy) migrates (issue #297). A subclass that needs the serialization callbacks overrides
+    /// <see cref="OnBeforeSerialize"/> and <see cref="OnAfterDeserialize"/>; one that implements
+    /// <see cref="ISerializationCallbackReceiver"/> itself hides this class's hook, so none of its instances is taken for
+    /// new: each migrates from its stored version as before #297, and an error names the type once.
     /// </summary>
-    public abstract class VersionedScriptableObject : ScriptableObject
+    public abstract class VersionedScriptableObject : ScriptableObject, ISerializationCallbackReceiver
     {
         [SerializeField, HideInInspector]
         private int _version = 0;
@@ -21,6 +29,52 @@ namespace Nexus.Core
         // OnValidate can both fire in the Editor, and a domain reload re-invokes OnEnable.
         [System.NonSerialized]
         private bool _migrationChecked;
+
+        // Set when Unity deserializes this instance, which it does before OnEnable. A new instance is not deserialized:
+        // it took the field initializer's 0 and ran Migrate(0) over the current layout's defaults (issue #297).
+        [System.NonSerialized]
+        private bool _deserialized;
+
+        void ISerializationCallbackReceiver.OnBeforeSerialize() => OnBeforeSerialize();
+
+        void ISerializationCallbackReceiver.OnAfterDeserialize()
+        {
+            _deserialized = true;
+            OnAfterDeserialize();
+        }
+
+        /// <summary>Unity's <see cref="ISerializationCallbackReceiver.OnBeforeSerialize"/> for a subclass.</summary>
+        protected virtual void OnBeforeSerialize() { }
+
+        /// <summary>Unity's <see cref="ISerializationCallbackReceiver.OnAfterDeserialize"/> for a subclass.</summary>
+        protected virtual void OnAfterDeserialize() { }
+
+        // Per type: true when the type re-implements ISerializationCallbackReceiver.OnAfterDeserialize, which hides the
+        // hook above, so _deserialized never says "loaded" (#297). OnEnable runs on the main thread; the lock is insurance.
+        internal static readonly Dictionary<Type, bool> s_deserializeHookHidden = new Dictionary<Type, bool>();
+
+        private bool DeserializeHookHidden()
+        {
+            Type type = GetType();
+            lock (s_deserializeHookHidden)
+            {
+                if (s_deserializeHookHidden.TryGetValue(type, out bool hidden)) return hidden;
+                var map = type.GetInterfaceMap(typeof(ISerializationCallbackReceiver));
+                for (int i = 0; i < map.InterfaceMethods.Length; i++)
+                {
+                    if (map.InterfaceMethods[i].Name == nameof(ISerializationCallbackReceiver.OnAfterDeserialize))
+                        hidden = map.TargetMethods[i].DeclaringType != typeof(VersionedScriptableObject);
+                }
+                s_deserializeHookHidden[type] = hidden;
+                if (hidden)
+                {
+                    string error = $"[Nexus] {type.Name} implements ISerializationCallbackReceiver itself, which hides VersionedScriptableObject's: " +
+                        "every instance of it is migrated from its stored version, a new one too. Override OnAfterDeserialize and OnBeforeSerialize instead of implementing the interface.";
+                    NexusRuntime.Logger.LogError(error); // never null: falls back to Debug.LogError
+                }
+                return hidden;
+            }
+        }
 
         /// <summary>The currently stored version of this object's data.</summary>
         public int Version
@@ -39,6 +93,8 @@ namespace Nexus.Core
         /// </summary>
         protected virtual void OnEnable()
         {
+            // A new instance is already current (#297); a type that hides the hook cannot tell new from loaded.
+            if (!_deserialized && !_migrationChecked && !DeserializeHookHidden()) _version = CurrentVersion;
             EnsureMigrated();
         }
 
@@ -87,10 +143,9 @@ namespace Nexus.Core
                 EditorUtility.SetDirty(this);
             }
 #endif
-            // Log only for named objects (persisted assets). Freshly CreateInstance'd
-            // in-memory objects — test harness contexts, runtime-created data — have an
-            // empty name and migrate to the current version as a no-op; logging every one
-            // of them spammed test runs with "Migrated (ContextData) from version 0 to 1".
+            // Log only for named objects (persisted assets). A CreateInstance'd object starts at the current version
+            // (OnEnable, #297), so it reaches here only when code lowers its version; logging unnamed ones spammed
+            // test runs with "Migrated (ContextData) from version 0 to 1".
             if (!string.IsNullOrEmpty(name))
             {
                 string message = $"[Nexus] Migrated {name} ({GetType().Name}) from version {oldVersion} to {_version}.";
@@ -106,7 +161,8 @@ namespace Nexus.Core
         }
 
         /// <summary>
-        /// Override to implement data migration logic from an older version to the current one.
+        /// Override to implement data migration logic from an older version to the current one. It runs only for data
+        /// serialized at an older version, never for a new instance, whose fields already hold the current layout.
         /// </summary>
         /// <param name="fromVersion">The version being migrated from.</param>
         protected virtual void Migrate(int fromVersion)

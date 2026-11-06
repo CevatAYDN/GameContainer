@@ -37,6 +37,8 @@ namespace NexusBench
             Run("SR2", Test_CommandOwnCancellation_IsAFailure);
             Run("SR3", Test_DispatchTimeout_StaysCancellation);
             Run("SR4", Test_DeleteSave_SkipsSnapshotCapturedBefore);
+            Run("SR5", Test_NewVersionedObject_StartsAtCurrentVersion);
+            Run("SR9", Test_VersionedObject_HidingTheHook_StillMigrates);
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -145,6 +147,50 @@ namespace NexusBench
                 $"slot exists after delete={exists} (before: the earlier snapshot was written after the delete)");
         }
 
+        // ── #297: a new VersionedScriptableObject ─────────────────────────────
+        private static void Test_NewVersionedObject_StartsAtCurrentVersion()
+        {
+            var fresh = ScriptableObject.CreateInstance<SrVersioned>();
+            fresh.Enable();
+            bool freshOk = fresh.Migrations == 0 && fresh.Version == 2 && fresh.Speed == 5f;
+
+            // An asset loaded without the version field (saved before it existed) still migrates.
+            var legacy = ScriptableObject.CreateInstance<SrVersioned>();
+            ((object)legacy as ISerializationCallbackReceiver)?.OnAfterDeserialize();
+            legacy.Enable();
+            bool legacyOk = legacy.Migrations == 1 && legacy.Version == 2;
+
+            Report("SR5. NewVersionedObject_StartsAtCurrentVersion_LoadedOneStillMigrates", freshOk && legacyOk,
+                $"new: migrations={fresh.Migrations} version={fresh.Version} speed={fresh.Speed} (5 expected); " +
+                $"loaded at version 0: migrations={legacy.Migrations} version={legacy.Version}");
+        }
+
+        // ── #297 D3: a subclass that implements ISerializationCallbackReceiver itself ──
+        private static void Test_VersionedObject_HidingTheHook_StillMigrates()
+        {
+            int errors = 0;
+            Action<string, string> listen = (level, text) =>
+            {
+                if (level == "Error" && text != null && text.Contains(nameof(SrHidingVersioned))) errors++;
+            };
+            Debug.Logged += listen;
+            try
+            {
+                // Loaded at version 0: Unity calls the subclass's OnAfterDeserialize, never the base's hook.
+                var loaded = ScriptableObject.CreateInstance<SrHidingVersioned>();
+                ((ISerializationCallbackReceiver)loaded).OnAfterDeserialize();
+                loaded.Enable();
+                var second = ScriptableObject.CreateInstance<SrHidingVersioned>();
+                ((ISerializationCallbackReceiver)second).OnAfterDeserialize();
+                second.Enable();
+                bool ok = loaded.Migrations == 1 && loaded.Version == 2 && second.Migrations == 1 && errors == 1;
+                Report("SR9. VersionedObject_HidingTheSerializationHook_StillMigrates_AndLogsOnce", ok,
+                    $"migrations={loaded.Migrations}/{second.Migrations} version={loaded.Version} errors={errors} (1 expected) " +
+                    "(before: the loaded asset was stamped current and skipped Migrate)");
+            }
+            finally { Debug.Logged -= listen; }
+        }
+
     }
 
     public struct SrSignal { }
@@ -163,6 +209,29 @@ namespace NexusBench
     public sealed class SrHangingCommand : IAsyncCommand<SrHangSignal>
     {
         public async ValueTask ExecuteAsync(SrHangSignal signal, CancellationToken ct) => await Task.Delay(Timeout.Infinite, ct);
+    }
+
+    public sealed class SrVersioned : VersionedScriptableObject
+    {
+        public float Speed = 5f; // v2 layout: units per second; v1 stored units per frame
+        public int Migrations;
+        public override int CurrentVersion => 2;
+        public void Enable() => OnEnable();
+        protected override void Migrate(int fromVersion)
+        {
+            Migrations++;
+            if (fromVersion < 2) Speed *= 60f;
+        }
+    }
+
+    public sealed class SrHidingVersioned : VersionedScriptableObject, ISerializationCallbackReceiver
+    {
+        public int Migrations;
+        public override int CurrentVersion => 2;
+        public void Enable() => OnEnable();
+        protected override void Migrate(int fromVersion) => Migrations++;
+        void ISerializationCallbackReceiver.OnBeforeSerialize() { }
+        void ISerializationCallbackReceiver.OnAfterDeserialize() { }
     }
 
 }

@@ -673,6 +673,13 @@ namespace UnityEngine
         public static ScriptableObject CreateInstance(Type type) => (ScriptableObject)Activator.CreateInstance(type);
     }
 
+    /// <summary>Unity serialization callbacks; the harness calls OnAfterDeserialize to stand for an asset load.</summary>
+    public interface ISerializationCallbackReceiver
+    {
+        void OnBeforeSerialize();
+        void OnAfterDeserialize();
+    }
+
     /// <summary>Unity assembly introspection used by Context auto-discovery.</summary>
     public static class Assemblies
     {
