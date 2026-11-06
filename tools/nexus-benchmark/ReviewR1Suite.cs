@@ -29,6 +29,7 @@ namespace NexusBench
             Console.WriteLine("[ReviewR1] DI AND LIFECYCLE DEFECTS OF THE 2026-11-06 REVIEW");
             Console.WriteLine("===============================================================================");
             Guard("R1-01", StaleConstructorFactory_GivesWayToTheConstructorItNoLongerMatches);
+            Guard("R1-04", ToNameAfterTo_AddsTheNamedEntryAndKeepsTheKeysDefault);
             Guard("R1-03", SyncDispose_NamesTheAsyncStopperStillRunningWhenItsSingletonsAreDisposed);
             Console.WriteLine(_failures == 0 ? "[ReviewR1] ALL PASSED" : $"[ReviewR1] {_failures} FAILED");
             return _failures;
@@ -100,6 +101,24 @@ namespace NexusBench
                 ctx.Dispose();
                 NexusDI.ClearGeneratedRegistrations();
             }
+        }
+
+        // ── #292 (R1-04) ─────────────────────────────────────────────────────
+
+        private static void ToNameAfterTo_AddsTheNamedEntryAndKeepsTheKeysDefault()
+        {
+            var binder = new NexusBinder<BUnitType, BUnitDefinition>();
+            binder.Bind(BUnitType.Warrior).To(new BUnitDefinition("Warrior", 120));
+            binder.Bind(BUnitType.Warrior).To(new BUnitDefinition("Elite Warrior", 200)).ToName("elite");
+            // a later .To on the same chain changes the named entry only
+            binder.Bind(BUnitType.Archer).To(new BUnitDefinition("Archer", 70));
+            binder.Bind(BUnitType.Archer).To(new BUnitDefinition("Scout", 50)).ToName("scout").To(new BUnitDefinition("Ranger", 90));
+
+            int warrior = binder.Get(BUnitType.Warrior).MaxHp, elite = binder.Get(BUnitType.Warrior, "elite").MaxHp;
+            int archer = binder.Get(BUnitType.Archer).MaxHp, scout = binder.Get(BUnitType.Archer, "scout").MaxHp;
+            Report("R1-04 ToName_After_To_Adds_The_Named_Entry_And_Keeps_The_Keys_Default",
+                warrior == 120 && elite == 200 && archer == 70 && scout == 90,
+                $"warrior={warrior} elite={elite} archer={archer} scout={scout} (want 120 200 70 90)");
         }
 
         // ── #291 (R1-03) ─────────────────────────────────────────────────────

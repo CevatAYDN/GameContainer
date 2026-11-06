@@ -67,7 +67,11 @@ namespace Nexus.Core
         /// Requires the binder to have been created via <see cref="IContextBuilder.BindBinder{TKey,TValue}"/>.
         /// </summary>
         IBinderBindingBuilder<TKey, TValue> To<TImplementation>() where TImplementation : class, TValue;
-        /// <summary>Qualifies the binding with a name (can be chained before or after .To).</summary>
+        /// <summary>
+        /// Qualifies the binding with a name (can be chained before or after .To). Before .To only the named entry is
+        /// written. After .To the named entry is added and the key's default is kept: a default bound earlier stays, and
+        /// a key without one keeps the value as its default too.
+        /// </summary>
         IBinderBindingBuilder<TKey, TValue> ToName(string name);
     }
 
@@ -117,6 +121,7 @@ namespace Nexus.Core
             public TValue Value;
             public Func<TValue> Factory;
             public Type ConcreteType;
+            public BinderEntry Copy() => (BinderEntry)MemberwiseClone();
         }
 
         private readonly Dictionary<BinderKey, BinderEntry> _entries = new();
@@ -232,13 +237,14 @@ namespace Nexus.Core
             }
         }
 
-        // Internal write method used by the fluent builder — takes write lock.
-        internal void CommitEntry(TKey key, string name, BinderEntry entry)
+        // Internal write method used by the fluent builder — takes write lock. Returns the entry it replaced, or null.
+        internal BinderEntry CommitEntry(TKey key, string name, BinderEntry entry)
         {
             _rwLock.EnterWriteLock();
             try
             {
                 var binderKey = new BinderKey(key, name);
+                _entries.TryGetValue(binderKey, out var replaced);
                 _entries[binderKey] = entry;
                 if (!_keyIndex.TryGetValue(key, out var list))
                 {
@@ -249,6 +255,7 @@ namespace Nexus.Core
                 // (removal is idempotent, but the list would grow on every rebind).
                 if (!list.Contains(binderKey))
                     list.Add(binderKey);
+                return replaced;
             }
             finally { _rwLock.ExitWriteLock(); }
         }
@@ -261,6 +268,9 @@ namespace Nexus.Core
             private string _name;
             private BinderEntry _entry;
             private bool _committed;
+            // the key's default before this chain first wrote it (null: the key had none)
+            private bool _wroteDefault;
+            private BinderEntry _replacedDefault;
 
             public BinderBindingBuilder(NexusBinder<TKey, TValue> owner, TKey key)
             {
@@ -295,18 +305,28 @@ namespace Nexus.Core
 
             public IBinderBindingBuilder<TKey, TValue> ToName(string name)
             {
-                // Allow .To(x).ToName("n") as well as .ToName("n").To(x). When a value is
-                // already committed (e.g. .To(v) first), keep that binding AND register it
-                // under the new name too — the default and the named key both resolve to v.
-                // Never delete an existing entry, so chain ordering can't destroy a binding.
+                // Allow .To(x).ToName("n") as well as .ToName("n").To(x). After .To(v) the chain
+                // already wrote v as the key's default: put back the default it replaced (#292),
+                // or keep v as the default when the key had none, then register v under the name
+                // as its own entry, so a later .To on this chain changes the named entry only.
                 _name = name;
-                if (_committed) Commit();
+                if (_committed)
+                {
+                    if (_replacedDefault != null) _owner.CommitEntry(_key, null, _replacedDefault);
+                    _entry = _entry.Copy();
+                    Commit();
+                }
                 return this;
             }
 
             private void Commit()
             {
-                _owner.CommitEntry(_key, _name, _entry);
+                var replaced = _owner.CommitEntry(_key, _name, _entry);
+                if (_name == null && !_wroteDefault)
+                {
+                    _wroteDefault = true;
+                    _replacedDefault = replaced;
+                }
                 _committed = true;
             }
         }
