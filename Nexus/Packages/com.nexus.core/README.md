@@ -70,8 +70,10 @@ handlers pooled per signal; execution modes `Sequential`, `Concurrent`, `Exclusi
 abort) and `CommandFailedSignal`; loading-time `Context.Prewarm<TSignal>()`. A signal reaches its commands first,
 then its subscribers, newest first, then its composites. A subscriber, composite or cross-context target that throws is
 logged once as an error and the others still get the signal; `Fire` then rethrows the first failure (a reentrancy guard,
-a cancellation or a recovery abort still ends the dispatch). An `ObservableProperty<T>` or `SecureObservable*` observer
-that throws is handled the same way (the economy and progression services keep and save the change and do not rethrow),
+a recovery abort, or the cancellation of the dispatch's own token or of the context still ends the dispatch; an
+`OperationCanceledException` a command throws on its own is its failure: logged, `CommandFailedSignal`, the others run).
+An `ObservableProperty<T>` or `SecureObservable*` observer that throws is handled the same way
+(the economy and progression services keep and save the change and do not rethrow),
 and `RecordingSignalBus` delivers in the bus's order.
 
 **Models and views**: `ObservableProperty<T>` (its read side `IReadOnlyObservableProperty<T>` for state a service alone

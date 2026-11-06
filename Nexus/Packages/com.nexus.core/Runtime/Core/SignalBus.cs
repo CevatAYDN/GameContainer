@@ -628,7 +628,9 @@ namespace Nexus.Core
             {
                 await FireInternalAsync(signal, isCrossContextSource: false, timeoutCts.Token);
             }
-            catch (OperationCanceledException) when (!_context.LifetimeToken.IsCancellationRequested)
+            // Only this call's own timeout is reported as one: an OperationCanceledException that escaped some other way
+            // was named a timeout too (issue #295).
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !_context.LifetimeToken.IsCancellationRequested)
             {
                 NexusRuntime.Logger?.LogError($"[Nexus] Async signal '{typeof(T).Name}' timed out after {timeoutMilliseconds}ms.");
                 throw;

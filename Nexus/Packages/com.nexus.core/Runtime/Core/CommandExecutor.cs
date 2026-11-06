@@ -51,6 +51,21 @@ namespace Nexus.Core
         /// This now cancels the executor's own CTS, which every async command observes via
         /// the linked token chain (FireAsyncWithTimeout, ExecuteAsyncWithOptionalTimeout).
         /// </summary>
+        /// <summary>
+        /// True once in-flight commands were cancelled or the owning context's lifetime ended. A command's
+        /// <see cref="OperationCanceledException"/> stays silent only then, or when the dispatch's own token was cancelled;
+        /// any other one is the command's failure (issue #295).
+        /// </summary>
+        internal bool IsShuttingDown
+        {
+            get
+            {
+                if (_executorCts.IsCancellationRequested) return true;
+                try { return _context != null && _context.LifetimeToken.IsCancellationRequested; }
+                catch (ObjectDisposedException) { return true; } // the context's lifetime source is already disposed
+            }
+        }
+
         public void TryCancelInFlightCommands()
         {
             try

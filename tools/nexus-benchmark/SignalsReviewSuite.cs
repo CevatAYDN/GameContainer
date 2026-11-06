@@ -34,6 +34,8 @@ namespace NexusBench
             Console.WriteLine("===============================================================================");
 
             Run("SR1", Test_NonGenericCommand_RejectedAtBind);
+            Run("SR2", Test_CommandOwnCancellation_IsAFailure);
+            Run("SR3", Test_DispatchTimeout_StaysCancellation);
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -67,11 +69,69 @@ namespace NexusBench
                 $"ICommand rejected={syncRejected}, IAsyncCommand rejected={asyncRejected} (before: both accepted, then failed at every fire)");
         }
 
+        // ── #295: a command's own OperationCanceledException ──────────────────
+        private static void Test_CommandOwnCancellation_IsAFailure()
+        {
+            var container = new NexusDI();
+            var bus = NewBus(container);
+            bus.RegisterCommand(typeof(SrCancelSignal), typeof(SrSelfCancellingCommand), ExecutionMode.Sequential, 0, isAsync: true);
+            int subscriberRan = 0;
+            var failures = new List<Exception>();
+            bus.Subscribe<SrCancelSignal>(_ => subscriberRan++);
+            bus.Subscribe<CommandFailedSignal>(s => failures.Add(s.Exception));
+
+            Exception thrown = null;
+            try { bus.FireAsync(new SrCancelSignal()).AsTask().GetAwaiter().GetResult(); }
+            catch (Exception ex) { thrown = ex; }
+            Exception timeoutThrown = null;
+            try { bus.FireAsyncWithTimeout(new SrCancelSignal(), 5000).AsTask().GetAwaiter().GetResult(); }
+            catch (Exception ex) { timeoutThrown = ex; }
+            bus.Dispose();
+            container.Dispose();
+
+            bool logged = failures.Count == 2 && RecoveryEngine.WasLogged(failures[0]) && RecoveryEngine.WasLogged(failures[1]);
+            bool ok = thrown == null && timeoutThrown == null && logged && failures[0] is OperationCanceledException && subscriberRan == 2;
+            Report("SR2. CommandOwnCancellation_IsLoggedAsFailure_AndTheDispatchGoesOn", ok,
+                $"FireAsync threw={thrown?.GetType().Name ?? "nothing"}, FireAsyncWithTimeout threw={timeoutThrown?.GetType().Name ?? "nothing"}, " +
+                $"CommandFailedSignal x{failures.Count}/2, logged={logged}, subscriber runs={subscriberRan}/2 " +
+                "(before: the OCE ended the dispatch unlogged and FireAsyncWithTimeout reported a timeout)");
+        }
+
+        // The dispatch's own token (FireAsyncWithTimeout's timeout) still ends the dispatch as a cancellation.
+        private static void Test_DispatchTimeout_StaysCancellation()
+        {
+            var container = new NexusDI();
+            var bus = NewBus(container);
+            bus.RegisterCommand(typeof(SrHangSignal), typeof(SrHangingCommand), ExecutionMode.Sequential, 0, isAsync: true);
+            Exception failure = null;
+            bus.Subscribe<CommandFailedSignal>(s => failure = s.Exception);
+            Exception thrown = null;
+            try { bus.FireAsyncWithTimeout(new SrHangSignal(), 50).AsTask().GetAwaiter().GetResult(); }
+            catch (Exception ex) { thrown = ex; }
+            bus.Dispose();
+            container.Dispose();
+            Report("SR3. DispatchTimeout_StaysACancellation", thrown is OperationCanceledException && failure == null,
+                $"threw={thrown?.GetType().Name ?? "nothing"}, CommandFailedSignal={(failure == null ? "none" : failure.GetType().Name)}");
+        }
+
     }
 
     public struct SrSignal { }
     public struct SrAsyncSignal { }
     public sealed class SrPlainCommand : ICommand { public void Execute() { } }
     public sealed class SrPlainAsyncCommand : IAsyncCommand { public ValueTask ExecuteAsync(CancellationToken ct) => default; }
+
+    public struct SrCancelSignal { }
+    // Its own request timed out (an HttpClient timeout, a CancellationTokenSource it made): the token Nexus passed is live.
+    public sealed class SrSelfCancellingCommand : IAsyncCommand<SrCancelSignal>
+    {
+        public ValueTask ExecuteAsync(SrCancelSignal signal, CancellationToken ct) => throw new OperationCanceledException("own request timed out");
+    }
+
+    public struct SrHangSignal { }
+    public sealed class SrHangingCommand : IAsyncCommand<SrHangSignal>
+    {
+        public async ValueTask ExecuteAsync(SrHangSignal signal, CancellationToken ct) => await Task.Delay(Timeout.Infinite, ct);
+    }
 
 }

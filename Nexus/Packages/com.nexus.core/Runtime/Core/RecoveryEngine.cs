@@ -41,20 +41,20 @@ namespace Nexus.Core
         // ─── Sync entry point ────────────────────────────────────────────────────
         public RecoveryAction HandleErrorWithDecision(Exception ex, Type commandType, object signal, ref int retryCount)
         {
-            var plan = BuildPlan(ex, commandType, signal, retryCount, asyncContext: false);
+            var plan = BuildPlan(ex, commandType, signal, retryCount, asyncContext: false, default);
             return ExecuteSyncPlan(plan, signal);
         }
 
         public RecoveryAction HandleErrorWithDecision<TSignal>(Exception ex, Type commandType, TSignal signal, ref int retryCount)
         {
-            var plan = BuildPlan(ex, commandType, signal, retryCount, asyncContext: false);
+            var plan = BuildPlan(ex, commandType, signal, retryCount, asyncContext: false, default);
             return ExecuteSyncPlan(plan, signal);
         }
 
         // ─── Async entry point ───────────────────────────────────────────────────
         public async ValueTask<RecoveryAction> HandleErrorWithDecisionAsync(Exception ex, Type commandType, object signal, int retryCount, CancellationToken ct)
         {
-            var plan = BuildPlan(ex, commandType, signal, retryCount, asyncContext: true);
+            var plan = BuildPlan(ex, commandType, signal, retryCount, asyncContext: true, ct);
             return await ExecuteAsyncPlan(plan, signal, ct);
         }
 
@@ -92,11 +92,17 @@ namespace Nexus.Core
         /// The result is a plan the sync/async entry points execute through their own
         /// dispatch channels.
         /// </summary>
-        private RecoveryPlan BuildPlan(Exception ex, Type commandType, object signal, int retryCount, bool asyncContext)
+        private RecoveryPlan BuildPlan(Exception ex, Type commandType, object signal, int retryCount, bool asyncContext, CancellationToken dispatchToken)
         {
-            // A CommandTimeoutException holds the timeout's OperationCanceledException as its inner exception (issue #168)
-            if (!(ex is CommandTimeoutException) && (ex is OperationCanceledException || ex is NexusReentrancyException || ex is NexusAsyncOverflowException ||
-                (ex.InnerException != null && (ex.InnerException is OperationCanceledException || ex.InnerException is NexusReentrancyException || ex.InnerException is NexusAsyncOverflowException))))
+            // A CommandTimeoutException holds the timeout's OperationCanceledException as its inner exception (issue #168).
+            // A cancellation passes through unlogged only when the dispatch's own token was cancelled or the executor or
+            // context is shutting down. A command's own OperationCanceledException (an HTTP timeout, a token it made) is its
+            // failure: it was rethrown here, which ended the dispatch unlogged, with no CommandFailedSignal (issue #295).
+            bool cancellation = !(ex is CommandTimeoutException)
+                && (ex is OperationCanceledException || ex.InnerException is OperationCanceledException)
+                && (dispatchToken.IsCancellationRequested || (_executor?.IsShuttingDown ?? false));
+            if (cancellation || ex is NexusReentrancyException || ex is NexusAsyncOverflowException ||
+                ex.InnerException is NexusReentrancyException || ex.InnerException is NexusAsyncOverflowException)
             {
                 // Preserve the original stack trace when rethrowing.
                 ExceptionDispatchInfo.Capture(ex).Throw();
