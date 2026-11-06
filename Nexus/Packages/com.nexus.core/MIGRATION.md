@@ -51,6 +51,14 @@ Wickling's `FakeAds` (`Tests/SimRunner`) and RingFlow's two `MockAdService` clas
 subscribes this event instead of `OnImpressionRecorded` and logs the impression's `Currency` instead of a fixed "USD";
 `Format` and `Precision` are there too. `OnImpressionRecorded` still fires for every impression.
 
+#### Commands the executor cannot run are refused at registration
+
+Issue #294: a command bound to a signal runs only through `ICommand<TSignal>` or `IAsyncCommand<TSignal>`. A type that
+implemented only the non-generic `ICommand` or `IAsyncCommand` was accepted and then logged an error at every fire; the
+binding now throws at start (`ArgumentException` from the context builder, `InvalidOperationException` from
+`CommandRegistry.RegisterCommand`). Implement the generic interface of the signal. No class of the four known games
+implements a non-generic command interface.
+
 #### Regenerate the binder for the constructor check
 
 Issue #290: the editor binder now writes each constructor factory's parameters, and NexusDI drops a factory written for

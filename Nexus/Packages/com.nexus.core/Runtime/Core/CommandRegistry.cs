@@ -115,23 +115,23 @@ namespace Nexus.Core
         {
             var genericSyncType = typeof(ICommand<>).MakeGenericType(signalType);
             var genericAsyncType = typeof(IAsyncCommand<>).MakeGenericType(signalType);
-            bool implementsSync = typeof(ICommand).IsAssignableFrom(commandType)
-                || genericSyncType.IsAssignableFrom(commandType);
-            bool implementsAsync = typeof(IAsyncCommand).IsAssignableFrom(commandType)
-                || genericAsyncType.IsAssignableFrom(commandType);
+            // Only the generic interfaces run for a signal (CommandExecutor.Execute/ExecuteAsync). A non-generic ICommand or
+            // IAsyncCommand runs only as a composite command or a recovery fallback, so it is refused here, not at every fire (#294).
+            bool implementsSync = genericSyncType.IsAssignableFrom(commandType);
+            bool implementsAsync = genericAsyncType.IsAssignableFrom(commandType);
 
             if (!implementsSync && !implementsAsync)
             {
-                throw new InvalidOperationException($"Command type {commandType.Name} registered for signal {signalType.Name} must implement ICommand/ICommand<{signalType.Name}> or IAsyncCommand/IAsyncCommand<{signalType.Name}>.");
+                throw new InvalidOperationException($"Command type {commandType.Name} registered for signal {signalType.Name} must implement ICommand<{signalType.Name}> or IAsyncCommand<{signalType.Name}>. A non-generic ICommand or IAsyncCommand runs only as a composite command or a recovery fallback.");
             }
 
             if (implementsAsync && implementsSync)
             {
-                throw new InvalidOperationException($"Command type {commandType.Name} cannot implement both ICommand and IAsyncCommand interfaces.");
+                throw new InvalidOperationException($"Command type {commandType.Name} cannot implement both ICommand<{signalType.Name}> and IAsyncCommand<{signalType.Name}>.");
             }
             if (implementsAsync && !isAsync)
             {
-                throw new InvalidOperationException($"Command type {commandType.Name} implements IAsyncCommand but is being registered as sync. It must be registered as async (isAsync: true).");
+                throw new InvalidOperationException($"Command type {commandType.Name} implements IAsyncCommand<{signalType.Name}> but is being registered as sync. It must be registered as async (isAsync: true).");
             }
 
             var timeoutAttr = commandType.GetCustomAttribute<CommandTimeoutAttribute>();

@@ -328,7 +328,8 @@ namespace Nexus.Core
         /// The command is bound as non-singleton (one instance per execution).
         /// </summary>
         /// <typeparam name="TSignal">The signal struct type that triggers the command.</typeparam>
-        /// <typeparam name="TCommand">The command class (must implement <see cref="ICommand"/>).</typeparam>
+        /// <typeparam name="TCommand">The command class; it must implement <see cref="ICommand{T}"/> of <typeparamref name="TSignal"/>.
+        /// A non-generic <see cref="ICommand"/> runs only as a composite command or a recovery fallback and is refused here.</typeparam>
         /// <param name="mode">Execution mode (Sequential, Concurrent, or Exclusive). Composite triggers must be registered via [CompositeSignalHandler] instead.</param>
         /// <param name="priority">Execution priority; <b>higher values run first</b>.</param>
         public void BindCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
@@ -341,12 +342,10 @@ namespace Nexus.Core
                 throw new ArgumentException($"ExecutionMode.Composite cannot be used with BindCommand. Use the [CompositeSignalHandler] attribute (or SignalBus.RegisterCompositeCommand) to register composite triggers.", nameof(mode));
             }
 
-            // Validate that the command implements either ICommand or ICommand<TSignal>
-            bool isGeneric = typeof(ICommand<TSignal>).IsAssignableFrom(typeof(TCommand));
-            bool isNormal = typeof(ICommand).IsAssignableFrom(typeof(TCommand));
-            if (!isGeneric && !isNormal)
+            // Only ICommand<TSignal> runs for a signal; a non-generic ICommand was accepted here and failed at every fire (#294).
+            if (!typeof(ICommand<TSignal>).IsAssignableFrom(typeof(TCommand)))
             {
-                throw new ArgumentException($"Command type {typeof(TCommand).Name} must implement either ICommand or ICommand<{typeof(TSignal).Name}>");
+                throw new ArgumentException($"Command type {typeof(TCommand).Name} must implement ICommand<{typeof(TSignal).Name}>");
             }
 
             _container.EnsureCommandBinding(typeof(TCommand));
@@ -358,7 +357,7 @@ namespace Nexus.Core
         /// The command is bound as non-singleton (one instance per execution).
         /// </summary>
         /// <typeparam name="TSignal">The signal struct type that triggers the command.</typeparam>
-        /// <typeparam name="TCommand">The command class.</typeparam>
+        /// <typeparam name="TCommand">The command class; it must implement <see cref="IAsyncCommand{T}"/> of <typeparamref name="TSignal"/>.</typeparam>
         /// <param name="mode">Execution mode (Sequential, Concurrent, or Exclusive). Composite triggers must be registered via [CompositeSignalHandler] instead.</param>
         /// <param name="priority">Execution priority; <b>higher values run first</b>.</param>
         public void BindAsyncCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
@@ -370,12 +369,10 @@ namespace Nexus.Core
                 throw new ArgumentException($"ExecutionMode.Composite cannot be used with BindAsyncCommand. Use the [CompositeSignalHandler] attribute (or SignalBus.RegisterCompositeCommand) to register composite triggers.", nameof(mode));
             }
 
-            // Validate that the command implements either IAsyncCommand or IAsyncCommand<TSignal>
-            bool isGeneric = typeof(IAsyncCommand<TSignal>).IsAssignableFrom(typeof(TCommand));
-            bool isNormal = typeof(IAsyncCommand).IsAssignableFrom(typeof(TCommand));
-            if (!isGeneric && !isNormal)
+            // Only IAsyncCommand<TSignal> runs for a signal (#294).
+            if (!typeof(IAsyncCommand<TSignal>).IsAssignableFrom(typeof(TCommand)))
             {
-                throw new ArgumentException($"Command type {typeof(TCommand).Name} must implement either IAsyncCommand or IAsyncCommand<{typeof(TSignal).Name}>");
+                throw new ArgumentException($"Command type {typeof(TCommand).Name} must implement IAsyncCommand<{typeof(TSignal).Name}>");
             }
 
             _container.EnsureCommandBinding(typeof(TCommand));
@@ -389,10 +386,8 @@ namespace Nexus.Core
             if (mode == ExecutionMode.Composite)
                 throw new ArgumentException($"ExecutionMode.Composite cannot be used with BindCommandOnce. Use the [CompositeSignalHandler] attribute instead.", nameof(mode));
 
-            bool isGeneric = typeof(ICommand<TSignal>).IsAssignableFrom(typeof(TCommand));
-            bool isNormal = typeof(ICommand).IsAssignableFrom(typeof(TCommand));
-            if (!isGeneric && !isNormal)
-                throw new ArgumentException($"Command type {typeof(TCommand).Name} must implement either ICommand or ICommand<{typeof(TSignal).Name}>");
+            if (!typeof(ICommand<TSignal>).IsAssignableFrom(typeof(TCommand)))
+                throw new ArgumentException($"Command type {typeof(TCommand).Name} must implement ICommand<{typeof(TSignal).Name}>");
 
             _container.EnsureCommandBinding(typeof(TCommand));
             _signalBus.RegisterCommand(typeof(TSignal), typeof(TCommand), mode, priority, isAsync: false, oneShot: true);
@@ -405,10 +400,8 @@ namespace Nexus.Core
             if (mode == ExecutionMode.Composite)
                 throw new ArgumentException($"ExecutionMode.Composite cannot be used with BindAsyncCommandOnce. Use the [CompositeSignalHandler] attribute instead.", nameof(mode));
 
-            bool isGeneric = typeof(IAsyncCommand<TSignal>).IsAssignableFrom(typeof(TCommand));
-            bool isNormal = typeof(IAsyncCommand).IsAssignableFrom(typeof(TCommand));
-            if (!isGeneric && !isNormal)
-                throw new ArgumentException($"Command type {typeof(TCommand).Name} must implement either IAsyncCommand or IAsyncCommand<{typeof(TSignal).Name}>");
+            if (!typeof(IAsyncCommand<TSignal>).IsAssignableFrom(typeof(TCommand)))
+                throw new ArgumentException($"Command type {typeof(TCommand).Name} must implement IAsyncCommand<{typeof(TSignal).Name}>");
 
             _container.EnsureCommandBinding(typeof(TCommand));
             _signalBus.RegisterCommand(typeof(TSignal), typeof(TCommand), mode, priority, isAsync: true, oneShot: true);
