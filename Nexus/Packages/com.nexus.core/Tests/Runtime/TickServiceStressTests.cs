@@ -44,13 +44,19 @@ namespace Nexus.Tests
 
             await Task.WhenAll(registerTasks);
 
-            // dispatch several frames
+            // every registration from the worker tasks must tick once per frame: a lost one stays at 0, a doubled one passes 10
             for (int f = 0; f < 10; f++)
             {
                 service.OnTick(0.016f);
             }
+            lock (allTickables)
+            {
+                Assert.AreEqual(tasks * perTask, allTickables.Count);
+                foreach (var tickable in allTickables) Assert.AreEqual(10, tickable.TickCount, "each registered tickable ticks once per frame");
+            }
 
             // concurrently unregister half
+            var removed = new List<ConcurrentTickable>(tasks * perTask / 2);
             var unregisterTasks = new List<Task>(tasks);
             for (int t = 0; t < tasks; t++)
             {
@@ -65,6 +71,7 @@ namespace Nexus.Tests
                             {
                                 toRemove = allTickables[allTickables.Count - 1];
                                 allTickables.RemoveAt(allTickables.Count - 1);
+                                removed.Add(toRemove);
                             }
                         }
                         if (toRemove != null) service.UnregisterTickable(toRemove);
@@ -74,16 +81,14 @@ namespace Nexus.Tests
 
             await Task.WhenAll(unregisterTasks);
 
-            // dispatch additional frames and ensure no exceptions and some tick calls occurred
             for (int f = 0; f < 5; f++) service.OnTick(0.016f);
 
-            int totalTicks = 0;
             lock (allTickables)
             {
-                foreach (var tt in allTickables) totalTicks += tt.TickCount;
+                Assert.AreEqual(tasks * perTask / 2, removed.Count);
+                foreach (var tickable in removed) Assert.AreEqual(10, tickable.TickCount, "an unregistered tickable stops ticking");
+                foreach (var tickable in allTickables) Assert.AreEqual(15, tickable.TickCount, "a surviving tickable keeps ticking");
             }
-
-            Assert.Greater(totalTicks, 0, "Some tickables should have been ticked at least once");
             service.Dispose();
         }
     }
