@@ -267,7 +267,7 @@ public sealed class UpmConsumerTests
         foreach (var name in new[] { "Counter Example", "Nexus Starter Package" })
             Assert.IsTrue(Sample.FindByPackage(package.name, package.version).Single(item => item.displayName == name).isImported, name);
         foreach (var type in new[] { "Nexus.Samples.Counter.CounterLifecycle", "Nexus.Starter.NexusStartLifecycle" })
-            Assert.IsTrue(System.AppDomain.CurrentDomain.GetAssemblies().Any(assembly => assembly.GetType(type, false) != null), type);
+            Assert.IsTrue(UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies().Any(assembly => assembly.GetType(type, false) != null), type);
     }
     private struct KitSignal { }
     // The game's own test assembly references com.nexus.core.testing; the manifest lists no testables (issue #74).
