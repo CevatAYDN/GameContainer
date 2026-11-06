@@ -56,6 +56,7 @@ namespace Nexus.Iap.Unity
         /// <summary>A paid consumable the game did not request in this session; see <see cref="IIapUnrequestedPurchaseAdapter"/>.</summary>
         public event UnrequestedPurchaseHandler UnrequestedPurchase;
         private readonly HashSet<string> _keptUnrequested = new();   // orders left with the store for want of a handler, warned once
+        private readonly HashSet<string> _keptUnsafeCarts = new();
         public bool IsAvailable => _connected && _productsFetched;
         /// <summary>True once a purchase fetch answered (each connected start, also one whose product fetch failed (#268), and
         /// <see cref="Restore"/>); a failed fetch leaves it as it was (#183).</summary>
@@ -196,6 +197,12 @@ namespace Nexus.Iap.Unity
 
         private void OnPending(PendingOrder order)
         {
+            if (!CanFinishConsumables(order))
+            {
+                if (Answers(order)) Complete(PurchaseOutcome.Failed);
+                Changed?.Invoke();
+                return;
+            }
             Own(order);
             // An order for another product (a deferred payment approved, a promo code, and on Google Play and the App Store every
             // pending order a fetch finds, which Unity IAP routes here first) is not the waiting request's answer: an owned product is
@@ -217,6 +224,7 @@ namespace Nexus.Iap.Unity
             var confirm = new List<PendingOrder>();
             foreach (var order in orders.PendingOrders)
             {
+                if (!CanFinishConsumables(order)) continue;
                 Own(order);
                 // an order granted in this session (its confirm is being retried, or OnPending just took it) is not granted again
                 if (!IsTracked(order) && !GrantUnrequested(order)) continue;
@@ -239,6 +247,7 @@ namespace Nexus.Iap.Unity
         /// may be confirmed. Confirming it with no handler consumed a paid purchase and granted nothing (issue #204).</summary>
         private bool GrantUnrequested(PendingOrder order)
         {
+            if (!CanFinishConsumables(order)) return false;
             var consumables = new List<string>();
             string untyped = null;
             foreach (var item in order.CartOrdered.Items())
@@ -279,6 +288,23 @@ namespace Nexus.Iap.Unity
             }
         }
 
+        private bool CanFinishConsumables(PendingOrder order)
+        {
+            if (UnityIAPServices.GetDefaultStore() != GooglePlay.Name) return true;
+            foreach (var item in order.CartOrdered.Items())
+            {
+                if (TypeOf(item) != StoreProductType.Consumable) continue;
+                // Google consumes by the selected listing; the Nexus catalog cannot fix its type (#332).
+                var definition = item.Product.catalogListings.TryGetValue(item.CatalogListingId, out var listing) ? listing.definition : null;
+                if (definition?.type == StoreProductType.Consumable) continue;
+                string transaction = order.Info?.TransactionID;
+                if (_keptUnsafeCarts.Add(transaction ?? ""))
+                    Warn($"A paid consumable purchase of {item.Product.definition.id} (transaction {transaction}) has a cart that Google Play cannot finish as consumable: it is not granted or confirmed, and the store lists it again at the next purchase fetch (each start and Restore). Fetch a consumable store definition before retrying; Google Play refunds a purchase not acknowledged within three days.");
+                return false;
+            }
+            return true;
+        }
+
         /// <summary>Starts a new round of confirms for an order: a purchase, or a fetch that lists it again.</summary>
         private void Track(PendingOrder order)
         {
@@ -290,6 +316,7 @@ namespace Nexus.Iap.Unity
 
         private void Confirm(PendingOrder order)
         {
+            if (!CanFinishConsumables(order)) return;
             string id = order?.Info?.TransactionID;
             if (!string.IsNullOrEmpty(id) && _confirmAttempts.TryGetValue(id, out int sent)) _confirmAttempts[id] = sent + 1;
             _store.ConfirmPurchase(order);

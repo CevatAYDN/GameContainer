@@ -17,6 +17,9 @@ namespace Nexus.Iap.Unity.Tests
     /// a failed fetch is logged with the store's reason, not the failure type's name.</summary>
     public sealed class UnityIapAdapterTests
     {
+        [TearDown]
+        public void RestoreDefaultStore() => UnityIAPServices.SetStoreAsDefault(string.Empty);
+
         [Test]
         public void BeforeInitialize_StoreIsUnavailable()
         {
@@ -109,7 +112,104 @@ namespace Nexus.Iap.Unity.Tests
             LogAssert.NoUnexpectedReceived();
         }
 
-        private static object Invoke(UnityIapAdapter adapter, string method, Order order)
+        [TestCase(StoreProductType.Unknown)]
+        [TestCase(StoreProductType.NonConsumable)]
+        [TestCase(StoreProductType.Subscription)]
+        public void ACatalogConsumableWithAnUnsafeCart_IsHeldAndWarnedOnce_UntilATypedCartCanBeGranted(StoreProductType cartType)
+        {
+            var adapter = CatalogConsumableAdapter(GooglePlay.Name);
+            int granted = 0;
+            UnrequestedPurchaseHandler handler = (_, _) => granted++;
+            adapter.UnrequestedPurchase += handler;
+            var order = PendingOrderOf("coins", cartType, "tx-coins");
+            LogAssert.Expect(LogType.Warning, new Regex(@"\[UnityIAP\] A paid consumable purchase of coins \(transaction tx-coins\).*not granted or confirmed"));
+            Assert.IsFalse((bool)Invoke(adapter, "GrantUnrequested", order));
+            Invoke(adapter, "OnPending", order);
+            Invoke(adapter, "OnFetched", new Orders(new List<ConfirmedOrder>(), new List<PendingOrder> { order }, new List<DeferredOrder>()));
+            Assert.AreEqual(0, granted);
+            Assert.IsFalse(adapter.IsOwned("coins"));
+            Assert.IsFalse(adapter.IsConfirmationPending("coins"));
+            var typed = PendingOrderOf("coins", StoreProductType.Consumable, "tx-coins");
+            adapter.UnrequestedPurchase -= handler;
+            LogAssert.Expect(LogType.Warning, new Regex(@"\[UnityIAP\] A paid purchase of coins \(transaction tx-coins\) was not requested in this session and nothing handles UnrequestedPurchase"));
+            Assert.IsFalse((bool)Invoke(adapter, "GrantUnrequested", typed), "the cart warning must not suppress the different missing-handler warning");
+            Assert.IsFalse((bool)Invoke(adapter, "GrantUnrequested", typed), "the missing-handler warning also occurs only once");
+            adapter.UnrequestedPurchase += handler;
+            var fetched = new Orders(new List<ConfirmedOrder>(), new List<PendingOrder> { typed }, new List<DeferredOrder>());
+            // The null store exposes the confirm boundary without connecting to a billing service.
+            Assert.IsInstanceOf<NullReferenceException>(Assert.Throws<TargetInvocationException>(() => Invoke(adapter, "OnFetched", fetched)).InnerException);
+            Assert.IsTrue(adapter.IsConfirmationPending("coins"));
+            Assert.IsInstanceOf<NullReferenceException>(Assert.Throws<TargetInvocationException>(() => Invoke(adapter, "OnPending", typed)).InnerException);
+            Assert.AreEqual(1, granted);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void AnUnsafeGoogleConsumable_FailsTheWaitingRequestOnce_WithoutGrantingOrConfirming()
+        {
+            var adapter = CatalogConsumableAdapter(GooglePlay.Name);
+            int granted = 0;
+            adapter.UnrequestedPurchase += (_, _) => granted++;
+            PurchaseOutcome? outcome = null;
+            int completed = 0;
+            typeof(UnityIapAdapter).GetField("_pending", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(adapter, (Action<PurchaseOutcome>)(value => { outcome = value; completed++; }));
+            typeof(UnityIapAdapter).GetField("_pendingProductId", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(adapter, "coins");
+            var order = PendingOrderOf("coins", StoreProductType.Unknown, "tx-coins");
+            LogAssert.Expect(LogType.Warning, new Regex(@"\[UnityIAP\] A paid consumable purchase of coins \(transaction tx-coins\).*not granted or confirmed"));
+            Invoke(adapter, "Confirm", order);
+            Assert.IsNull(outcome, "a confirmation attempt does not answer the request");
+            Invoke(adapter, "OnPending", order);
+            Assert.AreEqual(PurchaseOutcome.Failed, outcome);
+            Invoke(adapter, "OnPending", order);
+            Assert.AreEqual(1, completed);
+            Assert.IsNull(typeof(UnityIapAdapter).GetField("_pending", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(adapter));
+            Assert.IsNull(typeof(UnityIapAdapter).GetField("_pendingProductId", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(adapter));
+            Assert.AreEqual(0, granted);
+            Assert.IsFalse(adapter.IsOwned("coins"));
+            Assert.IsFalse(adapter.IsConfirmationPending("coins"), "the null store would throw if confirmation were attempted");
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [TestCase(AppleAppStore.Name)]
+        [TestCase(MacAppStore.Name)]
+        [TestCase(PaymentProvider.Name)]
+        public void ATypeIndependentStore_CanGrantACatalogConsumableWithAnUnknownCart(string store)
+        {
+            var adapter = CatalogConsumableAdapter(store);
+            int granted = 0;
+            adapter.UnrequestedPurchase += (_, _) => granted++;
+            Assert.IsTrue((bool)Invoke(adapter, "GrantUnrequested", PendingOrderOf("coins", StoreProductType.Unknown, "tx-coins")));
+            Assert.AreEqual(1, granted);
+        }
+
+        [Test]
+        public void AGoogleConsumable_UsesTheSelectedListingToDecideWhetherItCanBeConsumed()
+        {
+            var adapter = CatalogConsumableAdapter(GooglePlay.Name);
+            int granted = 0;
+            adapter.UnrequestedPurchase += (_, _) => granted++;
+            var product = (Product)Activator.CreateInstance(typeof(Product), BindingFlags.Instance | BindingFlags.NonPublic, null,
+                new object[] { new StoreProduct("coins", StoreProductType.Consumable), new ProductMetadata(), false }, null);
+            var otherProduct = (Product)Activator.CreateInstance(typeof(Product), BindingFlags.Instance | BindingFlags.NonPublic, null,
+                new object[] { new StoreProduct("coins", "coins", StoreProductType.Unknown, "other"), new ProductMetadata(), false }, null);
+            var listing = otherProduct.catalogListings["other"];
+            ((Dictionary<string, CatalogListing>)product.catalogListings).Add("other", listing);
+            var order = new PendingOrder(new Cart(new CartItem(product, "other")), new TestOrderInfo("tx-listing"));
+            LogAssert.Expect(LogType.Warning, new Regex(@"\[UnityIAP\] A paid consumable purchase of coins \(transaction tx-listing\).*not granted or confirmed"));
+            Assert.IsFalse((bool)Invoke(adapter, "GrantUnrequested", order), "the base definition is consumable but Google finishes using the selected listing");
+            Assert.AreEqual(0, granted);
+        }
+
+        private static UnityIapAdapter CatalogConsumableAdapter(string store)
+        {
+            var adapter = new UnityIapAdapter();
+            UnityIAPServices.SetStoreAsDefault(store);
+            var catalog = (Dictionary<string, Nexus.Core.Services.ProductType>)typeof(UnityIapAdapter).GetField("_catalog", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(adapter);
+            catalog.Add("coins", Nexus.Core.Services.ProductType.Consumable);
+            return adapter;
+        }
+
+        private static object Invoke(UnityIapAdapter adapter, string method, object order)
             => typeof(UnityIapAdapter).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic).Invoke(adapter, new object[] { order });
 
         // Product's constructor is internal; the store builds it.
