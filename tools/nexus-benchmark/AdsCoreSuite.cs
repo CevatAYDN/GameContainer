@@ -818,6 +818,29 @@ namespace NexusBench
                     + "(expected False Blocked; True True Closed; Blocked False; True)");
             }
 
+            // issue #327: the generic Show of a banner reached the provider without recording the show or arming the wake, so the
+            // placement's cooldown and caps held for ShowBanner only
+            {
+                var cfg = AdsRig.Config(null, BuildKind.Development, new AdPlacement("hud", AdFormat.Banner, cooldownSeconds: 30, sessionCap: 2));
+                using var rig = new AdsRig(cfg);
+                rig.Controller.Start();
+                rig.Provider.InitCallback(true);
+                var first = rig.Show("hud");
+                rig.Scheduler.Advance(1);
+                var inCooldown = rig.Show("hud");
+                int changes = rig.ReadyChanges;
+                rig.Scheduler.Advance(30);
+                bool raisedAtCooldownEnd = rig.ReadyChanges > changes && rig.Controller.IsReady("hud");
+                var second = rig.Show("hud");
+                rig.Scheduler.Advance(31);
+                AdResult? viaShowBanner = null;
+                rig.Controller.ShowBanner("hud", BannerPosition.Top, r => viaShowBanner = r);
+                Check("AC61. GenericShowOfABanner_CountsTowardItsCooldownAndCaps",
+                    first == AdResult.Closed && inCooldown == AdResult.Blocked && raisedAtCooldownEnd && second == AdResult.Closed && viaShowBanner == AdResult.Blocked,
+                    $"Show={first}; 1 s later Show={inCooldown}; cooldown end ReadyChanged and ready={raisedAtCooldownEnd}; Show={second}; past the cooldown ShowBanner={viaShowBanner} "
+                    + "(expected Closed; Blocked; True; Closed; Blocked by the session cap of 2; pre-fix the generic Show recorded nothing)");
+            }
+
             // readiness polled every frame reaches the provider once per window; Show still asks live (issue #32)
             using (var rig = new AdsRig().Running())
             {

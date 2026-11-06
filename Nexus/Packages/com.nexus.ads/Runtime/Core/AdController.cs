@@ -176,6 +176,8 @@ namespace Nexus.Ads
         public void Show(string placement, Action<AdResult> onResult)
         {
             var declared = _config.Find(placement);
+            // one banner path: this one showed without recording the show, so the placement's cooldown and caps held for ShowBanner only (issue #327)
+            if (declared?.Format == AdFormat.Banner) { ShowBanner(placement, BannerPosition.Bottom, onResult); return; }
             var format = declared?.Format ?? AdFormat.Interstitial;
             if (SwitchedOff(declared, onResult)) return;
             var verdict = Guard.Check(placement, format, new GuardState(_fullScreenOpen, State == Phase.AwaitingConsent));
@@ -190,13 +192,6 @@ namespace Nexus.Ads
             {
                 NotReady(declared, State.ToString());
                 onResult?.Invoke(AdResult.NotReady);
-                return;
-            }
-            if (format == AdFormat.Banner)
-            {
-                _lastPlacement[format] = placement;
-                _provider.ShowBanner(placement, BannerPosition.Bottom);
-                onResult?.Invoke(AdResult.Closed);
                 return;
             }
             var slot = _slots[format];
