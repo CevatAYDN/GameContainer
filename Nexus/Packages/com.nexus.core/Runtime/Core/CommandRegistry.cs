@@ -334,7 +334,7 @@ namespace Nexus.Core
 
             if (NexusBuild.IsDevelopment && (ImplementsGenericInterface(commandType, typeof(ICommand<>)) || ImplementsGenericInterface(commandType, typeof(IAsyncCommand<>))))
             {
-                NexusRuntime.Logger?.LogWarning($"[Nexus] Composite command '{commandType.Name}' also implements a single-signal generic command interface (ICommand<T>/IAsyncCommand<T>); a composite trigger never calls it and runs only the composite or non-generic side. Implement ICompositeCommand / IAsyncCompositeCommand to receive all trigger payloads.");
+                NexusRuntime.Logger?.LogWarning($"[Nexus] Composite command '{commandType.Name}' implements a single-signal generic command interface (ICommand<T>/IAsyncCommand<T>); a composite trigger never calls it and runs only the composite or non-generic side. Implement ICompositeCommand / IAsyncCompositeCommand to receive all trigger payloads.");
             }
 
             var state = new CompositeTriggerState(commandType, signalTypes, oneShot, priority, isAsync);
