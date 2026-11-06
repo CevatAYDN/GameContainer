@@ -1406,6 +1406,7 @@ namespace NexusBench
             try
             {
                 RunR3_Economy(logger);
+                RunR3_Progression();
             }
             finally
             {
@@ -1426,6 +1427,19 @@ namespace NexusBench
                 deletes == 1 && !prefs.HasKey("NT_Eco_r3gems") && Math.Abs((double)saved - 17) < 1e-9,
                 $"deletes={deletes} legacyKey={prefs.HasKey("NT_Eco_r3gems")} saved={saved} (expected 1, False, 17)");
             economy.Dispose();
+        }
+
+        private static void RunR3_Progression()
+        {
+            // #301: 1.15f widens to 1.149999976..., so the truncating cast gave 114 and 174; the cost rounds to the nearest whole.
+            var progression = new ProgressionService();
+            long l2 = progression.CalculateUpgradeCost(100, 2);
+            long l5 = progression.CalculateUpgradeCost(100, 5);
+            long linear3 = progression.CalculateUpgradeCost(100, 3, 1.15f, CurveType.Linear);
+            long below1 = progression.CalculateUpgradeCost(100, 3, 0.9f);
+            Check("R3-02. Progression_UpgradeCost_Rounds_To_The_Designed_Value",
+                l2 == 115 && l5 == 175 && linear3 == 130 && below1 == 100,
+                $"L2={l2} L5={l5} linearL3={linear3} below1={below1} (expected 115, 175, 130, 100)");
         }
 
         private static void RunZeroGc()

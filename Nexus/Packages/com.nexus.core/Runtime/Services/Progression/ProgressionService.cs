@@ -22,6 +22,14 @@ namespace Nexus.Core.Services
 
         void CompleteCurrentLevel();
         void SetLevel(int levelIndex);
+
+        /// <summary>
+        /// The cost of an upgrade at <paramref name="level"/> (level 1 costs <paramref name="baseCost"/>): Linear
+        /// <c>baseCost * (1 + (level - 1) * (multiplier - 1))</c>, Exponential <c>baseCost * multiplier^(level - 1)</c>,
+        /// Polynomial <c>baseCost * level^multiplier</c>. The result rounds to the nearest whole number, halves away from
+        /// zero (100 at 1.15 gives 115 at level 2 and 175 at level 5). It is never below <paramref name="baseCost"/>,
+        /// so a multiplier below 1 keeps the base cost, and a cost too large for a long is <see cref="long.MaxValue"/>.
+        /// </summary>
         long CalculateUpgradeCost(long baseCost, int level, float multiplier = 1.15f, CurveType curveType = CurveType.Exponential);
     }
 
@@ -143,11 +151,12 @@ namespace Nexus.Core.Services
         {
             if (level <= 1) return baseCost;
 
+            double m = multiplier;
             double rawCost = curveType switch
             {
-                CurveType.Linear => baseCost * (1 + (level - 1) * (multiplier - 1)),
-                CurveType.Exponential => baseCost * Math.Pow(multiplier, level - 1),
-                CurveType.Polynomial => baseCost * Math.Pow(level, multiplier),
+                CurveType.Linear => baseCost * (1 + (level - 1) * (m - 1)),
+                CurveType.Exponential => baseCost * Math.Pow(m, level - 1),
+                CurveType.Polynomial => baseCost * Math.Pow(level, m),
                 _ => baseCost
             };
 
@@ -160,7 +169,8 @@ namespace Nexus.Core.Services
                 return long.MaxValue;
             }
 
-            return (long)Math.Max(Math.Max(baseCost, rawCost), 1L);
+            // Round, not truncate: 1.15f widens to 1.149999976..., so 100 at level 2 truncated to 114 (#301).
+            return (long)Math.Max(Math.Max(baseCost, Math.Round(rawCost, MidpointRounding.AwayFromZero)), 1L);
         }
 
         public override void Dispose()

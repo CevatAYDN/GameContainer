@@ -71,6 +71,12 @@ Issue #290: the editor binder now writes each constructor factory's parameters, 
 other parameters (one warning; the type is built by reflection). A binder generated before this change has no parameters
 and is not checked: regenerate it (**Nexus > Generate AOT Binder**) at the re-pin.
 
+#### Upgrade costs round
+
+Issue #301: `ProgressionService.CalculateUpgradeCost` rounds to the nearest whole (halves away from zero) instead of
+truncating; 100 at a multiplier of 1.15 costs 115 at level 2, not 114. A game that stored costs computed by the old
+method, or that computed the cost itself to avoid the truncation (Formatron), checks its numbers at the re-pin.
+
 #### The editor patch moves to 6000.6.8f1
 
 The framework's gates run on Unity 6000.6.8f1 (issue #284), the newest patch of the Supported stream; the `unity` field
