@@ -7,7 +7,7 @@ param(
     [switch]$ValidatePerformance
 )
 # Clean UPM consumer gate: pack the embedded package into a tarball, create a fresh project that
-# installs it, import the Code-first sample, run the smoke tests, optionally build and run a
+# installs it, import the three samples, run the smoke tests, optionally build and run a
 # Windows Mono player and build an Android IL2CPP player. Evidence lands under
 # Nexus/artifacts/<RunName>/ (git-ignored). The development project is only read.
 $ErrorActionPreference = 'Stop'

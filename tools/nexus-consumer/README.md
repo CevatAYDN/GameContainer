@@ -20,16 +20,20 @@ What runs, in order (each stage is a separate Unity process; the first failure s
    and the tarball, without `testables` as in a game (`-ValidatePerformance` adds them), the development project's
    Unity version, and the smoke assets (sample access helpers, a player probe, editor methods and
    two test assemblies).
-3. `consumer-import`: the Code-first Startup sample is imported through the UPM `Sample` API, which
-   also proves the package resolved as a `LocalTarball`.
+3. `consumer-import`: the three samples (Code-first Startup, Counter Example, Nexus Starter Package) are
+   imported through the UPM `Sample` API, which also proves the package resolved as a `LocalTarball`. The
+   None of the three has an asmdef, so all compile into Assembly-CSharp and a compile error in any of them fails
+   the project from here on.
 4. `consumer-prepare`: a scene with the sample's `ScoreBootstrap` and the probe is created and
    `BuildValidation.ValidateOrThrow()` runs.
-5. `consumer-editmode` (`UpmConsumerTests`): the imported sample equals the archived one byte for
-   byte; production architecture validation passes with test assemblies excluded; the project's own
+5. `consumer-editmode` (`UpmConsumerTests`): the imported Code-first sample equals the archived one byte for
+   byte; the Counter and Starter samples are imported and their lifecycles compiled; production architecture
+   validation passes with test assemblies excluded; the project's own
    test assembly, referencing `com.nexus.core.testing`, uses `NexusTestHarness`, `RecordingSignalBus`,
    `InMemoryPlayerPrefsService`, `GcAllocationProbe` and the mock ad adapter's `RewardOutcome`.
 6. `consumer-playmode` (`CodeFirstConsumerTests`): one component starts at score 1 and destroying
-   its owner disposes the container.
+   its owner disposes the container; the Counter sample's lifecycle starts on a context with strict
+   injection (a new ContextData's default) and resolves its model.
 7. `-ValidatePerformance`: the package's own performance, trace-stripping, hardening, readiness,
    service, reentrancy and lifecycle suites run inside the consumer (this switch writes `testables` in the manifest).
 8. `-BuildPlayer`: a Windows Mono development player is built and executed headless; the probe

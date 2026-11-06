@@ -4,7 +4,8 @@ Usage: python tools/nexus-consumer/prepare_clean_project.py --archive <tgz> --ou
 
 The project is named CleanConsumer under <folder>; the editor methods in it refuse to run
 anywhere else. The development project under Nexus/ is never touched. The smoke assets import
-the Code-first Startup sample, build a scene around it, run EditMode/PlayMode tests and can
+the three package samples (Code-first Startup, Counter Example, Nexus Starter Package), build a scene around
+the first, run EditMode/PlayMode tests (the Counter sample's lifecycle starts on a strict ContextData) and can
 build a Windows Mono player and an Android IL2CPP player that report their own result.
 """
 import argparse
@@ -153,10 +154,14 @@ public static class CleanConsumerSetup
             var package = PackageInfo.FindForAssetPath("Packages/com.nexus.core/package.json");
             if (package == null || package.source.ToString() != "LocalTarball")
                 throw new InvalidOperationException("Expected the packaged local tarball, not an embedded/development dependency.");
-            var sample = Sample.FindByPackage(package.name, package.version).Single(item => item.displayName == "Code-first Startup");
-            if (!sample.Import(Sample.ImportOptions.OverridePreviousImports))
-                throw new InvalidOperationException("UPM Sample.Import returned false.");
-            Debug.Log("NEXUS_UPM_SAMPLE_IMPORTED: " + sample.importPath);
+            // every sample the package ships: the Counter and Starter samples were never compiled by any gate (#308)
+            foreach (var name in new[] { "Code-first Startup", "Counter Example", "Nexus Starter Package" })
+            {
+                var sample = Sample.FindByPackage(package.name, package.version).Single(item => item.displayName == name);
+                if (!sample.Import(Sample.ImportOptions.OverridePreviousImports))
+                    throw new InvalidOperationException("UPM Sample.Import returned false for " + name + ".");
+                Debug.Log("NEXUS_UPM_SAMPLE_IMPORTED: " + sample.importPath);
+            }
             EditorApplication.Exit(0);
         }
         catch (Exception error) { Debug.LogException(error); EditorApplication.Exit(2); }
@@ -255,6 +260,15 @@ public sealed class UpmConsumerTests
         Assert.IsTrue(BuildValidation.Validate());
         Assert.AreEqual(0, BuildValidation.LastErrorCount);
     }
+    // None of the three samples has an asmdef, so they all compile into Assembly-CSharp: a compile error in one fails the project (#308).
+    [Test] public void CounterAndStarterSamples_AreImported_AndCompiled()
+    {
+        var package = PackageInfo.FindForAssetPath("Packages/com.nexus.core/package.json");
+        foreach (var name in new[] { "Counter Example", "Nexus Starter Package" })
+            Assert.IsTrue(Sample.FindByPackage(package.name, package.version).Single(item => item.displayName == name).isImported, name);
+        foreach (var type in new[] { "Nexus.Samples.Counter.CounterLifecycle", "Nexus.Starter.NexusStartLifecycle" })
+            Assert.IsTrue(System.AppDomain.CurrentDomain.GetAssemblies().Any(assembly => assembly.GetType(type, false) != null), type);
+    }
     private struct KitSignal { }
     // The game's own test assembly references com.nexus.core.testing; the manifest lists no testables (issue #74).
     [Test] public void TestingKit_ReachesAGameWithoutTestables()
@@ -287,6 +301,17 @@ using UnityEngine.TestTools;
 
 public sealed class CodeFirstConsumerTests
 {
+    // README step 5 of the Counter sample creates a new ContextData: strict injection on. The lifecycle must configure and its services start on it (#289, #308).
+    [UnityTest] public IEnumerator CounterSample_StartsOnAStrictContext_AndResolvesItsModel()
+    {
+        var lifecycle = (Nexus.Core.IContextLifecycle)Activator.CreateInstance(SmokeAccess.Find("Nexus.Samples.Counter.CounterLifecycle"));
+        var start = Nexus.Core.ContextFactory.StartAsync("Counter", builder => lifecycle.OnConfigure(builder));
+        while (!start.IsCompleted) yield return null;
+        Assert.IsNull(start.Exception, start.Exception?.ToString());
+        var context = start.Result;
+        try { Assert.IsNotNull(context.Container.Resolve(SmokeAccess.Find("Nexus.Samples.Counter.ICounterModel"))); }
+        finally { context.Dispose(); }
+    }
     [UnityTest] public IEnumerator OneComponent_StartsAtScoreOne_AndDisposesOnDestroy()
     {
         var owner = new GameObject("Code-first Consumer Test");
