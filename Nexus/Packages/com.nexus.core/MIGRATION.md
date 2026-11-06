@@ -51,6 +51,12 @@ Wickling's `FakeAds` (`Tests/SimRunner`) and RingFlow's two `MockAdService` clas
 subscribes this event instead of `OnImpressionRecorded` and logs the impression's `Currency` instead of a fixed "USD";
 `Format` and `Precision` are there too. `OnImpressionRecorded` still fires for every impression.
 
+#### Regenerate the binder for the constructor check
+
+Issue #290: the editor binder now writes each constructor factory's parameters, and NexusDI drops a factory written for
+other parameters (one warning; the type is built by reflection). A binder generated before this change has no parameters
+and is not checked: regenerate it (**Nexus > Generate AOT Binder**) at the re-pin.
+
 #### The editor patch moves to 6000.6.8f1
 
 The framework's gates run on Unity 6000.6.8f1 (issue #284), the newest patch of the Supported stream; the `unity` field

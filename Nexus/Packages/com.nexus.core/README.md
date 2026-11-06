@@ -110,7 +110,8 @@ the source generator on it writes only `link.xml`, issue #242),
 needs is installed below its asmdef's `versionDefines` expression (issue #143; the editor logs it after each compile),
 `NexusBinderSelfHeal` recovers a binder that no longer compiles (it stops after three regenerated binders in a row fail to
 compile; TROUBLESHOOTING "Stale Generated Binder"), and a generated injector written for other `[Inject]`
-members than its type has now is dropped before its first run, with a warning, and the type falls back to reflection.
+members than its type has now is dropped before its first run, with a warning, and the type falls back to reflection;
+so is a generated constructor factory written for other constructor parameters (issue #290).
 
 **Editor window** (menu **Nexus**, **Open Window** `Ctrl+Shift+N`): one window, 9 plugins, one tab each, in
 four sidebar sections. **Status**: one list of every problem the checks find, each with the action that fixes it (validation, code health, the binder, package versions, run-time errors and, in Play Mode, each context's bindings), the installed Nexus packages and the editor's state. **Setup**: Setup Wizard (starter scene, sample import, documents),

@@ -566,6 +566,7 @@ namespace NexusBench
             _failures += TeardownLeakSuite.Run();
             _failures += ScreenStackSuite.Run();
             _failures += FixVerificationSuite.Run();
+            _failures += ReviewR1Suite.Run();
             _failures += EvidenceSuite.Run();
             _failures += AdsCoreSuite.Run();
             // Last: creates real Contexts and must not disturb earlier suites' assumptions

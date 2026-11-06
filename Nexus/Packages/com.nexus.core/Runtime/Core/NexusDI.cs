@@ -244,6 +244,17 @@ namespace Nexus.Core
         // lambda is `di => new T(di.Resolve<A>(), di.Resolve<B>())` so readonly/immutable
         // constructor state works and IL2CPP never falls back to ConstructorInfo.Invoke.
         private static readonly ConcurrentDictionary<Type, Func<NexusDI, object>> s_constructorFactories = new();
+        // Generated constructor factories not yet compared with the type's constructor (#290). Until the check, the entry in
+        // s_constructorFactories is a checking wrapper that runs it once and is then replaced by the factory or removed, so
+        // CreateInstance does no extra work per call; a cached transient binding runs the check in RefreshBindingCache.
+        private static readonly ConcurrentDictionary<Type, UncheckedConstructorFactory> s_uncheckedConstructorFactories = new();
+
+        private sealed class UncheckedConstructorFactory
+        {
+            public Func<NexusDI, object> Checking;
+            public Func<NexusDI, object> Factory;
+            public string Parameters;
+        }
         // Shared user-defined-interface filter (fluent AsImplementedInterfaces + ContextBuilder).
         // Interface metadata is immutable per Type, so the GetInterfaces() walk runs once per type.
         private static readonly ConcurrentDictionary<Type, Type[]> s_userDefinedInterfacesCache = new();
@@ -571,6 +582,24 @@ namespace Nexus.Core
             /// An injector whose signature differs was generated for other members and is dropped before it runs.
             /// </summary>
             public string MemberSignature => _memberSignature ??= BuildMemberSignature();
+            private string _constructorSignature;
+            /// <summary>
+            /// The injected constructor's parameters as the generated binder writes them next to each constructor factory
+            /// (#290): per parameter its type's name, <c>?</c> when optional or defaulted and <c>=name</c> when named, joined by
+            /// <c>,</c>. Null when the type has no constructor the container can use. A factory whose signature differs was
+            /// generated for another constructor and is dropped before it runs.
+            /// </summary>
+            public string ConstructorSignature => _constructorSignature ??= BuildConstructorSignature();
+
+            private string BuildConstructorSignature()
+            {
+                if (ConstructorParameterTypes == null) return null;
+                var parameters = new string[ConstructorParameterTypes.Length];
+                for (int i = 0; i < parameters.Length; i++)
+                    parameters[i] = ConstructorParameterTypes[i].Name
+                        + SignatureFlags(ConstructorParameterOptional[i] || ConstructorParameterHasDefault[i], ConstructorParameterNames[i]);
+                return string.Join(",", parameters);
+            }
 
             private string BuildMemberSignature()
             {
@@ -997,6 +1026,7 @@ namespace Nexus.Core
             {
                 var type = binding.ConcreteType;
                 var meta = MetadataCache.GetOrCreateInjectMetadata(type);
+                CheckConstructorFactory(type);
                 s_constructorFactories.TryGetValue(type, out var factory);
                 binding.CachedMeta = meta;
                 binding.CachedConstructor = factory ?? meta.CompiledConstructor;
@@ -2610,12 +2640,68 @@ namespace Nexus.Core
         /// registered factory: if the caller supplied explicit constructor arguments,
         /// <see cref="Injector.CreateInstance"/> falls back to the reflection-with-overrides
         /// path instead of invoking the generated lambda.
+        /// This overload is not compared with the type's constructor: the source generator, which writes it, regenerates
+        /// with every compile. The editor binder uses the overload that also takes the constructor's parameters (#290).
         /// </summary>
         public static void RegisterConstructorFactory<T>(Func<NexusDI, T> factory) where T : class
         {
             if (factory == null) throw new ArgumentNullException(nameof(factory));
+            s_uncheckedConstructorFactories.TryRemove(typeof(T), out _);
             s_constructorFactories[typeof(T)] = di => factory(di);
             Interlocked.Increment(ref s_cacheGeneration);
+        }
+
+        /// <summary>
+        /// Codegen support: registers a generated constructor factory together with the constructor parameters it was
+        /// generated for (<paramref name="parameters"/>, the type's constructor signature at generation). Before its first
+        /// run the factory is compared with the type's current injected constructor; a factory generated for other
+        /// parameters (added, removed, named with <c>[Inject("name")]</c> or made optional) is dropped, with one warning, and
+        /// the type is constructed by reflection until the binder is regenerated (#290).
+        /// </summary>
+        public static void RegisterConstructorFactory<T>(Func<NexusDI, T> factory, string parameters) where T : class
+        {
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
+            if (parameters == null) throw new ArgumentNullException(nameof(parameters));
+            var type = typeof(T);
+            var pending = new UncheckedConstructorFactory { Factory = di => factory(di), Parameters = parameters };
+            // runs once: afterwards the entry is the factory itself, or gone and CreateInstance takes the reflection path
+            pending.Checking = di =>
+            {
+                CheckConstructorFactory(type);
+                // a registration that raced the check can leave this delegate in place with no pending entry: remove it, or
+                // CreateInstance would call it again forever; the type is then built by reflection
+                if (((ICollection<KeyValuePair<Type, Func<NexusDI, object>>>)s_constructorFactories)
+                    .Remove(new KeyValuePair<Type, Func<NexusDI, object>>(type, pending.Checking)))
+                {
+                    Interlocked.Increment(ref s_cacheGeneration);
+                    Services.NexusLog.WarnAlways($"[Nexus] The generated constructor factory of '{type.FullName}' was registered again " +
+                        "while its first use checked it; this type is built by reflection until the next start.");
+                }
+                return di._injector.CreateInstance(type);
+            };
+            s_uncheckedConstructorFactories[type] = pending;
+            s_constructorFactories[type] = pending.Checking;
+            Interlocked.Increment(ref s_cacheGeneration);
+        }
+
+        /// <summary>Compares a generated constructor factory that has not been checked yet with the type's constructor (#290).</summary>
+        private static void CheckConstructorFactory(Type type)
+        {
+            if (!s_uncheckedConstructorFactories.TryGetValue(type, out var pending)) return;
+            string signature = MetadataCache.GetOrCreateInjectMetadata(type).ConstructorSignature;
+            if (pending.Parameters == signature)
+                s_constructorFactories.TryUpdate(type, pending.Factory, pending.Checking);
+            else if (((ICollection<KeyValuePair<Type, Func<NexusDI, object>>>)s_constructorFactories)
+                .Remove(new KeyValuePair<Type, Func<NexusDI, object>>(type, pending.Checking)))
+            {
+                Interlocked.Increment(ref s_cacheGeneration);
+                Services.NexusLog.WarnAlways($"[Nexus] The generated binder was written for another constructor of '{type.FullName}' " +
+                    $"(binder: ({pending.Parameters}); type: {(signature == null ? "no usable constructor" : "(" + signature + ")")}). " +
+                    "Falling back to reflection for this type; regenerate the binder (Nexus > Generate AOT Binder).");
+            }
+            // removed after s_constructorFactories holds the answer, so a reader that finds no pending entry reads the final one
+            ((ICollection<KeyValuePair<Type, UncheckedConstructorFactory>>)s_uncheckedConstructorFactories)
+                .Remove(new KeyValuePair<Type, UncheckedConstructorFactory>(type, pending));
         }
 
         /// <summary>True when a generated (AOT) constructor factory is registered for <paramref name="type"/>.</summary>
@@ -2969,6 +3055,7 @@ namespace Nexus.Core
             s_customClearers.Clear();
             s_injectorMembers.Clear();
             s_constructorFactories.Clear();
+            s_uncheckedConstructorFactories.Clear();
             CommandRegistry.ClearGeneratedDispatchers();
             ClearCaches();
         }

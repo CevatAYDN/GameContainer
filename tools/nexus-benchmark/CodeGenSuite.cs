@@ -104,6 +104,19 @@ namespace NexusBench
         public CodeGenMediator(CodeGenDep dep) { Dep = dep; }
     }
 
+    // CG16 (#290): constructors whose parameters the binder writes next to the factory and NexusDI compares at first use.
+    public interface ICgSigDep { }
+    public static class CgSigHolder { public sealed class Inner { } }
+    public sealed class CgSigPlain { public CgSigPlain(ICgSigDep dep) { } }
+    public sealed class CgSigNamed { public CgSigNamed([Inject("x")] ICgSigDep dep) { } }
+    public sealed class CgSigOptional { public CgSigOptional([OptionalInject] ICgSigDep dep, ICgSigDep other = null) { } }
+    public sealed class CgSigGeneric { public CgSigGeneric(IList<int> list) { } }
+    public sealed class CgSigNested { public CgSigNested(CgSigHolder.Inner inner) { } }
+    public sealed class CgSigMixed
+    {
+        public CgSigMixed(ICgSigDep a, [Inject("n")] ICgSigDep b, [OptionalInject, Inject("m")] ICgSigDep c, IList<int> d, CgSigHolder.Inner e, ICgSigDep f = null) { }
+    }
+
     /// <summary>Created only through Activator (a convention lifecycle, an unbound AddSignalFilter type) and
     /// carrying no [Inject] member: link.xml must still keep them (issue #37).</summary>
     public sealed class CodeGenConventionLifecycle : IContextLifecycle
@@ -193,6 +206,7 @@ namespace NexusBench
             Test_Generator_Emits_Compiles_And_Boots();
             Test_Codegen_Skips_Factories_For_UnityObjects();
             Test_ConstructorFactoryPolicy_Decisions();
+            Test_GeneratedConstructorParameters_MatchTheRuntimeSignature();
             Test_LinkXml_Keeps_ActivatorCreatedTypes();
             Test_SourceGenerator_On_Writes_Only_LinkXml();
             Test_PackageAssemblies_Recognized_And_Preserved();
@@ -534,6 +548,46 @@ namespace NexusBench.CG2Source
                 try { if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true); } catch { }
             }
             Report("CG3. Codegen_Skips_Factories_For_UnityObjects", ok, detail);
+        }
+
+        // ─── CG16: the binder's constructor parameters equal the runtime's signature (#290) ───
+        // The editor writes the second argument of RegisterConstructorFactory and NexusDI builds the string it compares it with:
+        // two code paths, so one difference silently drops every factory of that shape on the first resolve (reflection from then on).
+        private static void Test_GeneratedConstructorParameters_MatchTheRuntimeSignature()
+        {
+            const string name = "CG16. GeneratedConstructorParameters_MatchTheRuntimeSignature";
+            string rootDir = NexusEditorSettings.OutputRoot;
+            var problems = new List<string>();
+            var shown = new List<string>();
+            try
+            {
+                if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true);
+                NexusCodeGenerator.GenerateBinder();
+                string source = File.ReadAllText(Path.Combine(rootDir, "NexusGeneratedBinder.g.cs"));
+                var metadataCache = typeof(NexusDI).GetNestedType("MetadataCache", BindingFlags.NonPublic);
+                var getMetadata = metadataCache.GetMethod("GetOrCreateInjectMetadata", BindingFlags.NonPublic | BindingFlags.Static);
+                foreach (var type in new[] { typeof(CgSigPlain), typeof(CgSigNamed), typeof(CgSigOptional), typeof(CgSigGeneric), typeof(CgSigNested), typeof(CgSigMixed) })
+                {
+                    var meta = getMetadata.Invoke(null, new object[] { type });
+                    string runtime = (string)meta.GetType().GetProperty("ConstructorSignature").GetValue(meta);
+                    var emitted = Regex.Match(source, @"RegisterConstructorFactory<NexusBench\." + type.Name + @">\(.*\), (""[^""\r\n]*"")\);");
+                    if (!emitted.Success) problems.Add($"{type.Name}: the binder has no constructor factory with parameters");
+                    else if (emitted.Groups[1].Value != NexusCodeGenerator.Literal(runtime))
+                        problems.Add($"{type.Name}: binder wrote {emitted.Groups[1].Value}, runtime builds {NexusCodeGenerator.Literal(runtime)}");
+                    else shown.Add($"{type.Name}={emitted.Groups[1].Value}");
+                }
+            }
+            catch (Exception ex)
+            {
+                problems.Add($"EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            }
+            finally
+            {
+                try { if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true); } catch { }
+            }
+            Report(name, problems.Count == 0, problems.Count == 0
+                ? "binder and runtime agree: " + string.Join(" ", shown)
+                : string.Join(" || ", problems));
         }
 
         private static void Test_LinkXml_Keeps_ActivatorCreatedTypes()

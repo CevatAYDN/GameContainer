@@ -617,7 +617,9 @@ namespace Nexus.Editor
                     continue;
                 }
                 int factoryStart = ctorFactorySb.Length;
-                ctorFactorySb.AppendLine($"            NexusDI.RegisterConstructorFactory<{fullName}>((di) => new {fullName}({string.Join(", ", argList)}));");
+                // the parameters this factory is written for (InjectableMetadata.ConstructorSignature): NexusDI drops a stale one (#290)
+                string ctorSignature = string.Join(",", parameters.Select(p => p.ParameterType.Name + SignatureFlags(IsOptional(p) || p.HasDefaultValue, InjectName(p))));
+                ctorFactorySb.AppendLine($"            NexusDI.RegisterConstructorFactory<{fullName}>((di) => new {fullName}({string.Join(", ", argList)}), {Literal(ctorSignature)});");
                 WrapInCondition(ctorFactorySb, factoryStart, factoryCondition);
             }
 
