@@ -240,13 +240,25 @@ namespace Nexus.Iap.Unity
         private bool GrantUnrequested(PendingOrder order)
         {
             var consumables = new List<string>();
+            string untyped = null;
             foreach (var item in order.CartOrdered.Items())
             {
                 string id = item.Product?.definition?.id;
-                if (!string.IsNullOrEmpty(id) && _catalog.TryGetValue(id, out var type) && type == NexusProductType.Consumable) consumables.Add(id);
+                if (string.IsNullOrEmpty(id)) continue;
+                var type = TypeOf(item);
+                if (type == StoreProductType.Consumable) consumables.Add(id);
+                else if (type == StoreProductType.Unknown) untyped = id;
+            }
+            string transaction = order.Info?.TransactionID;
+            // A confirm of a product Unity IAP could not type acknowledges it instead of consuming it on Google Play: a consumable
+            // would be closed ungranted and never consumed (issue #329)
+            if (untyped != null)
+            {
+                if (_keptUnrequested.Add(transaction ?? ""))
+                    Warn($"A paid purchase of {untyped} (transaction {transaction}) names a product this session's catalog does not list and the store did not type: it is not confirmed, and the store lists it again at the next purchase fetch (each start and Restore). Google Play refunds a purchase not acknowledged within three days; list the product in the catalog to grant it.");
+                return false;
             }
             if (consumables.Count == 0) return true;   // an owned product: Changed reports it
-            string transaction = order.Info?.TransactionID;
             var handler = UnrequestedPurchase;
             if (handler == null)
             {
@@ -353,7 +365,9 @@ namespace Nexus.Iap.Unity
                 : PurchaseOutcome.Failed);
         }
 
-        /// <summary>Consumables are never owned; non-consumables and subscriptions are owned once ordered.</summary>
+        /// <summary>Consumables are never owned; non-consumables and subscriptions are owned once ordered. A pending order of a
+        /// product neither the catalog nor the store typed is not owned: it is not confirmed (GrantUnrequested), and Google Play
+        /// refunds it (issue #329).</summary>
         private void Own(Order order)
         {
             Defer(order, false);
@@ -361,9 +375,20 @@ namespace Nexus.Iap.Unity
             {
                 string id = item.Product?.definition?.id;
                 if (string.IsNullOrEmpty(id)) continue;
-                if (_catalog.TryGetValue(id, out var type) && type == NexusProductType.Consumable) continue;
+                var type = TypeOf(item);
+                if (type == StoreProductType.Consumable || (type == StoreProductType.Unknown && order is PendingOrder)) continue;
                 _owned.Add(id);
             }
+        }
+
+        // The catalog's type when it lists the product; otherwise the store's, so a consumable removed from the catalog while a
+        // purchase of it was pending is not owned and not consumed ungranted (issue #329). Unity IAP types a product it could
+        // not resolve Unknown (Product.CreateUnknownProduct).
+        private StoreProductType TypeOf(CartItem item)
+        {
+            string id = item.Product?.definition?.id;
+            if (id != null && _catalog.TryGetValue(id, out var type)) return Map(type);
+            return item.Product?.definition?.type ?? StoreProductType.Unknown;
         }
 
         private void Defer(Order order, bool deferred)
