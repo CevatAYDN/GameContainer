@@ -174,7 +174,7 @@ namespace Nexus.Core.Tests
         {
             var failedGo = new GameObject("A failed global"); failedGo.SetActive(false);
             var replacementGo = new GameObject("Z replacement global"); replacementGo.SetActive(false);
-            var data = ScriptableObject.CreateInstance<ContextData>(); data.EnableAutoDiscovery = false;
+            var data = ScriptableObject.CreateInstance<ContextData>(); data.EnableAutoDiscovery = false; data.AssemblyScopes = new[] { typeof(Nexus.Core.Context).Assembly.GetName().Name }; // see ParentScopeIsAuthoritative (#319)
             try
             {
                 var failed = failedGo.AddComponent<Root>();
