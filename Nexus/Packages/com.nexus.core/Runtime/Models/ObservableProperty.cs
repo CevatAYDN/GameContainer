@@ -293,17 +293,16 @@ namespace Nexus.Core
 
                 if (replacedSnapshot != null)
                 {
-                    try
+                    // A handler that throws does not keep the others, or the changes queued meanwhile, from being delivered; the
+                    // first failure is rethrown once all were (issue #298, as ObservableProperty<T> since #189).
+                    Exception failure = null;
+                    for (int i = 0; i < replacedSnapshot.Length; i++)
                     {
-                        for (int i = 0; i < replacedSnapshot.Length; i++)
-                            replacedSnapshot[i]?.Invoke(index, previous, value);
+                        try { replacedSnapshot[i]?.Invoke(index, previous, value); }
+                        catch (Exception ex) { Isolate(ex, ref failure); }
                     }
-                    finally
-                    {
-                        // Drains every queued change and releases the claim when the queue is
-                        // empty. Runs even if a direct handler threw, so the claim never leaks.
-                        DrainPendingChanges();
-                    }
+                    DrainPendingChanges(ref failure);
+                    if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
                 }
             }
         }
@@ -383,17 +382,16 @@ namespace Nexus.Core
 
             if (snapshot != null)
             {
-                try
+                // A handler that throws does not keep the others, or the changes queued meanwhile, from being delivered; the
+                // first failure is rethrown once all were (issue #298, as ObservableProperty<T> since #189).
+                Exception failure = null;
+                for (int i = 0; i < snapshot.Length; i++)
                 {
-                    for (int i = 0; i < snapshot.Length; i++)
-                        snapshot[i]?.Invoke(index, item);
+                    try { snapshot[i]?.Invoke(index, item); }
+                    catch (Exception ex) { Isolate(ex, ref failure); }
                 }
-                finally
-                {
-                    // Drains every queued change and releases the claim when the queue is
-                    // empty. Runs even if a direct handler threw, so the claim never leaks.
-                    DrainPendingChanges();
-                }
+                DrainPendingChanges(ref failure);
+                if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
             }
         }
 
@@ -421,15 +419,16 @@ namespace Nexus.Core
 
             if (snapshot != null)
             {
-                try
+                // A handler that throws does not keep the others, or the changes queued meanwhile, from being delivered; the
+                // first failure is rethrown once all were (issue #298, as ObservableProperty<T> since #189).
+                Exception failure = null;
+                for (int i = 0; i < snapshot.Length; i++)
                 {
-                    for (int i = 0; i < snapshot.Length; i++)
-                        snapshot[i]?.Invoke(index, item);
+                    try { snapshot[i]?.Invoke(index, item); }
+                    catch (Exception ex) { Isolate(ex, ref failure); }
                 }
-                finally
-                {
-                    DrainPendingChanges();
-                }
+                DrainPendingChanges(ref failure);
+                if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
             }
             return true;
         }
@@ -457,15 +456,16 @@ namespace Nexus.Core
 
             if (snapshot != null)
             {
-                try
+                // A handler that throws does not keep the others, or the changes queued meanwhile, from being delivered; the
+                // first failure is rethrown once all were (issue #298, as ObservableProperty<T> since #189).
+                Exception failure = null;
+                for (int i = 0; i < snapshot.Length; i++)
                 {
-                    for (int i = 0; i < snapshot.Length; i++)
-                        snapshot[i]?.Invoke(index, item);
+                    try { snapshot[i]?.Invoke(index, item); }
+                    catch (Exception ex) { Isolate(ex, ref failure); }
                 }
-                finally
-                {
-                    DrainPendingChanges();
-                }
+                DrainPendingChanges(ref failure);
+                if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
             }
         }
 
@@ -490,16 +490,23 @@ namespace Nexus.Core
 
             if (snapshot != null)
             {
-                try
+                // A handler that throws does not keep the others, or the changes queued meanwhile, from being delivered; the
+                // first failure is rethrown once all were (issue #298, as ObservableProperty<T> since #189).
+                Exception failure = null;
+                for (int i = 0; i < snapshot.Length; i++)
                 {
-                    for (int i = 0; i < snapshot.Length; i++)
-                        snapshot[i]?.Invoke();
+                    try { snapshot[i]?.Invoke(); }
+                    catch (Exception ex) { Isolate(ex, ref failure); }
                 }
-                finally
-                {
-                    DrainPendingChanges();
-                }
+                DrainPendingChanges(ref failure);
+                if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
             }
+        }
+
+        private static void Isolate(Exception ex, ref Exception failure)
+        {
+            SignalBus.ReportIsolatedFailure(ex, $"A handler of ObservableList<{typeof(T).Name}>");
+            failure ??= ex;
         }
 
         // ── M4: reentrant-notification drain ───────────────────
@@ -511,9 +518,10 @@ namespace Nexus.Core
         /// primary mutations, so handler sets cannot change mid-dispatch.
         /// The claim release and the queue-empty check are ONE critical section, so a
         /// mutation that queues after this point observes _isNotifying == false and takes
-        /// over the claim itself — the handoff cannot drop a queued change.
+        /// over the claim itself — the handoff cannot drop a queued change. A queued handler that throws is reported and
+        /// kept in <paramref name="failure"/> (the first one wins) and the drain goes on (issue #298).
         /// </summary>
-        private void DrainPendingChanges()
+        private void DrainPendingChanges(ref Exception failure)
         {
             bool released = false;
             try
@@ -549,16 +557,16 @@ namespace Nexus.Core
                         switch (pending.Op)
                         {
                             case PendingChangeOp.Add:
-                                DispatchPendingAdded(pending.Index, pending.Item);
+                                DispatchPendingAdded(pending.Index, pending.Item, ref failure);
                                 break;
                             case PendingChangeOp.Remove:
-                                DispatchPendingRemoved(pending.Index, pending.Item);
+                                DispatchPendingRemoved(pending.Index, pending.Item, ref failure);
                                 break;
                             case PendingChangeOp.Clear:
-                                DispatchPendingCleared();
+                                DispatchPendingCleared(ref failure);
                                 break;
                             case PendingChangeOp.Replace:
-                                DispatchPendingReplaced(pending.Index, pending.OldItem, pending.Item);
+                                DispatchPendingReplaced(pending.Index, pending.OldItem, pending.Item, ref failure);
                                 break;
                         }
                     }
@@ -568,11 +576,9 @@ namespace Nexus.Core
             {
                 if (!released)
                 {
-                    // An exception escaped a queued handler mid-drain: release the claim
-                    // so future mutations never queue forever. The already-copied tail of
-                    // THIS pass is dropped (same semantics as a throwing direct handler
-                    // skipping the rest of its snapshot); only changes queued AFTER the
-                    // copy stay in the queue and are picked up by the next claimer.
+                    // Defensive: handler failures are caught per handler (#298), so only an unexpected exception
+                    // gets here. Release the claim so future mutations never queue forever; the copied tail of this
+                    // pass is dropped, and changes queued after the copy are picked up by the next claimer.
                     lock (_eventLock)
                     {
                         if (_drainBuffer != null) Array.Clear(_drainBuffer, 0, _drainBuffer.Length);
@@ -582,7 +588,7 @@ namespace Nexus.Core
             }
         }
 
-        private void DispatchPendingAdded(int index, T item)
+        private void DispatchPendingAdded(int index, T item, ref Exception failure)
         {
             Action<int, T>[] snapshot;
             lock (_eventLock)
@@ -591,10 +597,13 @@ namespace Nexus.Core
                 if (snapshot == null || snapshot.Length == 0) return;
             }
             for (int i = 0; i < snapshot.Length; i++)
-                snapshot[i]?.Invoke(index, item);
+            {
+                try { snapshot[i]?.Invoke(index, item); }
+                catch (Exception ex) { Isolate(ex, ref failure); }
+            }
         }
 
-        private void DispatchPendingRemoved(int index, T item)
+        private void DispatchPendingRemoved(int index, T item, ref Exception failure)
         {
             Action<int, T>[] snapshot;
             lock (_eventLock)
@@ -603,10 +612,13 @@ namespace Nexus.Core
                 if (snapshot == null || snapshot.Length == 0) return;
             }
             for (int i = 0; i < snapshot.Length; i++)
-                snapshot[i]?.Invoke(index, item);
+            {
+                try { snapshot[i]?.Invoke(index, item); }
+                catch (Exception ex) { Isolate(ex, ref failure); }
+            }
         }
 
-        private void DispatchPendingReplaced(int index, T oldItem, T newItem)
+        private void DispatchPendingReplaced(int index, T oldItem, T newItem, ref Exception failure)
         {
             Action<int, T, T>[] snapshot;
             lock (_eventLock)
@@ -615,10 +627,13 @@ namespace Nexus.Core
                 if (snapshot == null || snapshot.Length == 0) return;
             }
             for (int i = 0; i < snapshot.Length; i++)
-                snapshot[i]?.Invoke(index, oldItem, newItem);
+            {
+                try { snapshot[i]?.Invoke(index, oldItem, newItem); }
+                catch (Exception ex) { Isolate(ex, ref failure); }
+            }
         }
 
-        private void DispatchPendingCleared()
+        private void DispatchPendingCleared(ref Exception failure)
         {
             Action[] snapshot;
             lock (_eventLock)
@@ -627,7 +642,10 @@ namespace Nexus.Core
                 if (snapshot == null || snapshot.Length == 0) return;
             }
             for (int i = 0; i < snapshot.Length; i++)
-                snapshot[i]?.Invoke();
+            {
+                try { snapshot[i]?.Invoke(); }
+                catch (Exception ex) { Isolate(ex, ref failure); }
+            }
         }
 
         public bool Contains(T item) { lock (_eventLock) return _items.Contains(item); }

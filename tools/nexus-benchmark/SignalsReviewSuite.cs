@@ -38,6 +38,7 @@ namespace NexusBench
             Run("SR3", Test_DispatchTimeout_StaysCancellation);
             Run("SR4", Test_DeleteSave_SkipsSnapshotCapturedBefore);
             Run("SR5", Test_NewVersionedObject_StartsAtCurrentVersion);
+            Run("SR6", Test_ObservableList_ThrowingHandler_LeavesTheOthers);
             Run("SR9", Test_VersionedObject_HidingTheHook_StillMigrates);
 
             Console.WriteLine();
@@ -189,6 +190,25 @@ namespace NexusBench
                     "(before: the loaded asset was stamped current and skipped Migrate)");
             }
             finally { Debug.Logged -= listen; }
+        }
+
+        // ── #298: ObservableList handler isolation ────────────────────────────
+        private static void Test_ObservableList_ThrowingHandler_LeavesTheOthers()
+        {
+            var list = new ObservableList<int>();
+            var seen = new List<int>();
+            var bug = new InvalidOperationException("view bug");
+            list.OnAdded((_, __) => throw bug);            // registered first: runs first
+            list.OnAdded((_, item) => seen.Add(item));
+            list.OnAdded((_, item) => { if (item == 1) list.Add(2); }); // queued change, delivered by the drain
+
+            Exception thrown = null;
+            try { list.Add(1); }
+            catch (Exception ex) { thrown = ex; }
+
+            bool ok = seen.Count == 2 && seen[0] == 1 && seen[1] == 2 && ReferenceEquals(thrown, bug) && list.Count == 2;
+            Report("SR6. ObservableList_ThrowingHandler_LeavesTheOthers_AndTheDrain", ok,
+                $"other handler saw [{string.Join(",", seen)}] ([1,2] expected), rethrown first failure={ReferenceEquals(thrown, bug)}, count={list.Count}");
         }
 
     }

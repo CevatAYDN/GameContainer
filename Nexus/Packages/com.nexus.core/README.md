@@ -72,7 +72,7 @@ then its subscribers, newest first, then its composites. A subscriber, composite
 logged once as an error and the others still get the signal; `Fire` then rethrows the first failure (a reentrancy guard,
 a recovery abort, or the cancellation of the dispatch's own token or of the context still ends the dispatch; an
 `OperationCanceledException` a command throws on its own is its failure: logged, `CommandFailedSignal`, the others run).
-An `ObservableProperty<T>` or `SecureObservable*` observer that throws is handled the same way
+An `ObservableProperty<T>`, `ObservableList<T>` or `SecureObservable*` observer that throws is handled the same way
 (the economy and progression services keep and save the change and do not rethrow),
 and `RecordingSignalBus` delivers in the bus's order.
 
