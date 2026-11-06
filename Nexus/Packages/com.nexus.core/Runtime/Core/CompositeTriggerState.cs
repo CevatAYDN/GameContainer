@@ -20,6 +20,12 @@ namespace Nexus.Core
         /// <summary>Execution priority; higher values run first.</summary>
         public int Priority { get; }
 
+        /// <summary>
+        /// True when the trigger was registered as async: a command that implements both sides runs its async one
+        /// (<see cref="IAsyncCompositeCommand"/> or <see cref="IAsyncCommand"/>). The flag was dropped before (issue #299).
+        /// </summary>
+        public bool IsAsync { get; }
+
         /// <summary>Bitmask of signals received so far. Only set by SignalBus internals.</summary>
         public ulong CurrentMask { get; internal set; }
 
@@ -55,12 +61,14 @@ namespace Nexus.Core
         /// <param name="requiredSignals">The signal types required for completion.</param>
         /// <param name="oneShot">If true, fires once and is removed.</param>
         /// <param name="priority">Execution priority (higher runs first).</param>
-        public CompositeTriggerState(Type commandType, Type[] requiredSignals, bool oneShot, int priority)
+        /// <param name="isAsync">Runs the async side of a command that implements both.</param>
+        public CompositeTriggerState(Type commandType, Type[] requiredSignals, bool oneShot, int priority, bool isAsync = false)
         {
             CommandType = commandType;
             RequiredSignals = requiredSignals;
             OneShot = oneShot;
             Priority = priority;
+            IsAsync = isAsync;
             // Safe bitmask calculation: for count == 64, (1UL << 64) is undefined
             // (the runtime masks shift to low-order 6 bits, yielding 1 instead of 0).
             // We handle 64 as a special case: set all 64 bits explicitly.

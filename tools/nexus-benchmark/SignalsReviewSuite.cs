@@ -39,6 +39,8 @@ namespace NexusBench
             Run("SR4", Test_DeleteSave_SkipsSnapshotCapturedBefore);
             Run("SR5", Test_NewVersionedObject_StartsAtCurrentVersion);
             Run("SR6", Test_ObservableList_ThrowingHandler_LeavesTheOthers);
+            Run("SR7", Test_Composite_UnrunnableType_Rejected);
+            Run("SR8", Test_Composite_IsAsync_Honoured);
             Run("SR9", Test_VersionedObject_HidingTheHook_StillMigrates);
 
             Console.WriteLine();
@@ -211,6 +213,36 @@ namespace NexusBench
                 $"other handler saw [{string.Join(",", seen)}] ([1,2] expected), rethrown first failure={ReferenceEquals(thrown, bug)}, count={list.Count}");
         }
 
+        // ── #299: composite registration ──────────────────────────────────────
+        private static void Test_Composite_UnrunnableType_Rejected()
+        {
+            var container = new NexusDI();
+            var bus = NewBus(container);
+            bool genericRejected = false, plainRejected = false;
+            try { bus.RegisterCompositeCommand(new[] { typeof(SrCompA), typeof(SrCompB) }, typeof(SrSingleSignalCommand), false, 0, false); }
+            catch (ArgumentException) { genericRejected = true; }
+            try { bus.RegisterCompositeCommand(new[] { typeof(SrCompA), typeof(SrCompB) }, typeof(SrNotACommand), false, 0, false); }
+            catch (ArgumentException) { plainRejected = true; }
+            bus.Dispose();
+            container.Dispose();
+            Report("SR7. Composite_TypeTheExecutorCannotRun_IsRejected", genericRejected && plainRejected,
+                $"ICommand<A> rejected={genericRejected}, no command interface rejected={plainRejected} (before: accepted, then never ran)");
+        }
+
+        private static void Test_Composite_IsAsync_Honoured()
+        {
+            SrBothWaysComposite.Ran = null;
+            var container = new NexusDI();
+            var bus = NewBus(container);
+            bus.RegisterCompositeCommand(new[] { typeof(SrCompA), typeof(SrCompB) }, typeof(SrBothWaysComposite), false, 0, isAsync: true);
+            bus.FireAsync(new SrCompA()).AsTask().GetAwaiter().GetResult();
+            bus.FireAsync(new SrCompB()).AsTask().GetAwaiter().GetResult();
+            string ran = SrBothWaysComposite.Ran;
+            bus.Dispose();
+            container.Dispose();
+            Report("SR8. Composite_IsAsync_RunsTheAsyncSide", ran == "async",
+                $"ran={ran ?? "none"} (before: isAsync was dropped and the sync side ran)");
+        }
     }
 
     public struct SrSignal { }
@@ -254,4 +286,14 @@ namespace NexusBench
         void ISerializationCallbackReceiver.OnAfterDeserialize() { }
     }
 
+    public struct SrCompA { }
+    public struct SrCompB { }
+    public sealed class SrSingleSignalCommand : ICommand<SrCompA> { public void Execute(SrCompA signal) { } }
+    public sealed class SrNotACommand { }
+    public sealed class SrBothWaysComposite : ICompositeCommand, IAsyncCompositeCommand
+    {
+        public static string Ran;
+        public void Execute(CompositeContext signals) => Ran = "sync";
+        public ValueTask ExecuteAsync(CompositeContext signals, CancellationToken ct) { Ran = "async"; return default; }
+    }
 }

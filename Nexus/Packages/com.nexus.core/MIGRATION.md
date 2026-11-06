@@ -59,6 +59,10 @@ binding now throws at start (`ArgumentException` from the context builder, `Inva
 `CommandRegistry.RegisterCommand`). Implement the generic interface of the signal. No class of the four known games
 implements a non-generic command interface.
 
+Issue #299: `RegisterCompositeCommand` throws `ArgumentException` for a type the composite trigger cannot run (one that
+implements only `ICommand<T>` or `IAsyncCommand<T>`) and for an async-only type registered as sync. No known game
+registers a composite command.
+
 #### Regenerate the binder for the constructor check
 
 Issue #290: the editor binder now writes each constructor factory's parameters, and NexusDI drops a factory written for

@@ -298,6 +298,11 @@ namespace Nexus.Core
         }
 
         /// <summary>Registers a composite command that triggers on multiple signals.</summary>
+        /// <remarks>
+        /// The command must implement <see cref="ICompositeCommand"/>, <see cref="IAsyncCompositeCommand"/>,
+        /// <see cref="ICommand"/> or <see cref="IAsyncCommand"/>; an async-only one needs <paramref name="isAsync"/> true.
+        /// With <paramref name="isAsync"/> true a command that implements both sides runs its async one, otherwise its sync one.
+        /// </remarks>
         public void RegisterCompositeCommand(Type[] signalTypes, Type commandType, bool oneShot, int priority, bool isAsync)
         {
             if (signalTypes == null || signalTypes.Length == 0)
@@ -319,12 +324,20 @@ namespace Nexus.Core
                 }
             }
 
+            // The executor runs only these four; any other type was accepted and then never ran (issue #299).
+            bool compositeSync = typeof(ICompositeCommand).IsAssignableFrom(commandType) || typeof(ICommand).IsAssignableFrom(commandType);
+            bool compositeAsync = typeof(IAsyncCompositeCommand).IsAssignableFrom(commandType) || typeof(IAsyncCommand).IsAssignableFrom(commandType);
+            if (!compositeSync && !compositeAsync)
+                throw new ArgumentException($"Composite command '{commandType?.Name}' must implement ICompositeCommand, IAsyncCompositeCommand, ICommand or IAsyncCommand; a single-signal ICommand<T>/IAsyncCommand<T> does not run as a composite.", nameof(commandType));
+            if (!compositeSync && !isAsync)
+                throw new ArgumentException($"Composite command '{commandType.Name}' implements only the async interfaces but is being registered as sync. It must be registered as async (isAsync: true).", nameof(isAsync));
+
             if (NexusBuild.IsDevelopment && (ImplementsGenericInterface(commandType, typeof(ICommand<>)) || ImplementsGenericInterface(commandType, typeof(IAsyncCommand<>))))
             {
-                NexusRuntime.Logger?.LogWarning($"[Nexus] Composite command '{commandType.Name}' implements a single-signal generic command interface (ICommand<T>/IAsyncCommand<T>), which is not supported for composites. Implement ICompositeCommand / IAsyncCompositeCommand to receive all trigger payloads, or non-generic ICommand / IAsyncCommand if no payload is needed.");
+                NexusRuntime.Logger?.LogWarning($"[Nexus] Composite command '{commandType.Name}' also implements a single-signal generic command interface (ICommand<T>/IAsyncCommand<T>); a composite trigger never calls it and runs only the composite or non-generic side. Implement ICompositeCommand / IAsyncCompositeCommand to receive all trigger payloads.");
             }
 
-            var state = new CompositeTriggerState(commandType, signalTypes, oneShot, priority);
+            var state = new CompositeTriggerState(commandType, signalTypes, oneShot, priority, isAsync);
 
             lock (_compositeLock)
             {

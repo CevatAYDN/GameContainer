@@ -73,8 +73,9 @@ namespace Nexus.Core
         /// </summary>
         public int Priority { get; set; } = 0;
         /// <summary>
-        /// Forces the sync/async classification instead of deriving it from the command's
-        /// interfaces. Null (default) = derive.
+        /// True runs the async side (<see cref="IAsyncCompositeCommand"/> or <see cref="IAsyncCommand"/>) of a command
+        /// that implements both; false runs its sync side, and an async-only command is rejected. Null (default) derives
+        /// it: async only when the command has no sync side.
         /// </summary>
         public bool? IsAsync { get; set; }
 

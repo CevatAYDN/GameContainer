@@ -48,7 +48,10 @@ namespace Nexus.Core
         /// <summary>Execution priority (higher priority runs first).</summary>
         public int Priority { get; set; } = 0;
 
-        /// <summary>Whether this composite command runs asynchronously.</summary>
+        /// <summary>
+        /// True runs the async side (<see cref="IAsyncCompositeCommand"/> or <see cref="IAsyncCommand"/>) of a command that
+        /// implements both sides. False derives it: async only when the command has no sync side.
+        /// </summary>
         public bool IsAsync { get; set; } = false;
 
         public RegisterCompositeCommandAttribute(params Type[] signalTypes)

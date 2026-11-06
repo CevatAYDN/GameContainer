@@ -25,6 +25,8 @@ namespace NexusBench
     public readonly struct RegSigD { public readonly int Value; public RegSigD(int v) => Value = v; }
     public readonly struct RegSigE { public readonly int Value; public RegSigE(int v) => Value = v; }
 
+    public class RegCompositeCmd : ICompositeCommand { public void Execute(CompositeContext context) { } }
+
     public class RegCmdA : ICommand<RegSigA>
     {
         public void Execute(RegSigA signal) { }
@@ -216,7 +218,7 @@ namespace NexusBench
                     $"priorities=[{sortedHandlers[0].Priority},{sortedHandlers[1].Priority},{sortedHandlers[2].Priority}]");
 
                 // CR10: composite registration lands in per-signal + all lists.
-                reg.RegisterCompositeCommand(new[] { typeof(RegSigA), typeof(RegSigB) }, typeof(RegCmdA), oneShot: false, 5, false);
+                reg.RegisterCompositeCommand(new[] { typeof(RegSigA), typeof(RegSigB) }, typeof(RegCompositeCmd), oneShot: false, 5, false);
                 bool gotTriggersA = reg.TryGetCompositeTriggers(typeof(RegSigA), out var triggersA);
                 bool gotTriggersB = reg.TryGetCompositeTriggers(typeof(RegSigB), out var triggersB);
                 bool composite = gotTriggersA && triggersA.Count == 1
@@ -226,11 +228,11 @@ namespace NexusBench
                     $"all={reg.AllCompositeTriggers.Count} A={(gotTriggersA ? triggersA.Count : -1)} B={(gotTriggersB ? triggersB.Count : -1)}");
 
                 // CR11: composite validation — null, empty, >64, duplicate.
-                bool cr11 = Throws<ArgumentException>(() => reg.RegisterCompositeCommand(null, typeof(RegCmdA), false, 0, false))
-                    && Throws<ArgumentException>(() => reg.RegisterCompositeCommand(new Type[0], typeof(RegCmdA), false, 0, false))
-                    && Throws<ArgumentException>(() => reg.RegisterCompositeCommand(new Type[65], typeof(RegCmdA), false, 0, false))
-                    && Throws<ArgumentException>(() => reg.RegisterCompositeCommand(new[] { typeof(RegSigA), typeof(RegSigA) }, typeof(RegCmdA), false, 0, false))
-                    && Throws<ArgumentException>(() => reg.RegisterCompositeCommand(new[] { typeof(RegSigA), null }, typeof(RegCmdA), false, 0, false));
+                bool cr11 = Throws<ArgumentException>(() => reg.RegisterCompositeCommand(null, typeof(RegCompositeCmd), false, 0, false))
+                    && Throws<ArgumentException>(() => reg.RegisterCompositeCommand(new Type[0], typeof(RegCompositeCmd), false, 0, false))
+                    && Throws<ArgumentException>(() => reg.RegisterCompositeCommand(new Type[65], typeof(RegCompositeCmd), false, 0, false))
+                    && Throws<ArgumentException>(() => reg.RegisterCompositeCommand(new[] { typeof(RegSigA), typeof(RegSigA) }, typeof(RegCompositeCmd), false, 0, false))
+                    && Throws<ArgumentException>(() => reg.RegisterCompositeCommand(new[] { typeof(RegSigA), null }, typeof(RegCompositeCmd), false, 0, false));
                 Check("CR11. Composite_Validation_Parity", cr11,
                     "null/empty/65/duplicate/null-element all ArgumentException");
 
@@ -428,13 +430,13 @@ namespace NexusBench
 
             // DIFF8: composite duplicate-signal rejection — identical exception.
             DiffCase("DIFF8. CompositeDuplicate_IdenticalRejection",
-                bus => bus.RegisterCompositeCommand(new[] { typeof(RegSigA), typeof(RegSigA) }, typeof(RegCmdA), false, 0, false),
-                reg => reg.RegisterCompositeCommand(new[] { typeof(RegSigA), typeof(RegSigA) }, typeof(RegCmdA), false, 0, false));
+                bus => bus.RegisterCompositeCommand(new[] { typeof(RegSigA), typeof(RegSigA) }, typeof(RegCompositeCmd), false, 0, false),
+                reg => reg.RegisterCompositeCommand(new[] { typeof(RegSigA), typeof(RegSigA) }, typeof(RegCompositeCmd), false, 0, false));
 
             // DIFF9: composite >64 signals — identical exception.
             DiffCase("DIFF9. CompositeTooMany_IdenticalRejection",
-                bus => bus.RegisterCompositeCommand(new Type[65], typeof(RegCmdA), false, 0, false),
-                reg => reg.RegisterCompositeCommand(new Type[65], typeof(RegCmdA), false, 0, false));
+                bus => bus.RegisterCompositeCommand(new Type[65], typeof(RegCompositeCmd), false, 0, false),
+                reg => reg.RegisterCompositeCommand(new Type[65], typeof(RegCompositeCmd), false, 0, false));
         }
 
         /// <summary>Runs the same registration lambda against a real SignalBus and a CommandRegistry,

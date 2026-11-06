@@ -736,7 +736,9 @@ namespace Nexus.Core
                     // allocate, so they are only created when decorators are registered
                     // (ExecuteWithDecorators internally no-ops to `next()` otherwise).
                     bool hasDecorators = _context is Context decoratorContext && decoratorContext.PluginsReadOnlyCopy.Count > 0;
-                    if (command is ICompositeCommand syncCompCmd)
+                    // A trigger registered as async runs the async side of a command that has both (issue #299).
+                    bool runAsync = trigger.IsAsync && (command is IAsyncCompositeCommand || command is IAsyncCommand);
+                    if (!runAsync && command is ICompositeCommand syncCompCmd)
                     {
                         if (hasDecorators)
                         {
@@ -747,7 +749,7 @@ namespace Nexus.Core
                             syncCompCmd.Execute(context);
                         }
                     }
-                    else if (command is ICommand syncCmd)
+                    else if (!runAsync && command is ICommand syncCmd)
                     {
                         if (hasDecorators)
                         {
@@ -941,8 +943,10 @@ namespace Nexus.Core
                     command = _poolManager.GetCommand(trigger.CommandType);
                     _container.Inject(command);
                     bool hasDecorators = _context is Context decoratorCtx && decoratorCtx.PluginsReadOnlyCopy.Count > 0;
+                    // A trigger registered as async runs the async side of a command that has both (issue #299).
+                    bool runAsync = trigger.IsAsync && (command is IAsyncCompositeCommand || command is IAsyncCommand);
 
-                    if (command is ICompositeCommand compCmd)
+                    if (!runAsync && command is ICompositeCommand compCmd)
                     {
                         // Composite payload support: pass the captured signal context to the command.
                         if (hasDecorators)
@@ -954,7 +958,7 @@ namespace Nexus.Core
                             compCmd.Execute(context);
                         }
                     }
-                    else if (command is ICommand syncCmd)
+                    else if (!runAsync && command is ICommand syncCmd)
                     {
                         // Composite commands run through the decorator pipeline.
                         if (hasDecorators)

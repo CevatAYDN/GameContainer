@@ -458,7 +458,8 @@ namespace Nexus.Core
 
             if (composite != null)
             {
-                bool compositeIsAsync = forceAsync ?? composite.IsAsync ?? ((isCompositeAsync && !isCompositeSync) || (isAsync && !isSync));
+                // Derived: async only when the command has no side a composite runs sync (ICompositeCommand or ICommand, #299).
+                bool compositeIsAsync = forceAsync ?? composite.IsAsync ?? !(isCompositeSync || typeof(ICommand).IsAssignableFrom(commandType));
                 RegisterCompositeCommand(composite.SignalTypes, commandType, composite.OneShot, composite.Priority, compositeIsAsync);
                 registered = true;
             }
