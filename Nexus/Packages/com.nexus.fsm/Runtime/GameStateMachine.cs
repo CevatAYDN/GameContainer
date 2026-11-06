@@ -360,9 +360,13 @@ namespace Nexus.Core.FSM
                 // the old sequence check-then-Exchange was check-then-act and could null
                 // out a NEWER transition's freshly published token.
                 Interlocked.CompareExchange(ref _stateCts, null, myCts);
-                CancelAndLog(myCts);
-                myCts.Dispose();
-                done.TrySetResult(true);
+                try { CancelAndLog(myCts); }
+                finally
+                {
+                    // Logging a cancellation failure may itself throw; cleanup must still release the queue (#334).
+                    myCts.Dispose();
+                    done.TrySetResult(true);
+                }
             }
         }
 

@@ -306,6 +306,7 @@ namespace NexusBench
             Test_CommandPool_MultiType_GetReturn_ZeroGC();
             Test_GameStateMachine_10k_AsyncTransitions_Stress();
             Test_GameStateMachine_ThrowingCancellationCallback_DoesNotStallTheNextTransition();
+            Test_GameStateMachine_ThrowingCancellationLogger_DisposesTokenAndDoesNotStallTheNextTransition();
             Test_GameStateMachine_CallerCancelledDuringAnEnter_DoesNotCommitTheState();
             Test_HybridQueue_MultiThreaded_8Workers_Stress();
             Test_PluginSystem_DecoratorChain_Interceptor_Stress();
@@ -825,9 +826,11 @@ namespace NexusBench
         private sealed class FsmThrowingCallbackState : FsmCounted
         {
             public TaskCompletionSource<bool> Gate; // null: the enter returns at once
+            public CancellationToken Token;
             public override ValueTask OnEnterAsync(object args, CancellationToken ct)
             {
                 Enters++;
+                Token = ct;
                 ct.Register(() => throw new InvalidOperationException("fsm02-callback"));
                 return Gate == null ? default : new ValueTask(Gate.Task);
             }
@@ -898,6 +901,41 @@ namespace NexusBench
             catch (Exception ex)
             {
                 Report("6b. GameStateMachine_A_Throwing_Cancellation_Callback_Is_Logged_And_Does_Not_Stall_The_Next_Transition",
+                    false, $"threw {ex.GetType().Name}: {ex.Message}");
+            }
+            finally
+            {
+                ctx.Dispose();
+            }
+        }
+
+        // A cancellation-error logger must not bypass cleanup or strand the next transition (issue #334).
+        private static void Test_GameStateMachine_ThrowingCancellationLogger_DisposesTokenAndDoesNotStallTheNextTransition()
+        {
+            var ctx = NexusTestHarness.CreateContext();
+            var logger = new CaptureLogger { ExceptionToThrow = new InvalidOperationException("fsm334-logger") };
+            ctx.Context.Container.BindInstance<ILoggerService>(logger);
+            try
+            {
+                using var fsm = new GameStateMachine();
+                var thrower = new FsmThrowingCallbackState();
+                var plain = new FsmPlainState();
+                fsm.RegisterState(thrower);
+                fsm.RegisterState(plain);
+                var firstTask = fsm.ChangeStateAsync<FsmThrowingCallbackState>();
+                string first = FsmOutcome(firstTask);
+                bool disposed = false;
+                try { _ = thrower.Token.WaitHandle; }
+                catch (ObjectDisposedException) { disposed = true; }
+                string next = FsmOutcome(fsm.ChangeStateAsync<FsmPlainState>());
+                Report("6d. GameStateMachine_ThrowingCancellationLogger_DisposesTokenAndDoesNotStallTheNextTransition",
+                    ReferenceEquals(firstTask.Exception?.InnerException, logger.ExceptionToThrow)
+                    && disposed && next == "completed" && ReferenceEquals(fsm.CurrentState, plain) && plain.Enters == 1,
+                    $"first={first} disposed={disposed} next={next} enters={plain.Enters} (want faulted, True, completed, 1)");
+            }
+            catch (Exception ex)
+            {
+                Report("6d. GameStateMachine_ThrowingCancellationLogger_DisposesTokenAndDoesNotStallTheNextTransition",
                     false, $"threw {ex.GetType().Name}: {ex.Message}");
             }
             finally
@@ -1699,11 +1737,16 @@ namespace NexusBench
         private sealed class CaptureLogger : Nexus.Core.Services.ILoggerService
         {
             public readonly List<string> Errors = new();
+            public Exception ExceptionToThrow;
             public bool IsEnabled { get; set; } = true;
             public void Log(string message) { }
             public void LogWarning(string message) { }
             public void LogError(string message) => Errors.Add(message);
-            public void LogException(Exception exception) => Errors.Add(exception?.ToString() ?? "null");
+            public void LogException(Exception exception)
+            {
+                Errors.Add(exception?.ToString() ?? "null");
+                if (ExceptionToThrow != null) throw ExceptionToThrow;
+            }
         }
 
         private sealed class LifecycleRecorder : IContextLifecycle
