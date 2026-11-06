@@ -118,7 +118,8 @@ namespace Nexus.Core.Extensions
 
         private readonly object _saveLock = new();
         // Issue #119: each capture takes the next number (captures run on the main thread, in call order); a write whose
-        // slot already holds a later number is skipped. Only used under _saveLock, except the increment.
+        // slot already holds a later number is skipped. DeleteSave takes a number too (#296). Only used under _saveLock,
+        // except the increment.
         private long _captureSequence;
         private readonly System.Collections.Generic.Dictionary<string, long> _writtenSequence = new();
         // Retry jitter source, hoisted from the retry loop (a new Random per retry could
@@ -351,6 +352,9 @@ namespace Nexus.Core.Extensions
             string path = Path.Combine(SaveDirectory, SanitizeSlotName(slotName) + ".sav");
             lock (_saveLock) // a save mid-write keeps its staged file until it is done
             {
+                // The delete takes the next capture number like a save (#119): a save captured before it is skipped instead
+                // of writing the slot back after the delete, and a save captured after it still writes (issue #296).
+                _writtenSequence[path] = Interlocked.Increment(ref _captureSequence);
                 if (File.Exists(path)) File.Delete(path);
                 if (File.Exists(path + ".tmp")) File.Delete(path + ".tmp");
             }

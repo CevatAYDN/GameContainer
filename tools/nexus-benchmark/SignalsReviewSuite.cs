@@ -36,6 +36,7 @@ namespace NexusBench
             Run("SR1", Test_NonGenericCommand_RejectedAtBind);
             Run("SR2", Test_CommandOwnCancellation_IsAFailure);
             Run("SR3", Test_DispatchTimeout_StaysCancellation);
+            Run("SR4", Test_DeleteSave_SkipsSnapshotCapturedBefore);
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -112,6 +113,36 @@ namespace NexusBench
             container.Dispose();
             Report("SR3. DispatchTimeout_StaysACancellation", thrown is OperationCanceledException && failure == null,
                 $"threw={thrown?.GetType().Name ?? "nothing"}, CommandFailedSignal={(failure == null ? "none" : failure.GetType().Name)}");
+        }
+
+        // ── #296: DeleteSave against a save captured before it ────────────────
+        private static void Test_DeleteSave_SkipsSnapshotCapturedBefore()
+        {
+            const string slot = "sigrev-delete-slot";
+            var gsm = new GameSaveManager();
+            gsm.RegisterModel(new AuditSaveModel());
+            object saveLock = typeof(GameSaveManager).GetField("_saveLock", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(gsm);
+            bool exists;
+            try
+            {
+                Task save;
+                Monitor.Enter(saveLock); // the save's worker waits here after its capture
+                try
+                {
+                    save = gsm.SaveAsync(slot);
+                    gsm.DeleteSave(slot); // same thread: Monitor is reentrant
+                }
+                finally { Monitor.Exit(saveLock); }
+                save.GetAwaiter().GetResult();
+                exists = gsm.SaveExists(slot);
+            }
+            finally
+            {
+                try { gsm.DeleteSave(slot); } catch { }
+                gsm.Dispose();
+            }
+            Report("SR4. DeleteSave_WinsOverASaveCapturedBeforeIt", !exists,
+                $"slot exists after delete={exists} (before: the earlier snapshot was written after the delete)");
         }
 
     }
