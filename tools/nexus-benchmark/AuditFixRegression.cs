@@ -7,6 +7,7 @@
 //   T-6 rejected fallback still dispatches CommandFailedSignal (no silent drop)
 //   T-7 cross-context broadcast to a bus with async handlers (no mismatch throw)
 //   M-1 SaveThrottler failure backoff + retry cap (no tight retry loop)
+//   SAVE-01 SaveThrottler dispose during another thread's save writes the newer request, once
 //   M-4 ObservableList reentrant mutation notifications are queued, not dropped
 //   M-4b ObservableList concurrent multi-thread reentrant drains stay isolated (per-thread buffer)
 //   M-6 GameSaveManager concurrent SaveAsync serialized (no torn temp writes)
@@ -318,6 +319,8 @@ namespace NexusBench
             Test_Recovery_RejectedFallback_FiresFailedSignal().GetAwaiter().GetResult();
             Test_CrossContext_AsyncTarget_NoMismatch();
             Test_SaveThrottler_FailureBackoff_And_RetryCap();
+            Test_SaveThrottler_DisposeDuringInFlightSave_PersistsNewerRequest();
+            Test_SaveThrottler_DisposeDuringInFlightSave_FailingNewerRequestRunsOnce();
             Test_ObservableList_Reentrant_Notifications_Queued();
             Test_ObservableList_ConcurrentReentrant_DrainIsolation();
             Test_GameSaveManager_ConcurrentSaves_Serialized();
@@ -667,6 +670,48 @@ namespace NexusBench
             Check("M1. SaveThrottler_FailureBackoff_And_RetryCap",
                 firstAttempted && noTightRetry && secondAttempted && capped && noRetryAfterCap,
                 $"attempts={attempts} (expected 5: 1 initial + 4 throttled retries), first={firstAttempted}, noTightRetry={noTightRetry}, second={secondAttempted}, capped={capped}, noRetryAfterCap={noRetryAfterCap}");
+        }
+
+        // ── issue #323 ─────────────────────────────────────────────────────
+        // A save requested while another thread's save of the same owner is running only marks the slot pending. Pre-fix,
+        // OnDispose skipped the busy slot and cleared the slots, so the newer request was never written.
+        private static void Test_SaveThrottler_DisposeDuringInFlightSave_PersistsNewerRequest()
+        {
+            var throttler = new SaveThrottler(null, TimeSpan.FromSeconds(1)) { TimeProvider = new AuditFakeTimeProvider() };
+            int persisted = 0, newestRuns = 0;
+            using var entered = new ManualResetEventSlim(false);
+            using var release = new ManualResetEventSlim(false);
+            var saver = new Thread(() => throttler.ForceSave("owner", () => { entered.Set(); release.Wait(5000); persisted = 1; }));
+            saver.Start();
+            bool inFlight = entered.Wait(5000);
+            throttler.ForceSave("owner", () => { persisted = 2; newestRuns++; }); // sees the save in flight: pending
+            throttler.OnDispose();
+            release.Set();
+            bool joined = saver.Join(5000);
+
+            Check("SAVE-01. SaveThrottler_DisposeDuringInFlightSave_PersistsNewerRequest",
+                inFlight && joined && persisted == 2 && newestRuns == 1,
+                $"persisted={persisted} (expected 2, the newest request), newestRuns={newestRuns} (expected 1), inFlight={inFlight}, joined={joined}");
+        }
+
+        // The extra write at dispose is one attempt: a newest action that keeps failing does not loop.
+        private static void Test_SaveThrottler_DisposeDuringInFlightSave_FailingNewerRequestRunsOnce()
+        {
+            var throttler = new SaveThrottler(null, TimeSpan.FromSeconds(1)) { TimeProvider = new AuditFakeTimeProvider() };
+            int attempts = 0;
+            using var entered = new ManualResetEventSlim(false);
+            using var release = new ManualResetEventSlim(false);
+            var saver = new Thread(() => throttler.ForceSave("owner", () => { entered.Set(); release.Wait(5000); }));
+            saver.Start();
+            bool inFlight = entered.Wait(5000);
+            throttler.ForceSave("owner", () => { Interlocked.Increment(ref attempts); throw new System.IO.IOException("disk full"); });
+            throttler.OnDispose();
+            release.Set();
+            bool joined = saver.Join(5000);
+
+            Check("SAVE-01b. SaveThrottler_DisposeDuringInFlightSave_FailingNewerRequestRunsOnce",
+                inFlight && joined && attempts == 1,
+                $"attempts={attempts} (expected 1), inFlight={inFlight}, joined={joined}");
         }
 
         // ── M-4 ────────────────────────────────────────────────────────────────

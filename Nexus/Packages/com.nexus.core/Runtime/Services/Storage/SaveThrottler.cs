@@ -41,6 +41,9 @@ namespace Nexus.Core.Services
 
         private ISignalSubscription _pauseSubscription;
         private bool _focusHooked;
+        // Guarded by _lock. Set before OnDispose's flush: a save in flight on another thread then writes the newer request
+        // that arrived during it, since no Tick or Flush will (issue #323).
+        private bool _disposing;
 
         private readonly float _throttleSeconds = 2f;
 
@@ -138,6 +141,7 @@ namespace Nexus.Core.Services
             }
             // Persist every owner's pending (or last) save so no throttled write is lost
             // at teardown, then drop the slots.
+            lock (_lock) { _disposing = true; }
             Flush();
             lock (_lock) { _slots.Clear(); }
         }
@@ -284,7 +288,7 @@ namespace Nexus.Core.Services
             return slot;
         }
 
-        private void FlushSlot(SaveSlot slot)
+        private void FlushSlot(SaveSlot slot, bool disposeRetry = false)
         {
             Action action;
             long requestVersion;
@@ -312,6 +316,7 @@ namespace Nexus.Core.Services
                 slot.Flushing = true;
             }
 
+            bool retry;
             try
             {
                 action.Invoke();
@@ -342,8 +347,15 @@ namespace Nexus.Core.Services
             }
             finally
             {
-                lock (_lock) { slot.Flushing = false; }
+                lock (_lock)
+                {
+                    slot.Flushing = false;
+                    // A newer request arrived during this save and dispose skipped the busy slot: write it once more here,
+                    // one attempt only, so an action that keeps failing or re-requesting cannot loop (issue #323).
+                    retry = !disposeRetry && _disposing && slot.RequestVersion != requestVersion;
+                }
             }
+            if (retry) FlushSlot(slot, disposeRetry: true);
         }
     }
 }
