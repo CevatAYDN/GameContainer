@@ -87,6 +87,7 @@ dotnet-trace collect -p <pid> --profile gc-verbose                  # allocation
 | Evidence (`EvidenceSuite.cs`) | Post-context phases, save throttling and `GameSaveManager`, bounded performance samples, built-in metrics without recording, debug stripping (E1–E6) |
 | Ads core (`AdsCoreSuite.cs`) | `com.nexus.ads` `Runtime/Core` through hand-written ports: every `PolicyGuard` rule, `ReadyChanged` when a pacing window runs out (PW1–PW7, issue #95), retry back-off, preload, reward-once, the provider gate, session reset, simulator scenarios; fails if a Core source names `UnityEngine` or `UnityEditor` |
 | Service graph (`ServiceGraphSuite.cs`) | A real context with every package service under strict injection validates with zero issues, boots and resolves each service by interface and concrete type (SVC1) |
+| Counter sample (`CounterSampleSuite.cs`) | `Samples~/Counter` compiled as shipped (minus its uGUI view and mediator and the composite command): its lifecycle boots on a new `ContextData`, strict injection on, with zero DI issues, and a fired `CounterSignal` changes the model (CNT1, issue #289) |
 
 The harness runs the operations of `PerformanceTests.cs` with tighter time limits than the Unity
 test asserts (`<10ms`, `<200ms`, `<3000ns`, `<4000ns` against the Unity test's `<50ms`, `<800ms`,

@@ -274,7 +274,7 @@ Automatic dependency injection, zero memory leaks, and instant SignalBus access 
 |-------|-------|
 | 🏗️ Architecture deep-dive | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | 🎮 Game patterns (Idle, RPG, RTS, etc.) | [GAME_PATTERNS.md](GAME_PATTERNS.md) |
-| 🔌 All 4 command execution modes | [Counter Sample](../Samples~/Counter/README.md) |
+| 🔌 Four of the five command execution modes | [Counter Sample](../Samples~/Counter/README.md) |
 | 🛠️ Editor plugins & tools | [PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md) |
 | 🔍 Localization system | [LOCALIZATION_KEYS.md](LOCALIZATION_KEYS.md) |
 | 🤝 Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |

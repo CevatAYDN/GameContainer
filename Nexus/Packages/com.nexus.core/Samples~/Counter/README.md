@@ -1,9 +1,10 @@
 # Nexus Counter Example
 
-This sample is a **complete tour of every Nexus building block**. A single button
-click exercises the model, all four command execution modes, the async command
-path, a composite (fan-in) trigger, service injection, causal tracing, and the
-error-recovery strategy — so you can watch the whole architecture from one action.
+This sample is a tour of the Nexus building blocks a counter needs. A single button
+click exercises the model, four of the five command execution modes (Sequential,
+Concurrent, Exclusive and Composite; Detached is not shown), the async command
+path, service injection, causal tracing, and the error-recovery strategy — so you
+can watch the architecture from one action.
 
 ## Structure
 
@@ -44,6 +45,11 @@ error-recovery strategy — so you can watch the whole architecture from one act
 
 The trace sink is attached in `OnStartAsync` via `NexusTrace.AddSink(...)`.
 
+The lifecycle binds only the services the sample uses. A new Context Data asset injects
+in strict mode (`EnableStrictInjection`, on by default), so a service you add must have
+every `[Inject]` dependency of its own bound too: `FeedbackService` needs `IAudioService`
+and `IHapticService`, `UIManager` needs `IUIAssetProvider`.
+
 ## How to Setup & Run
 
 1. Open your Unity scene.
@@ -58,6 +64,6 @@ The trace sink is attached in `OnStartAsync` via `NexusTrace.AddSink(...)`.
    `{ScopeTag}Lifecycle` name.
 6. Enter **Play Mode** and click the button. Watch the Console: you will see the
    Sequential increment, the Concurrent load, the Exclusive persist, the Async
-   load, the Composite fan-in trigger and telemetry — every building block firing
+   load, the Composite fan-in trigger and telemetry — the blocks above firing
    from one click. The `[Trace]` causal events appear only with the `NEXUS_DEBUG`
    scripting define, which is off by default; without it tracing is compiled out.

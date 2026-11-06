@@ -274,7 +274,7 @@ Otomatik bağımlılık enjeksiyonu, sıfır bellek sızıntısı ve anında Sig
 |------|--------|
 | 🏗️ Mimari derinlemesine | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | 🎮 Oyun pattern'leri (Idle, RPG, RTS vb.) | [GAME_PATTERNS.md](GAME_PATTERNS.md) |
-| 🔌 4 command yürütme modu | [Counter Sample](../Samples~/Counter/README.md) |
+| 🔌 Beş command yürütme modundan dördü | [Counter Sample](../Samples~/Counter/README.md) |
 | 🛠️ Editor eklentileri ve araçlar | [PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md) |
 | 🔍 Yerelleştirme sistemi | [LOCALIZATION_KEYS.md](LOCALIZATION_KEYS.md) |
 | 🤝 Katkıda bulunma | [CONTRIBUTING.md](CONTRIBUTING.md) |

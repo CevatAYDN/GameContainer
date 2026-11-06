@@ -6,9 +6,10 @@ using Nexus.Core.Services;
 namespace Nexus.Samples.Counter
 {
     /// <summary>
-    /// Context lifecycle: binds the model, services, recovery strategy and every
+    /// Context lifecycle: binds the model, the services, the recovery strategy and every
     /// command (the Sequential, Concurrent and Exclusive execution modes, async and composite). This single class is
-    /// the "wiring" surface that demonstrates the full Nexus building-block set.
+    /// the "wiring" surface of the sample. It binds only what the sample uses: a new ContextData injects in strict
+    /// mode, so a service bound here must have every [Inject] dependency of its own bound too.
     /// </summary>
     public class CounterLifecycle : IContextLifecycle
     {
@@ -25,12 +26,6 @@ namespace Nexus.Samples.Counter
             builder.BindService<ICounterTelemetryService, CounterTelemetryService>();
             // Bind a built-in service (zero-dependency Storage implementation).
             builder.Bind<IPlayerPrefsService, UnityPlayerPrefsService>();
-
-            // Representative built-in Nexus services (INexusService).
-            builder.BindService<IEconomyService, EconomyService>();
-            builder.BindService<IProgressionService, ProgressionService>();
-            builder.BindService<IFeedbackService, FeedbackService>();
-            builder.BindService<IUIManager, UIManager>();
 
             // ── Error Recovery ────────────────────────────────────
             // SignalBus auto-resolves this when a command throws.

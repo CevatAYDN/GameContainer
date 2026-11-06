@@ -166,4 +166,6 @@
 
 <ItemGroup><Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/DiBindingValidator.cs" /></ItemGroup>
 <ItemGroup><Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/ContextAvailability.cs" /></ItemGroup>
+<!-- The Counter sample (Samples~/Counter) compiled as shipped, minus the two uGUI files (CounterView, CounterMediator) and CounterCompositeCommand (its [CompositeSignalHandler] would be found by the assembly scan of every other suite's Context): CounterSampleSuite boots its lifecycle on a strict-injection ContextData (#289). -->
+<ItemGroup><Compile Include="../../Nexus/Packages/com.nexus.core/Samples~/Counter/*.cs" Exclude="../../Nexus/Packages/com.nexus.core/Samples~/Counter/CounterView.cs;../../Nexus/Packages/com.nexus.core/Samples~/Counter/CounterMediator.cs;../../Nexus/Packages/com.nexus.core/Samples~/Counter/CounterCompositeCommand.cs" /></ItemGroup>
 </Project>
