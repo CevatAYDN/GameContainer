@@ -122,6 +122,7 @@ namespace Nexus.Editor.Tests
         {
             var data = ScriptableObject.CreateInstance<ContextData>();
             data.EnableAutoDiscovery = false;
+            data.AssemblyScopes = new[] { typeof(Nexus.Core.Context).Assembly.GetName().Name }; // the core alone, as the default scan sees it without the host project's game and sample assemblies (#319)
             var owner = ContextFactory.Create(contextData: data);
             int disposingCalls = 0, laterCalls = 0;
             Action<IContext> first = context =>
@@ -183,6 +184,7 @@ namespace Nexus.Editor.Tests
         {
             var data = ScriptableObject.CreateInstance<ContextData>();
             data.EnableAutoDiscovery = false;
+            data.AssemblyScopes = new[] { typeof(Nexus.Core.Context).Assembly.GetName().Name }; // the core alone, as the default scan sees it without the host project's game and sample assemblies (#319)
             var owner = ContextFactory.Create(contextData: data);
             var go = new GameObject("Reentrant binding");
             go.SetActive(false);
@@ -259,6 +261,7 @@ namespace Nexus.Editor.Tests
         {
             var data = ScriptableObject.CreateInstance<ContextData>();
             data.EnableAutoDiscovery = false;
+            data.AssemblyScopes = new[] { typeof(Nexus.Core.Context).Assembly.GetName().Name }; // the core alone, as the default scan sees it without the host project's game and sample assemblies (#319)
             var pending = ContextFactory.Create(contextData: data);
             var original = BootImmediateContext("OriginalAttachmentReadyRegression");
             var replacement = ReadyUninitializedContext(data);

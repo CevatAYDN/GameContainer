@@ -74,6 +74,7 @@ namespace Nexus.Core.Tests
             parent.SetActive(false);
             var data = ScriptableObject.CreateInstance<ContextData>();
             data.EnableAutoDiscovery = false;
+            data.AssemblyScopes = new[] { typeof(Nexus.Core.Context).Assembly.GetName().Name }; // the core alone, as the default scan sees it without the host project's game and sample assemblies (#319)
             var root = parent.AddComponent<Root>();
             root.SetUp(data);
             var child = new GameObject("Consumer");
@@ -134,6 +135,7 @@ namespace Nexus.Core.Tests
             globalGo.transform.SetParent(group.transform);
             var data = ScriptableObject.CreateInstance<ContextData>();
             data.EnableAutoDiscovery = false;
+            data.AssemblyScopes = new[] { typeof(Nexus.Core.Context).Assembly.GetName().Name }; // the core alone, as the default scan sees it without the host project's game and sample assemblies (#319)
             var scene = sceneGo.AddComponent<Root>();
             var global = globalGo.AddComponent<Root>();
             scene.SetUp(data);
