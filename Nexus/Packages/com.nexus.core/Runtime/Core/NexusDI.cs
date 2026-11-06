@@ -2165,7 +2165,7 @@ namespace Nexus.Core
                         else
                         {
                             singletonInstance = _injector.CreateInstance(binding.ConcreteType, binding.ParameterOverrides);
-                            _injector.Inject(singletonInstance);
+                            InjectOrEnd(singletonInstance);
                         }
                         bool orphaned;
                         lock (_singletonLock)
@@ -2854,6 +2854,22 @@ namespace Nexus.Core
                 var taken = order.GetRange(kept, order.Count - kept);
                 order.RemoveRange(kept, taken.Count);
                 return taken;
+            }
+        }
+
+        /// <summary>
+        /// Injects a scoped instance the container just built. When injection or [PostConstruct] throws, the instance was
+        /// never published nor tracked, so nothing else would end it: it is ended here and the exception rethrown (issue #325).
+        /// A method of its own so that ResolveBinding, which holds the transient path, gains no exception region.
+        /// </summary>
+        private void InjectOrEnd(object instance)
+        {
+            try { _injector.Inject(instance); }
+            catch
+            {
+                var asyncOnly = EndSingleton(instance, awaitable: false);
+                if (asyncOnly != null) _ = DisposeAllAsyncInBackground(new[] { asyncOnly });
+                throw;
             }
         }
 

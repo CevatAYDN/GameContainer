@@ -79,6 +79,15 @@ namespace NexusBench
             public void Dispose() => Disposed = true;
         }
 
+        private sealed class BrokenResource : IDisposable
+        {
+            public static int Created, Deconstructed, Disposed;
+            public BrokenResource() => Created++;
+            [PostConstruct] private void Init() => throw new InvalidOperationException("BrokenResource.Init failed");
+            [Deconstruct] private void Cleanup() => Deconstructed++;
+            public void Dispose() => Disposed++;
+        }
+
         private sealed class LifetimeProbeLifecycle : IContextLifecycle
         {
             public ContextBuilder Builder;
@@ -118,6 +127,7 @@ namespace NexusBench
             Test_Dispose_RunsInReverseCreationOrder();
             Test_BindInstance_DisposeWithContainer_False_LeavesInstanceAlive();
             Test_ContextBuilder_LifetimeOverloads_ConfigureAndDispose();
+            Test_Scoped_PostConstructThrows_InstanceIsEnded_AndErrorReachesCaller();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -392,6 +402,44 @@ namespace NexusBench
                 try { NexusRuntime.Reset(); } catch (Exception ex) { Console.WriteLine($"[LifetimeScope] NexusRuntime.Reset teardown: {ex.Message}"); }
             }
             Report("LT9. ContextBuilder_LifetimeOverloads_ConfigureAndDispose", ok, detail);
+        }
+
+        // A scoped instance whose [PostConstruct] throws is never published nor tracked, so the container must end it
+        // (Deconstruct + Dispose) before the original exception reaches the caller; a retry builds and ends a new one (issue #325).
+        private static void Test_Scoped_PostConstructThrows_InstanceIsEnded_AndErrorReachesCaller()
+        {
+            BrokenResource.Created = BrokenResource.Deconstructed = BrokenResource.Disposed = 0;
+            var root = new NexusDI();
+            bool ok = false;
+            string detail;
+            try
+            {
+                root.Bind<BrokenResource>(Lifetime.Scoped);
+                string first = ResolveError(root), second = ResolveError(root);
+                int createdBeforeDispose = BrokenResource.Created, disposedBeforeDispose = BrokenResource.Disposed;
+                root.Dispose();
+                const string expected = "InvalidOperationException: BrokenResource.Init failed";
+                ok = first == expected && second == expected
+                    && createdBeforeDispose == 2 && disposedBeforeDispose == 2
+                    && BrokenResource.Deconstructed == 2 && BrokenResource.Disposed == 2;
+                detail = $"first='{first}' retry='{second}' created={createdBeforeDispose} disposedBeforeContainerDispose={disposedBeforeDispose} " +
+                         $"deconstructed={BrokenResource.Deconstructed} disposedAfterContainerDispose={BrokenResource.Disposed} (expect 2/2/2/2)";
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            finally
+            {
+                try { root.Dispose(); } catch (Exception ex) { Console.WriteLine($"[LifetimeScope] root.Dispose teardown: {ex.Message}"); }
+            }
+            Report("LT10. Scoped_PostConstructThrows_InstanceIsEnded_AndErrorReachesCaller", ok, detail);
+        }
+
+        private static string ResolveError(NexusDI di)
+        {
+            try { di.Resolve<BrokenResource>(); return "no exception"; }
+            catch (Exception ex) { return $"{ex.GetType().Name}: {ex.Message}" + (ex.StackTrace?.Contains("BrokenResource.Init") == true ? "" : " [stack lost]"); }
         }
 
         private static bool Throws<T>(Action action) where T : Exception
