@@ -43,7 +43,9 @@ yapılandırması sırasında aynı nesneyi sahipli ömürle yeniden kaydetmeyin
 bir adaptör, mevcut servislere net bir sınır sağlayabilir.
 
 `IDependencyAdapter` köprüsü başka bir DI sistemiyle birlikte çalışmayı destekler.
-Named binding çözmez; named bağımlılıkları Nexus'ta kaydedin.
+Named binding çözmez; named bağımlılıkları Nexus'ta kaydedin. Bir adaptör ayarlıyken
+Nexus'un enjekte ettiği her örnekte üye enjeksiyonunu ve `[PostConstruct]` çağrılarını
+adaptör üstlenir: Nexus `IDependencyAdapter.Inject`'i çağırır ve ikisini kendisi çalıştırmaz.
 
 ## Yükleme sırasında hazırlık
 

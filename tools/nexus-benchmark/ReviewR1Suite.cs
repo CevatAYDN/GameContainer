@@ -32,6 +32,7 @@ namespace NexusBench
             Guard("R1-04", ToNameAfterTo_AddsTheNamedEntryAndKeepsTheKeysDefault);
             Guard("R1-08", ViewThatUnregistersInItsUnbind_DoesNotBreakViewBinderDispose);
             Guard("R1-03", SyncDispose_NamesTheAsyncStopperStillRunningWhenItsSingletonsAreDisposed);
+            Guard("R1-06", RootWithAnInvalidParent_IsMarkedFailedAndNotConfiguredAgain);
             Console.WriteLine(_failures == 0 ? "[ReviewR1] ALL PASSED" : $"[ReviewR1] {_failures} FAILED");
             return _failures;
         }
@@ -156,6 +157,40 @@ namespace NexusBench
                 slow.Release.TrySetResult(true);
                 ctx.Dispose();
             }
+        }
+
+        // ── #312 R1-06 ───────────────────────────────────────────────────────
+
+        private static void SetField(Root root, string field, object value) =>
+            typeof(Root).GetField(field, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(root, value);
+
+        private static bool StartupFailed(Root root) =>
+            (bool)typeof(Root).GetField("_startupFailed", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(root);
+
+        private static string InitTwice(Root root)
+        {
+            string first = "none", second = "none";
+            try { root.InitializeContext(); } catch (InvalidOperationException ex) { first = ex.Message; }
+            try { root.InitializeContext(); } catch (InvalidOperationException ex) { second = ex.Message; }
+            return $"first='{first}' second='{second}' failed={StartupFailed(root)}";
+        }
+
+        private static void RootWithAnInvalidParent_IsMarkedFailedAndNotConfiguredAgain()
+        {
+            var a = new UnityEngine.GameObject("R1CycleA").AddComponent<Root>();
+            var b = new UnityEngine.GameObject("R1CycleB").AddComponent<Root>();
+            SetField(a, "parentRoot", b);
+            SetField(b, "parentRoot", a);
+            var global = new UnityEngine.GameObject("R1GlobalWithParent").AddComponent<Root>();
+            SetField(global, "isGlobalContext", true);
+            SetField(global, "parentRoot", b);
+
+            string cycle = InitTwice(a), globalParent = InitTwice(global);
+            bool ok = StartupFailed(a) && StartupFailed(global)
+                && cycle.Contains("second='none'") && globalParent.Contains("second='none'")
+                && a.Context == null && global.Context == null;
+            Report("R1-06 A_Root_With_An_Invalid_Parent_Is_Marked_Failed_And_Not_Configured_Again", ok,
+                $"cycle: {cycle}; global: {globalParent}");
         }
 
         // ── #293 (R1-08) ─────────────────────────────────────────────────────

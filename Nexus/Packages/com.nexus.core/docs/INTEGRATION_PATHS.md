@@ -42,7 +42,9 @@ register the same object again with owned lifetime during context configuration.
 A context-owned adapter can provide a clear boundary to existing services.
 
 The `IDependencyAdapter` bridge supports coexistence with another DI system. It
-does not resolve named bindings; register named dependencies in Nexus.
+does not resolve named bindings; register named dependencies in Nexus. While an
+adapter is set, it takes over member injection and `[PostConstruct]` for every
+instance Nexus injects: Nexus calls `IDependencyAdapter.Inject` and runs neither itself.
 
 ## Prepare during loading
 

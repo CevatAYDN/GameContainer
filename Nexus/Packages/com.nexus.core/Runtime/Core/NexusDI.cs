@@ -15,6 +15,11 @@ namespace Nexus.Core
     public interface IDependencyAdapter
     {
         object Resolve(Type type);
+        /// <summary>
+        /// While an adapter is set (<c>NexusDI.ExternalAdapter</c>), Nexus calls this instead of its own member
+        /// injection for every instance it injects: the adapter injects the fields, properties and methods and runs
+        /// any <c>[PostConstruct]</c> methods; Nexus runs neither (#312).
+        /// </summary>
         void Inject(object instance);
         bool IsRegistered(Type type);
     }
@@ -1221,21 +1226,11 @@ namespace Nexus.Core
                         {
                             // Forward the [Inject(Name=...)] discriminator so named
                             // bindings are honored on first access instead of being dropped.
-                            // Thread-safe: create lazy instance, then atomically set if still null.
-                            var lazyInstance = Activator.CreateInstance(f.Type,
+                            // Set only while still null; injecting one instance is single-threaded, so no lock (#312).
+                            MetadataCache.ApplyFieldSetter(f, instance, Activator.CreateInstance(f.Type,
                                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
                                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.CreateInstance,
-                                null, new object[] { _di, f.Name }, null);
-                            // Double-check: another thread might have set it while we were creating
-                            var currentValue = f.Getter != null ? f.Getter(instance) : f.Field.GetValue(instance);
-                            if (currentValue == null)
-                            {
-                                MetadataCache.ApplyFieldSetter(f, instance, lazyInstance);
-                            }
-                            else
-                            {
-                                lazyInstance = currentValue; // Use the one created by the other thread
-                            }
+                                null, new object[] { _di, f.Name }, null));
                         }
                         continue;
                     }
@@ -1261,20 +1256,11 @@ namespace Nexus.Core
                         var existingLazy = p.Property.GetValue(instance);
                         if (existingLazy == null)
                         {
-                            var lazyInstance = Activator.CreateInstance(p.Type,
+                            // set only while still null, as for fields
+                            MetadataCache.ApplyPropertySetter(p, instance, Activator.CreateInstance(p.Type,
                                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
                                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.CreateInstance,
-                                null, new object[] { _di, p.Name }, null);
-                            // Double-check: another thread might have set it while we were creating
-                            var currentValue = p.Property.GetValue(instance);
-                            if (currentValue == null)
-                            {
-                                MetadataCache.ApplyPropertySetter(p, instance, lazyInstance);
-                            }
-                            else
-                            {
-                                lazyInstance = currentValue;
-                            }
+                                null, new object[] { _di, p.Name }, null));
                         }
                         continue;
                     }

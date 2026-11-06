@@ -270,7 +270,10 @@ namespace Nexus.Core
             if (isGlobalContext)
             {
                 if (parentRoot != null)
+                {
+                    MarkStartupFailed(); // as every other failed start: not configured again by its children or its Start
                     throw new InvalidOperationException("A Global Root cannot have a parent context.");
+                }
                 NexusRuntime.RegisterGlobalRoot(this);
                 MakeGlobalPersistent();
             }
@@ -280,7 +283,10 @@ namespace Nexus.Core
             }
 
             if (HasParentCycle())
+            {
+                MarkStartupFailed();
                 throw new InvalidOperationException($"Root '{name}' has a parent cycle. Fix parentRoot references before initialization.");
+            }
 
             if (parentRoot != null && parentRoot != this)
             {
