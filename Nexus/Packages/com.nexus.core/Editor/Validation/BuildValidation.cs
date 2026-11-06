@@ -35,7 +35,7 @@ namespace Nexus.Editor
         // read at most once per validation run). Invalidated on script reload and whenever
         // IncludeTestAssemblies changes.
         private static Dictionary<Assembly, Type[]> s_assemblyTypes;
-        private static Dictionary<Type, SignalHandlerAttribute[]> s_handlerAttrs;
+        private static Dictionary<Type, IReadOnlyList<SignalHandlerAttribute>> s_handlerAttrs;
         private static Dictionary<Type, CompositeSignalHandlerAttribute> s_compositeAttrs;
         private static Dictionary<Type, StubServiceAttribute> s_stubAttrs;
         private static Dictionary<Type, ContextDependsOnAttribute[]> s_contextDependsAttrs;
@@ -66,7 +66,7 @@ namespace Nexus.Editor
         {
             if (s_assemblyTypes != null) return;
             s_assemblyTypes = new Dictionary<Assembly, Type[]>();
-            s_handlerAttrs = new Dictionary<Type, SignalHandlerAttribute[]>();
+            s_handlerAttrs = new Dictionary<Type, IReadOnlyList<SignalHandlerAttribute>>();
             s_compositeAttrs = new Dictionary<Type, CompositeSignalHandlerAttribute>();
             s_stubAttrs = new Dictionary<Type, StubServiceAttribute>();
             s_contextDependsAttrs = new Dictionary<Type, ContextDependsOnAttribute[]>();
@@ -108,30 +108,28 @@ namespace Nexus.Editor
             }
         }
 
-        private static SignalHandlerAttribute[] GetHandlerAttrs(Type type)
+        private static IReadOnlyList<SignalHandlerAttribute> GetHandlerAttrs(Type type)
         {
-            EnsureCaches();
-            if (!s_handlerAttrs.TryGetValue(type, out var attrs))
-            {
-                attrs = type.IsDefined(typeof(SignalHandlerAttribute), false)
-                    ? type.GetCustomAttributes<SignalHandlerAttribute>().ToArray()
-                    : Array.Empty<SignalHandlerAttribute>();
-                s_handlerAttrs[type] = attrs;
-            }
-            return attrs;
+            ReadHandlerAttributes(type);
+            return s_handlerAttrs[type];
         }
 
         private static CompositeSignalHandlerAttribute GetCompositeAttr(Type type)
         {
+            ReadHandlerAttributes(type);
+            return s_compositeAttrs[type];
+        }
+
+        // The routine the context's assembly scan registers commands with, so the rules see what the player registers:
+        // [SignalHandler] and [RegisterCommand], [CompositeSignalHandler] and [RegisterCompositeCommand]. Only the first
+        // and the third were read, so a command declared with [RegisterCommand] escaped every handler rule (#303).
+        private static void ReadHandlerAttributes(Type type)
+        {
             EnsureCaches();
-            if (!s_compositeAttrs.TryGetValue(type, out var attr))
-            {
-                attr = type.IsDefined(typeof(CompositeSignalHandlerAttribute), false)
-                    ? type.GetCustomAttribute<CompositeSignalHandlerAttribute>()
-                    : null;
-                s_compositeAttrs[type] = attr;
-            }
-            return attr;
+            if (s_handlerAttrs.ContainsKey(type)) return;
+            SignalBus.ReadHandlerAttributes(type, out var handlers, out var composite);
+            s_handlerAttrs[type] = handlers;
+            s_compositeAttrs[type] = composite;
         }
 
         private static StubServiceAttribute GetStubAttr(Type type)

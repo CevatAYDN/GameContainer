@@ -190,9 +190,11 @@ command that `[Inject]`s an interface whose name ends in `Model` (and does not s
 `IReadOnly`) with a settable property or a `Set`/`Update`/`Modify`/`Reset`/`Clear` method; the
 pre-build check then stops the build unless `NEXUS_VALIDATION_WARN_ONLY` is set.
 
-> **Note:** The check reads `[SignalHandler(..., Mode = ExecutionMode.Concurrent)]` attributes only.
-> A command registered in code, as with `BindCommand(...)` above, is not checked; the read-only
-> interface is then your own rule.
+> **Note:** The signal rules (mixed modes, Exclusive with several handlers, equal priority, the concurrent
+> write check above, and the signal/command cycle check) read the handler attributes the context scan
+> registers: `[SignalHandler]`, `[RegisterCommand]`, `[CompositeSignalHandler]` and
+> `[RegisterCompositeCommand]`. A command registered in code, as with `BindCommand(...)` above, is not
+> seen by any of them; keeping those rules is then up to you.
 
 ---
 

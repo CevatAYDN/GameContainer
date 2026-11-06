@@ -142,6 +142,21 @@ namespace Nexus.Editor.Tests
             public System.Threading.Tasks.ValueTask ExecuteAsync(DetachedExclusiveSignal signal, System.Threading.CancellationToken ct) => default;
         }
 
+        // --- Commands declared with [RegisterCommand]: the context's scan registers them as it does [SignalHandler] ones (#303) ---
+        public struct RegisteredExclusiveSignal { }
+
+        [RegisterCommand(typeof(RegisteredExclusiveSignal), Mode = ExecutionMode.Exclusive)]
+        public class RegisteredExclusiveCommandA : ICommand<RegisteredExclusiveSignal>
+        {
+            public void Execute(RegisteredExclusiveSignal signal) {}
+        }
+
+        [RegisterCommand(typeof(RegisteredExclusiveSignal), Mode = ExecutionMode.Exclusive)]
+        public class RegisteredExclusiveCommandB : ICommand<RegisteredExclusiveSignal>
+        {
+            public void Execute(RegisteredExclusiveSignal signal) {}
+        }
+
         // --- Dummy types for Command State Leak validation ---
         public class StateLeakCommand : ICommand<MixedSignal>
         {
@@ -186,6 +201,19 @@ namespace Nexus.Editor.Tests
             // 3. Priority tie error on EqualPrioritySignal (Priority 5 on both)
             // 4. Concurrent write error on ConcurrentWriteCommand (injects writable ISomeModel)
             Assert.GreaterOrEqual(errorCount, 4, $"Expected at least 4 errors from handler validation, got {errorCount}.");
+        }
+
+        [Test]
+        public void HandlerRules_SeeCommandsDeclaredWithRegisterCommand_AsTheContextScanRegistersThem()
+        {
+            // Two Exclusive [RegisterCommand] commands on one signal threw in the player's scan ("Exclusive execution mode
+            // violation") and killed the Root, while the build passed: the rules read [SignalHandler] only (#303).
+            var errors = new List<string>();
+            BuildValidation.ErrorLogger = errors.Add;
+            GetPrivateStatic("ValidateHandlers").Invoke(null, new object[] { 0, 0 });
+
+            Assert.IsTrue(errors.Exists(e => e.Contains("Exclusive Mode Violation") && e.Contains(typeof(RegisteredExclusiveSignal).FullName)),
+                string.Join("\n", errors));
         }
 
         [Test]
