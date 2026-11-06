@@ -612,6 +612,108 @@ namespace NexusBench
                 Check("AC23. ConsentGranted_FromPrivacyOptions_Starts", rig.Provider.InitCallback != null, "Initialize called after the options closed");
             }
 
+            // issue #328: a withdrawal in the privacy options left a running controller Running, ready, and showing ads
+            {
+                var consent = new AdsFakeConsent { Completed = true, CanRequestAds = true };
+                var cfg = AdsRig.Config(null, BuildKind.Development, AdsRig.Rewarded, AdsRig.LevelEnd, new AdPlacement("hud", AdFormat.Banner));
+                using var rig = new AdsRig(cfg, consent: consent).Running();
+                rig.Scheduler.Advance(61);
+                rig.Controller.ShowBanner("hud", BannerPosition.Bottom);
+                AdResult? open = null;
+                rig.Controller.Show("shop_refill", r => open = r); // a rewarded show is open when the player withdraws
+                consent.CanRequestAds = false;
+                bool closed = false;
+                rig.Controller.ShowPrivacyOptions(() => closed = true);
+                var state = rig.Controller.State;
+                bool bannerHidden = !rig.Provider.BannerShown;
+                int loads = rig.Provider.Loads.Count;
+                rig.Provider.ShowCallback(AdResult.Rewarded);
+                rig.Scheduler.Advance(3600); // past every interstitial rule that follows a rewarded show
+                bool ready = rig.Controller.IsReady("level_end");
+                var interstitial = rig.Show("level_end");
+                rig.Visibility.Visible = false; rig.Visibility.Visible = true;
+                Check("AC62. WithdrawingConsentInThePrivacyOptions_StopsARunningController",
+                    closed && state == AdController.Phase.ConsentRefused && bannerHidden && open == AdResult.Rewarded && !ready && interstitial == AdResult.NotReady
+                        && rig.Provider.ShowFormat == AdFormat.Rewarded && rig.Provider.Loads.Count == loads,
+                    $"state={state} banner hidden={bannerHidden}; the open show answered {open?.ToString() ?? "nothing"}; IsReady(level_end)={ready} Show={interstitial} "
+                    + $"reached the provider={rig.Provider.ShowFormat == AdFormat.Interstitial}; loads after the withdrawal={rig.Provider.Loads.Count - loads} "
+                    + "(expected ConsentRefused True; Rewarded; False NotReady False; 0; pre-fix Running, ready, the interstitial shown)");
+            }
+
+            // issue #328: a withdrawal while the SDK start was out, or while a failed start waited for its retry, went on to load ads
+            {
+                var consent = new AdsFakeConsent { Completed = true, CanRequestAds = true };
+                using var starting = new AdsRig(consent: consent);
+                starting.Controller.Start();
+                consent.CanRequestAds = false;
+                starting.Controller.ShowPrivacyOptions(null);
+                starting.Provider.InitCallback(true);
+                var afterStart = starting.Controller.State;
+                int startingLoads = starting.Provider.Loads.Count;
+                starting.Dispose();
+
+                var consent2 = new AdsFakeConsent { Completed = true, CanRequestAds = true };
+                using var retrying = new AdsRig(consent: consent2);
+                retrying.Controller.Start();
+                retrying.Provider.InitCallback(false);
+                consent2.CanRequestAds = false;
+                retrying.Controller.ShowPrivacyOptions(null);
+                retrying.Provider.InitCallback = null;
+                retrying.Scheduler.Advance(60);
+                var afterRetry = retrying.Controller.State;
+                bool retried = retrying.Provider.InitCallback != null;
+                retrying.Dispose();
+
+                var consent3 = new AdsFakeConsent { Completed = true, CanRequestAds = true };
+                using var failing = new AdsRig(consent: consent3);
+                failing.Controller.Start();
+                consent3.CanRequestAds = false;
+                failing.Controller.ShowPrivacyOptions(null);
+                failing.Provider.InitCallback(false);
+                failing.Provider.InitCallback = null;
+                failing.Scheduler.Advance(60);
+                Check("AC63. WithdrawingConsentWhileTheSdkStarts_LoadsNoAd",
+                    afterStart == AdController.Phase.ConsentRefused && startingLoads == 0
+                        && afterRetry == AdController.Phase.ConsentRefused && !retried
+                        && failing.Controller.State == AdController.Phase.ConsentRefused && failing.Provider.InitCallback == null,
+                    $"start answered after the withdrawal: state={afterStart} loads={startingLoads}; retry pending at the withdrawal: state={afterRetry} start retried={retried}; "
+                    + $"start failed after the withdrawal: state={failing.Controller.State} start retried={failing.Provider.InitCallback != null} "
+                    + "(expected ConsentRefused 0; ConsentRefused False; ConsentRefused False)");
+            }
+
+            // issue #328: the player grants again in the privacy options after a withdrawal: ads run again
+            {
+                var consent = new AdsFakeConsent { Completed = true, CanRequestAds = true };
+                using var rig = new AdsRig(consent: consent).Running();
+                consent.CanRequestAds = false;
+                rig.Controller.ShowPrivacyOptions(null);
+                consent.CanRequestAds = true;
+                rig.Controller.ShowPrivacyOptions(null);
+                rig.Provider.InitCallback(true); // a started SDK answers a second Initialize at once
+                bool ready = rig.Controller.IsReady("shop_refill");
+                var r = rig.Show("shop_refill");
+                Check("AC64. GrantingAgainAfterAWithdrawal_StartsAdsAgain",
+                    rig.Controller.State == AdController.Phase.Running && ready && r == null && rig.Provider.ShowPlacement == "shop_refill",
+                    $"state={rig.Controller.State} IsReady={ready} show={r?.ToString() ?? "open"} reached the provider={rig.Provider.ShowPlacement == "shop_refill"} (expected Running True open True)");
+            }
+
+            // issue #328: a load still out at the withdrawal, which the SDK may never answer, left its slot Loading, so the next grant loaded nothing
+            {
+                var consent = new AdsFakeConsent { Completed = true, CanRequestAds = true };
+                using var rig = new AdsRig(consent: consent);
+                rig.Controller.Start();
+                rig.Provider.InitCallback(true); // both formats' loads are out and never answer
+                int before = rig.Provider.Loads.Count;
+                consent.CanRequestAds = false;
+                rig.Controller.ShowPrivacyOptions(null);
+                consent.CanRequestAds = true;
+                rig.Controller.ShowPrivacyOptions(null);
+                rig.Provider.InitCallback(true);
+                int asked = rig.Provider.Loads.Count - before;
+                Check("AC65. ALoadOutAtAWithdrawal_IsAskedAgainAtTheNextGrant", before == 2 && asked == 2,
+                    $"loads at the start={before}, after the grant={asked} (expected 2 2; pre-fix 2 0)");
+            }
+
             // kill switch and ad-free: NotReady, never a violation; remote only tightens
             {
                 var remote = new AdsRemote();

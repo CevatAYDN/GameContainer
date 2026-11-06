@@ -349,8 +349,11 @@ namespace Nexus.Ads
             if (_consent == null) { onClosed?.Invoke(); return; }
             _consent.ShowPrivacyOptions(() => OnMain(() =>
             {
-                // Consent may have been withdrawn or granted: a refused provider starts now, a running one just re-reads readiness.
-                if (State == Phase.ConsentRefused && _consent.CanRequestAds) InitializeProvider();
+                // Consent may have been granted or withdrawn: a refused provider starts now; a running one, or one waiting to retry its
+                // start, stops until the player grants again: it stayed Running and showed ads (issue #328). A start still out
+                // re-reads consent when it answers, in OnInitAnswered; a pending consent request decides in OnConsentCompleted.
+                if (_consent.CanRequestAds) { if (State == Phase.ConsentRefused) InitializeProvider(); }
+                else if (State == Phase.Running || State == Phase.InitFailed) RefuseConsent();
                 RaiseReadyChanged();
                 onClosed?.Invoke();
             }));
@@ -395,6 +398,17 @@ namespace Nexus.Ads
         private void RefuseConsent()
         {
             State = Phase.ConsentRefused;
+            // A withdrawal stops a running controller: the banner goes, and every slot not showing is forgotten (a load still out
+            // may never answer), so the next grant's preload asks the provider again, which may still hold the ad or, as AdMob
+            // does, dropped it at the withdrawal (issue #328)
+            _provider.HideBanner();
+            foreach (var slot in _slots.Values)
+            {
+                if (slot.State == SlotState.Showing) continue;
+                slot.Retry?.Dispose();
+                slot.Retry = null;
+                slot.State = SlotState.Idle;
+            }
             _telemetry.Record(new AdEvent(AdEventKind.ConsentRefused, AdFormat.Interstitial, "", "the consent flow allows no ad request; no ads until the player changes it in the privacy options"));
             RaiseReadyChanged();
         }
@@ -429,6 +443,9 @@ namespace Nexus.Ads
             if (_disposed) return;
             _answerWait?.Dispose();
             _answerWait = null;
+            // consent withdrawn in the privacy options while the start was out: no ad loads and no start is retried until the
+            // player grants again, whose start a provider already started answers at once (issue #328)
+            if (_consent != null && !_consent.CanRequestAds) { RefuseConsent(); return; }
             if (ok)
             {
                 _telemetry.Record(new AdEvent(AdEventKind.Initialized, AdFormat.Interstitial, "", _initFailures == 0 ? null : "after " + _initFailures + " failed start(s)"));
