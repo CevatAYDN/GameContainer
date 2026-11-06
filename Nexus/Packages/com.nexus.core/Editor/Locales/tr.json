@@ -386,6 +386,7 @@
     {"key": "status_tip_contexts", "value": "Çalışan context'leri aç"},
     {"key": "status_tip_handlers", "value": "Sinyal handler'larını Mimari sekmesinde aç"},
     {"key": "status_source_failed", "value": "Denetim çalışamadı ({0}: {1}); hiçbir şeyi denetlemedi."},
+    {"key": "status_source_skipped", "value": "{0} çalıştırılmadı: bir durum kaynağının genel, parametresiz bir yapıcısı olmalı; hiçbir şeyi denetlemedi."},
     {"key": "status_src_validation", "value": "Doğrulama"},
     {"key": "status_src_code_health", "value": "Kod sağlığı"},
     {"key": "status_src_binder", "value": "Binder"},

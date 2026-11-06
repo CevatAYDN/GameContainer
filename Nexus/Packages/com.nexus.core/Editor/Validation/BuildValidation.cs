@@ -579,16 +579,7 @@ namespace Nexus.Editor
                 }
             }
 
-            // DFS-based cycle detection across all dependencies
-            foreach (var kvp in dependenciesByName)
-            {
-                var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                if (HasDependencyCycle(kvp.Key, dependenciesByName, visiting, visited, new List<string>()))
-                {
-                    errorCount++;
-                }
-            }
+            errorCount += ReportDependencyCycles(dependenciesByName);
         }
 
         /// <summary>
@@ -621,12 +612,32 @@ namespace Nexus.Editor
             }
         }
 
+        /// <summary>
+        /// Reports each dependency cycle once and returns how many it reported. The nodes of a reported cycle count as done, so
+        /// the starts that reach it later find nothing more: a cycle A, B was one error per node, "FAILED with 2 Errors" for
+        /// one problem (#315).
+        /// </summary>
+        internal static int ReportDependencyCycles(Dictionary<string, HashSet<string>> dependenciesByName)
+        {
+            int reported = 0;
+            var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var name in dependenciesByName.Keys)
+            {
+                visiting.Clear();
+                if (HasDependencyCycle(name, dependenciesByName, visiting, visited, new List<string>())) reported++;
+            }
+            return reported;
+        }
+
         private static bool HasDependencyCycle(string current, Dictionary<string, HashSet<string>> dependenciesByName, HashSet<string> visiting, HashSet<string> visited, List<string> path)
         {
             if (visited.Contains(current)) return false;
             if (!visiting.Add(current))
             {
+                int cycleStart = path.FindIndex(name => string.Equals(name, current, StringComparison.OrdinalIgnoreCase));
                 path.Add(current);
+                for (int i = cycleStart; i < path.Count - 1; i++) visited.Add(path[i]);
                 Debug.LogError($"[Nexus Error] Circular Context Dependency: Circular dependency chain detected involving '{current}'. Chain: {string.Join(" → ", path)}");
                 return true;
             }
@@ -877,8 +888,15 @@ namespace Nexus.Editor
         {
             foreach (var type in TypeCache.GetTypesDerivedFrom<IBuildValidationRule>().OrderBy(t => t.FullName, StringComparer.Ordinal))
             {
-                if (type.IsAbstract || type.IsInterface || type.GetConstructor(Type.EmptyTypes) == null) continue;
+                if (type.IsAbstract || type.IsInterface) continue;
                 if (!IncludeTestAssemblies && AssemblyCatalog.IsTestAssembly(AssemblyCatalog.GetSimpleName(type.Assembly))) continue;
+                if (type.GetConstructor(Type.EmptyTypes) == null)
+                {
+                    // the build would pass while the rule that was meant to gate it never ran (#315)
+                    Debug.LogWarning($"[Nexus Warning] Project rule {type.FullName} was not run: an IBuildValidationRule needs a public parameterless constructor.");
+                    warningCount++;
+                    continue;
+                }
                 var rule = (IBuildValidationRule)Activator.CreateInstance(type);
                 foreach (var issue in rule.Evaluate() ?? Enumerable.Empty<ValidationIssue>())
                 {
@@ -1012,7 +1030,7 @@ namespace Nexus.Editor
                     var (ok, content) = ReadFileCached(scriptPath);
                     if (!ok)
                     {
-                        Debug.LogWarning($"[Nexus Warning] Composite trigger reachability could not read '{scriptPath}': {content}");
+                        Debug.LogWarning($"[Nexus Warning] Async call graph could not read '{scriptPath}': {content}");
                         warningCount++;
                     }
                     else
@@ -1082,6 +1100,13 @@ namespace Nexus.Editor
             }
 
             // 4. DFS Cycle Detection
+            errorCount += ReportGraphCycles(graph);
+        }
+
+        /// <summary>Reports each cycle of the signal/command graph once and returns how many it reported; the nodes of a reported cycle count as done (#315).</summary>
+        internal static int ReportGraphCycles(Dictionary<Type, HashSet<Type>> graph)
+        {
+            int reported = 0;
             var visited = new HashSet<Type>();
             var visiting = new HashSet<Type>();
             var path = new List<Type>();
@@ -1104,9 +1129,10 @@ namespace Nexus.Editor
                     string cycleStr = string.Join(" → ", names);
 
                     Debug.LogError($"[Nexus Error] Circular Command/Signal Cycle Detected: {cycleStr}. Cycles lead to stack overflows or infinite async loops.");
-                    errorCount++;
+                    reported++;
                 }
             }
+            return reported;
         }
 
         private static bool HasCycleDfs(Type current, Dictionary<Type, HashSet<Type>> graph, HashSet<Type> visiting, HashSet<Type> visited, List<Type> path)
@@ -1114,7 +1140,9 @@ namespace Nexus.Editor
             if (visited.Contains(current)) return false;
             if (!visiting.Add(current))
             {
+                int cycleStart = path.IndexOf(current);
                 path.Add(current);
+                for (int i = cycleStart; i < path.Count - 1; i++) visited.Add(path[i]);
                 return true; // Cycle detected!
             }
             path.Add(current);

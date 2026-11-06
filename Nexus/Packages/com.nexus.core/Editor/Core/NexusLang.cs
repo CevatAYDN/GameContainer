@@ -453,6 +453,7 @@ namespace Nexus.Editor
             s_strings["status_tip_contexts"] = "Open the running contexts";
             s_strings["status_tip_handlers"] = "Open the signal handlers in the Architecture tab";
             s_strings["status_source_failed"] = "The check could not run ({0}: {1}), so it checked nothing.";
+            s_strings["status_source_skipped"] = "{0} was not run: a status source needs a public parameterless constructor, so it checked nothing.";
             s_strings["status_src_validation"] = "Validation";
             s_strings["status_src_code_health"] = "Code health";
             s_strings["status_src_binder"] = "Binder";

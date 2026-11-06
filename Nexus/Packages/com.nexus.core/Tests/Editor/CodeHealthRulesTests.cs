@@ -12,6 +12,29 @@ namespace Nexus.Editor.Tests
     [TestFixture]
     public class CodeHealthRulesTests
     {
+        // A /* */ block's body has no leading '*', so its commented-out code was read as code and failed the Status check (#315).
+        [Test]
+        public void ABlockCommentBody_IsNotAnalysed_ButCodeAfterItIs()
+        {
+            var issues = new System.Collections.Generic.List<CodeHealthRules.Issue>();
+            CodeHealthRules.AnalyzeLines("Assets/Scripts/Probe.cs", new[]
+            {
+                "/*",
+                "public async void OnOld() { }",
+                "System.Threading.Thread.Sleep(10);",
+                "*/",
+                "public async void OnReal() { }",
+                "System.Threading.Thread.Sleep(10);",
+                "/* one line */ public int Kept;",
+                "/* opens here",
+                "public async void AlsoOld() { }",
+                "closes here */ public async void AfterClose() { }",
+            }, issues);
+
+            CollectionAssert.AreEqual(new[] { "NEXUS002@5", "NEXUS003@6", "NEXUS002@10" },
+                System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Select(issues, issue => issue.Code + "@" + issue.LineNumber)));
+        }
+
         [Test]
         public void NEXUS003_FlagsUnmarkedGetAwaiterInRuntimeCode()
         {

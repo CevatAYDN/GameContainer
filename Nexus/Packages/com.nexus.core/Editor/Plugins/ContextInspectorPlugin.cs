@@ -45,6 +45,7 @@ namespace Nexus.Editor
             public VisualElement Element;
             public object LastValue;
             public float FlashTimeRemaining;
+            public bool Failed; // its getter threw: warned once, no longer read, so the 200 ms update does not warn again (#315)
         }
 
         public override VisualElement CreateView()
@@ -520,6 +521,7 @@ namespace Nexus.Editor
         {
             foreach (var tracker in _trackers)
             {
+                if (tracker.Failed) continue;
                 try
                 {
                     object current = tracker.Member is FieldInfo field ? field.GetValue(tracker.Instance)
@@ -545,6 +547,7 @@ namespace Nexus.Editor
                 }
                 catch (Exception ex)
                 {
+                    tracker.Failed = true;
                     Debug.LogWarning($"[Nexus ContextInspector] Updating '{tracker.Member.Name}' failed: {ex.Message}");
                 }
             }

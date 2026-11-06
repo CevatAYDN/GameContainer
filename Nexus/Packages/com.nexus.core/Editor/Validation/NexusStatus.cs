@@ -20,8 +20,8 @@ namespace Nexus.Editor
 
     /// <summary>
     /// A check whose problems the Status tab and <see cref="NexusStatus.RunCli"/> list. Every non-abstract implementation with
-    /// a parameterless constructor, in any editor assembly, runs on each check; one in a test assembly only when the caller
-    /// asks for test assemblies.
+    /// a public parameterless constructor, in any editor assembly, runs on each check; one in a test assembly only when the caller
+    /// asks for test assemblies. An implementation without such a constructor is not run and is listed as a warning naming it.
     /// </summary>
     public interface INexusStatusSource
     {
@@ -41,8 +41,14 @@ namespace Nexus.Editor
             var problems = new List<NexusStatusProblem>();
             foreach (var type in TypeCache.GetTypesDerivedFrom<INexusStatusSource>().OrderBy(t => t.FullName, StringComparer.Ordinal))
             {
-                if (type.IsAbstract || type.IsInterface || type.GetConstructor(Type.EmptyTypes) == null) continue;
+                if (type.IsAbstract || type.IsInterface) continue;
                 if (!includeTestAssemblies && AssemblyCatalog.IsTestAssembly(AssemblyCatalog.GetSimpleName(type.Assembly))) continue;
+                if (type.GetConstructor(Type.EmptyTypes) == null)
+                {
+                    // the check it describes never runs; a silent skip left the project believing it was checked (#315)
+                    problems.Add(new NexusStatusProblem { Source = type.Name, IsError = false, Message = string.Format(NexusLang.Get("status_source_skipped"), type.FullName) });
+                    continue;
+                }
                 string name = type.Name;
                 try
                 {

@@ -34,6 +34,36 @@ namespace Nexus.Editor.Tests
                 CollectionAssert.Contains(shown, id, file + " switches to '" + id + "', which is not a tab of the window");
         }
 
+        public sealed class ModelWithAThrowingGetter { public int Count => throw new InvalidOperationException("the list is not assigned yet"); }
+
+        // The Live tab updates every tracked member each 200 ms: a getter that throws warned five times a second (#315).
+        [Test]
+        public void AGetterThatThrows_WarnsOnceForItsMember_NotOnEveryUpdate()
+        {
+            var plugin = new ContextInspectorPlugin();
+            var trackerType = typeof(ContextInspectorPlugin).GetNestedType("ValueTracker", System.Reflection.BindingFlags.NonPublic);
+            var tracker = Activator.CreateInstance(trackerType);
+            trackerType.GetField("Instance").SetValue(tracker, new ModelWithAThrowingGetter());
+            trackerType.GetField("Member").SetValue(tracker, typeof(ModelWithAThrowingGetter).GetProperty(nameof(ModelWithAThrowingGetter.Count)));
+            trackerType.GetField("Element").SetValue(tracker, new Label());
+            trackerType.GetField("LastValue").SetValue(tracker, 0);
+            var trackers = (System.Collections.IList)typeof(ContextInspectorPlugin)
+                .GetField("_trackers", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(plugin);
+            trackers.Add(tracker);
+            var update = typeof(ContextInspectorPlugin).GetMethod("UpdateTrackers", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+            int warnings = 0;
+            UnityEngine.Application.LogCallback count = (message, stack, type) =>
+            {
+                if (type == UnityEngine.LogType.Warning && message.Contains(nameof(ModelWithAThrowingGetter.Count))) warnings++;
+            };
+            UnityEngine.Application.logMessageReceived += count;
+            try { for (int i = 0; i < 5; i++) update.Invoke(plugin, null); }
+            finally { UnityEngine.Application.logMessageReceived -= count; }
+
+            Assert.AreEqual(1, warnings);
+        }
+
         [Test]
         public void ContextTree_ListsEachChildUnderItsParent_AndAContextWhoseParentIsNotRunning_AtTheTop()
         {

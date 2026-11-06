@@ -334,6 +334,14 @@ namespace Nexus.Editor.Tests
             }
         }
 
+        // A rule the validation cannot construct (#315). Its name sorts before ProbeRule, so a run that ProbeRule aborts has counted its warning too.
+        public sealed class AParameterizedRule : IBuildValidationRule
+        {
+            public AParameterizedRule(int setting) { }
+            public string Name => "Parameterized Rule";
+            public IEnumerable<ValidationIssue> Evaluate() { yield return new ValidationIssue { Message = "must never run", IsError = true }; }
+        }
+
         private static (int Errors, int Warnings) RunSilentWithProbe(ProbeRule.Mode mode)
         {
             ProbeRule.Current = mode;
@@ -481,6 +489,91 @@ namespace Nexus.Editor.Tests
             Assert.IsFalse(InvokeBool(method, typeof(List<DiScanMissingAssemblyType>), new HashSet<string>()), "List<missing> must not resolve.");
             // Plain lookups still work.
             Assert.IsTrue(InvokeBool(method, typeof(DiScanPlainType), set), "Plain scanned type must resolve.");
+        }
+
+        [Test]
+        public void ARuleWithoutAPublicParameterlessConstructor_IsReportedAsNotRun_NotSkippedInSilence()
+        {
+            BuildValidation.IncludeTestAssemblies = true;
+            try
+            {
+                BuildValidation.RunSilent();
+
+                var skipped = new List<BuildValidation.Entry>(System.Linq.Enumerable.Where(BuildValidation.LastResults,
+                    e => !e.IsError && e.Message.Contains(typeof(AParameterizedRule).FullName)));
+                Assert.AreEqual(1, skipped.Count, "one warning naming the rule");
+                StringAssert.Contains("parameterless constructor", skipped[0].Message);
+                Assert.IsFalse(System.Linq.Enumerable.Any(BuildValidation.LastResults, e => e.Message.Contains("must never run")), "the rule did not run");
+            }
+            finally { BuildValidation.IncludeTestAssemblies = false; }
+        }
+
+        // #304: the inspector names an asset "{ScopeTag}_ContextData"; DependsOn holds scope names ("Game"), the keys the runtime matches.
+        [Test]
+        public void ContextDataCycle_IsFoundWhenTheAssetsAreNamedByTheInspector_AndReportedOnce()
+        {
+            var errors = new List<string>();
+            BuildValidation.ErrorLogger = errors.Add;
+            var graph = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            BuildValidation.AddContextDataDependencies(graph, "Menu", "Menu_ContextData", new[] { "Game" });
+            BuildValidation.AddContextDataDependencies(graph, "Game", "Game_ContextData", new[] { "Menu" });
+
+            Assert.AreEqual(1, BuildValidation.ReportDependencyCycles(graph), "one problem, one report: " + string.Join(" | ", errors));
+            Assert.AreEqual(1, errors.Count);
+            StringAssert.Contains("Circular Context Dependency", errors[0]);
+        }
+
+        [Test]
+        public void ContextDataDependencies_WithoutACycle_ReportNothing_AndAContextOutsideTheCycleDoesNotReportItAgain()
+        {
+            var errors = new List<string>();
+            BuildValidation.ErrorLogger = errors.Add;
+
+            var chain = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            BuildValidation.AddContextDataDependencies(chain, "Menu", "Menu_ContextData", new[] { "Game" });
+            BuildValidation.AddContextDataDependencies(chain, "Game", "Game_ContextData", new[] { "Boot" });
+            BuildValidation.AddContextDataDependencies(chain, "Boot", "Boot_ContextData", null);
+            Assert.AreEqual(0, BuildValidation.ReportDependencyCycles(chain));
+
+            var cycleBehindAChain = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            BuildValidation.AddContextDataDependencies(cycleBehindAChain, "Hud", "Hud_ContextData", new[] { "Menu" });
+            BuildValidation.AddContextDataDependencies(cycleBehindAChain, "Menu", "Menu_ContextData", new[] { "Game" });
+            BuildValidation.AddContextDataDependencies(cycleBehindAChain, "Game", "Game_ContextData", new[] { "Menu" });
+            Assert.AreEqual(1, BuildValidation.ReportDependencyCycles(cycleBehindAChain), string.Join(" | ", errors));
+        }
+
+        // NexusRuntime.OrderContextsByDependencies skips a dependency that resolves to the context itself (depCtx != ctx).
+        [Test]
+        public void AContextDataThatDependsOnItself_IsNotACycle_AsTheRuntimeIgnoresIt_ButARealCycleBesideItIsStillFound()
+        {
+            var errors = new List<string>();
+            BuildValidation.ErrorLogger = errors.Add;
+            var self = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            BuildValidation.AddContextDataDependencies(self, "Menu", "Menu_ContextData", new[] { "Menu", "Menu_ContextData" });
+            Assert.AreEqual(0, BuildValidation.ReportDependencyCycles(self), string.Join(" | ", errors));
+
+            BuildValidation.AddContextDataDependencies(self, "Menu", "Menu_ContextData", new[] { "Game" });
+            BuildValidation.AddContextDataDependencies(self, "Game", "Game_ContextData", new[] { "Menu" });
+            Assert.AreEqual(1, BuildValidation.ReportDependencyCycles(self), string.Join(" | ", errors));
+        }
+
+        [Test]
+        public void ASignalCommandCycle_IsReportedOnce_NotOncePerNodeThatReachesIt()
+        {
+            var errors = new List<string>();
+            BuildValidation.ErrorLogger = errors.Add;
+            // MixedSignal -> StateLeakCommand -> ExclusiveSignal -> MixedCommandSeq -> MixedSignal, and one more command into it
+            var graph = new Dictionary<Type, HashSet<Type>>
+            {
+                [typeof(MixedSignal)] = new HashSet<Type> { typeof(StateLeakCommand) },
+                [typeof(StateLeakCommand)] = new HashSet<Type> { typeof(ExclusiveSignal) },
+                [typeof(ExclusiveSignal)] = new HashSet<Type> { typeof(MixedCommandSeq) },
+                [typeof(MixedCommandSeq)] = new HashSet<Type> { typeof(MixedSignal) },
+                [typeof(PriorityCommandA)] = new HashSet<Type> { typeof(MixedSignal) },
+            };
+
+            Assert.AreEqual(1, BuildValidation.ReportGraphCycles(graph), string.Join(" | ", errors));
+            Assert.AreEqual(1, errors.Count);
         }
 
         // #305: a batch build runs with an empty scene open, so a scene of the build settings has to be opened to be checked.

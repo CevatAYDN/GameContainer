@@ -46,15 +46,30 @@ namespace Nexus.Editor
             string fullPath = Path.GetFullPath(path);
             if (!File.Exists(fullPath)) return;
 
-            string[] lines = File.ReadAllLines(fullPath);
+            AnalyzeLines(path, File.ReadAllLines(fullPath), issues);
+        }
+
+        /// <summary>The rules over the lines of one script; <paramref name="path"/> is what the issues name and the path rules read.</summary>
+        internal static void AnalyzeLines(string path, string[] lines, List<Issue> issues)
+        {
             bool inHotPathMethod = false;
             int hotPathBraceDepth = 0;
+            bool inBlockComment = false;
 
             for (int i = 0; i < lines.Length; i++)
             {
                 string line = lines[i];
                 int lineNum = i + 1;
+                // A /* */ block's lines carry no leading '*' to skip: commented-out code in one was reported as an error (#315).
+                if (inBlockComment)
+                {
+                    int close = line.IndexOf("*/", System.StringComparison.Ordinal);
+                    if (close < 0) continue;
+                    inBlockComment = false;
+                    line = line.Substring(close + 2); // code after the close still counts
+                }
                 string trimmed = line.Trim();
+                if (trimmed.StartsWith("/*") && !trimmed.Contains("*/")) inBlockComment = true;
 
                 // Skip comment lines, docstrings, and recommendation string definitions to avoid false positives
                 if (trimmed.StartsWith("//") || trimmed.StartsWith("///") || trimmed.StartsWith("*") || trimmed.StartsWith("/*") ||

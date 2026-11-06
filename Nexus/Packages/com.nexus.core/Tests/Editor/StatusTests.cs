@@ -34,6 +34,26 @@ namespace Nexus.Editor.Tests
             }
         }
 
+        // A source the Status tab cannot construct (#315).
+        public sealed class AParameterizedSource : INexusStatusSource
+        {
+            public AParameterizedSource(int setting) { }
+            public string Name => "Parameterized check";
+            public IEnumerable<NexusStatusProblem> Collect() { yield return new NexusStatusProblem { IsError = true, Message = "must never run" }; }
+        }
+
+        [Test]
+        public void ASourceWithoutAPublicParameterlessConstructor_IsListedAsNotRun_NotSkippedInSilence()
+        {
+            var problems = NexusStatus.Collect(includeTestAssemblies: true);
+
+            var skipped = problems.Single(p => p.Source == nameof(AParameterizedSource));
+            Assert.IsFalse(skipped.IsError);
+            StringAssert.Contains(typeof(AParameterizedSource).FullName, skipped.Message);
+            Assert.IsFalse(problems.Any(p => p.Message == "must never run"), "the source did not run");
+            Assert.IsFalse(NexusStatus.Collect().Any(p => p.Source == nameof(AParameterizedSource)), "a test assembly's sources are left out unless asked for");
+        }
+
         [Test]
         public void EveryCheck_IsListedUnderItsName_AndACheckThatThrows_IsAnErrorThatSaysWhy()
         {
