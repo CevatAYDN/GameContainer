@@ -204,6 +204,11 @@ written or deleted, which a game treats as a first run; and `Unreadable`, a file
 warning in every build saying which. On `Unreadable` the game decides before it writes the key, because a write replaces
 the unreadable file: it can tell the player, fall back to a cloud copy, or report the event. `GetString` and the typed
 getters keep returning the default in both other cases; `HasKey` answers true for an unreadable key.
+`EconomyService` does not use a zero fallback for an unreadable or undecodable saved currency
+(issue #339): its first load throws `IOException`, without caching or persisting a balance.
+The game holds dependent operations, recovers the data and explicitly retries; an unreadable
+canonical BigDouble key does not fall through to or delete its legacy long key. See the
+[economy migration notes](MIGRATION.md#unavailable-economy-balances-are-not-new-zero-balances).
 `Save()` keeps its void, best-effort contract. For a delivery that must not be acknowledged after
 a failed write, `TrySave()` confirms all pending encrypted writes/deletes; `SaveOrThrow()` throws
 on failed or unsupported confirmation (issue #338). Other `IPlayerPrefsService` implementations

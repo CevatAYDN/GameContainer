@@ -20,6 +20,31 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 
 On `main`, not yet released. The [changelog](CHANGELOG.md)'s `[Unreleased]` section lists every change since 0.6.0.
 
+#### Unavailable economy balances are not new zero balances
+
+Issue #339 changes Nexus's `EconomyService` first-load failure behavior. A saved
+long or canonical BigDouble value that is unreadable or cannot be decoded now
+throws `IOException`, from a read or a mutation that first loads the currency.
+The failed load creates no balance and schedules no persistence. Disposal and
+another currency's flush therefore preserve the original key and, for an
+unreadable canonical big balance, its legacy long recovery key.
+
+Catch this failure at the game's load/UI boundary, hold dependent spending and
+earning, and present the game's recovery state. Do not catch it and call
+`SetBalance(..., 0)`, delete the keys, or treat the session as a new save.
+There is no new interface member for custom `IEconomyService` implementations;
+their own persisted-read behavior remains their responsibility.
+
+For a transient read failure, restore access and explicitly call the same read
+again on the same service; no fallback zero was cached. `EncryptedStorageService`
+caches corrupt/decryption failures as unreadable, so restore those through a
+successful `ImportEncryptedSaveData(key, validPayload)`, or reopen the store
+after restoring the files, before retrying. The valid payload must belong to
+that key and storage seed. Do not rewrite the corruption just to clear the
+unreadable state. Normal absent currencies still start at zero, and existing
+healthy cached balances remain usable; this is not a continuous disk-health
+monitor or a transaction across currencies.
+
 #### Confirm reward persistence before acknowledging delivery
 
 Issue #338 adds `IPlayerPrefsService.TrySave()` and `SaveOrThrow()`. Existing

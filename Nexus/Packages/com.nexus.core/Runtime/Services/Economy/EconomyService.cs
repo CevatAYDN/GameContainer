@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -16,6 +17,11 @@ namespace Nexus.Core.Services
     /// <see cref="ArgumentOutOfRangeException"/>. A spend the service refuses at run time returns false, and the overload with an
     /// <see cref="EconomyRefusal"/> says why. When the network validator refuses a spend the service has already applied, the
     /// amount comes back and <see cref="SpendRefundedSignal"/> is fired.
+    /// A first load of an unreadable or undecodable saved balance throws <see cref="IOException"/>
+    /// from reads or mutations instead of creating a zero balance. No balance is cached or scheduled
+    /// for persistence on that failure. Retry explicitly after restoring access; for corrupt encrypted
+    /// data, import a valid payload through <see cref="EncryptedStorageService.ImportEncryptedSaveData(string,string)"/>
+    /// or reopen the store after restoring its files. Absent balances still start at zero.
     /// </summary>
     public interface IEconomyService
     {
@@ -292,11 +298,12 @@ namespace Nexus.Core.Services
         }
 
         // Outside the lock, before every path that may create a currency. A loaded currency costs one
-        // lock-free lookup and no allocation (GCA5); the long balance decides because a big balance
-        // created next to a loaded long one starts from that long value, not from storage.
+        // lock-free lookup and no allocation (GCA5); either loaded view is authoritative for
+        // creating the other view, so it must not read storage again.
         private void PrefetchSaved(string currencyId)
         {
-            if (string.IsNullOrEmpty(currencyId) || _balances.ContainsKey(currencyId) || _prefetched.ContainsKey(currencyId)) return;
+            if (_disposed || _disposing || string.IsNullOrEmpty(currencyId) || _balances.ContainsKey(currencyId)
+                || _bigBalances.ContainsKey(currencyId) || _prefetched.ContainsKey(currencyId)) return;
             _prefetched[currencyId] = ReadSaved(currencyId);
         }
 
@@ -304,11 +311,33 @@ namespace Nexus.Core.Services
         {
             var store = Store;
             if (store == null) return default;
-            if (store.HasKey($"NT_EcoBig_{currencyId}"))
-                return new SavedBalance(true, store.GetBigDouble($"NT_EcoBig_{currencyId}", BigDouble.Zero), false, 0L);
-            bool hasLong = store.HasKey($"NT_Eco_{currencyId}");
-            return new SavedBalance(false, BigDouble.Zero, hasLong, hasLong ? store.GetLong($"NT_Eco_{currencyId}", 0L) : 0L);
+            string bigKey = $"NT_EcoBig_{currencyId}";
+            if (HasReadableSavedValue(store, bigKey))
+            {
+                var big = store.GetBigDouble(bigKey, new BigDouble { Mantissa = double.NaN });
+                if (double.IsNaN(big.Mantissa) || double.IsInfinity(big.Mantissa)) throw UnavailableBalance(bigKey);
+                return new SavedBalance(true, big, false, 0L);
+            }
+            string longKey = $"NT_Eco_{currencyId}";
+            if (!HasReadableSavedValue(store, longKey)) return default;
+            long value = store.GetLong(longKey, long.MinValue);
+            // Typed stores own their decoding (including legacy locales). Two distinct
+            // fallbacks distinguish a decode failure from a valid stored long.MinValue.
+            if (value == long.MinValue && store.GetLong(longKey, long.MaxValue) != long.MinValue)
+                throw UnavailableBalance(longKey);
+            return new SavedBalance(false, BigDouble.Zero, true, value);
         }
+
+        private static bool HasReadableSavedValue(IPlayerPrefsService store, string key)
+        {
+            var status = store.TryGetString(key, out _);
+            if (status == StorageReadStatus.Unreadable) throw UnavailableBalance(key);
+            // Custom typed stores may have a native numeric key without a string projection.
+            return status == StorageReadStatus.Present || store.HasKey(key);
+        }
+
+        private static IOException UnavailableBalance(string key)
+            => new IOException($"[Economy] Saved balance '{key}' is unreadable or cannot be decoded. Restore the saved data and retry; no balance was created.");
 
         // Under the lock: the prefetched read, or (a creating path that raced the prefetch) a direct read.
         private SavedBalance TakeSaved(string currencyId)
@@ -320,7 +349,7 @@ namespace Nexus.Core.Services
 
         private SecureObservableLong CreateBalanceLocked(string currencyId)
         {
-            var saved = TakeSaved(currencyId);
+            var saved = _bigBalances.ContainsKey(currencyId) ? default : TakeSaved(currencyId);
             // A persisted promotion remains canonical after restart, including for old
             // callers which only use the long API.
             if (!_bigBalances.ContainsKey(currencyId) && saved.HasBig)

@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using Nexus.Ads;
 using Nexus.Ads.Bridge;
 using Nexus.Ads.Unity;
+using Nexus.Core;
 using Nexus.Core.Services;
 using UnityEngine;
 
@@ -82,6 +83,7 @@ namespace NexusVerify.Device
                     Check(FixtureExists(_walletSalt) && FixtureExists(_receiptSalt), "existing-fixtures");
                 }
                 Open();
+                if (_variant == "bool" && _scenario == "wallet") ProbeEconomy();
                 switch (_phase)
                 {
                     case "arm": Arm(); break;
@@ -239,13 +241,114 @@ namespace NexusVerify.Device
             _committed = true;
         }
 
-        private string WalletPath()
+        private void ProbeEconomy()
+        {
+            string currency = "probe339" + _run;
+            foreach (bool big in new[] { false, true })
+            {
+                string kind = big ? "big" : "long";
+                string salt = "339_probe_" + _run + "_" + kind;
+                if (_phase == "arm") ArmEconomy(big, salt, currency, kind);
+                else
+                {
+                    Check(FixtureExists(salt), "economy-" + kind + "-fixture-exists");
+                    ReopenEconomy(big, salt, currency, kind);
+                }
+            }
+            string marker = _phase == "arm" ? "ECONOMY_ARMED"
+                : _phase == "recover" ? "ECONOMY_REOPENED" : "ECONOMY_VERIFIED";
+            Log(marker, "longBalance=1005 bigBalance=1005");
+        }
+
+        private void ArmEconomy(bool big, string salt, string currency, string kind)
+        {
+            string label = "economy-" + kind + "-";
+            string legacyKey = "NT_Eco_" + currency;
+            string key = big ? "NT_EcoBig_" + currency : legacyKey;
+            Check(FixtureAbsent(salt), label + "fresh-fixture");
+            var writer = new EncryptedStorageService(salt);
+            if (big)
+            {
+                writer.SetBigDouble(key, new BigDouble(1000));
+                writer.SetLong(legacyKey, 77);
+            }
+            else writer.SetLong(key, 1000);
+            writer.SaveOrThrow();
+            Check(big ? writer.GetBigDouble(key) == new BigDouble(1000) : writer.GetLong(key) == 1000,
+                label + "baseline-confirmed");
+            string snapshot = writer.ExportEncryptedSaveData(key);
+            Check(!string.IsNullOrEmpty(snapshot), label + "valid-export");
+            string path = FixturePath(writer, salt, key);
+            string legacyPath = big ? FixturePath(writer, salt, legacyKey) : null;
+            writer.Dispose();
+            // A fresh single write has no backup. Refuse an unexpected fallback instead of deleting evidence.
+            Check(!File.Exists(path + ".bak"), label + "no-backup-fallback");
+            string legacyBytes = big ? FileBytes(legacyPath) : null;
+            File.WriteAllBytes(path, new byte[] { 1, 2, 3 });
+            string corruptBytes = FileBytes(path);
+            var store = new EncryptedStorageService(salt);
+            var failed = new EconomyService { PlayerPrefsService = store };
+            bool threw = EconomyReadFails(failed, currency, big);
+            failed.Dispose();
+            Check(threw, label + "first-read-throws");
+            Check(FileBytes(path) == corruptBytes, label + "dispose-kept-corrupt-bytes");
+            if (big)
+                Check(store.HasKey(legacyKey) && store.GetLong(legacyKey, -1) == 77
+                    && FileBytes(legacyPath) == legacyBytes, label + "dispose-kept-legacy-77");
+
+            var retry = new EconomyService { PlayerPrefsService = store };
+            Check(EconomyReadFails(retry, currency, big), label + "second-read-throws");
+            Check(FileBytes(path) == corruptBytes, label + "second-read-kept-corrupt-bytes");
+            if (big)
+                Check(store.HasKey(legacyKey) && store.GetLong(legacyKey, -1) == 77
+                    && FileBytes(legacyPath) == legacyBytes, label + "second-read-kept-legacy-77");
+            // Recovery starts only after both failed loads and the disposal preservation checks.
+            Check(store.ImportEncryptedSaveData(key, snapshot), label + "explicit-import");
+            Check(big ? retry.GetBigBalance(currency) == new BigDouble(1000) : retry.GetBalance(currency) == 1000,
+                label + "same-instance-retry-1000");
+            if (big) retry.EarnBig(currency, new BigDouble(5), "probe339");
+            else retry.Earn(currency, 5, "probe339");
+            Check(store.TrySave(), label + "mutation-save-confirmed");
+            ReopenEconomy(big, salt, currency, kind);
+            // Reopen checked the committed 1005 before either recovered instance can flush on disposal.
+            retry.Dispose();
+            store.Dispose();
+        }
+
+        private void ReopenEconomy(bool big, string salt, string currency, string kind)
+        {
+            var store = new EncryptedStorageService(salt);
+            var economy = new EconomyService { PlayerPrefsService = store };
+            string key = (big ? "NT_EcoBig_" : "NT_Eco_") + currency;
+            Check(store.TryGetString(key, out _) == StorageReadStatus.Present
+                && (big ? economy.GetBigBalance(currency) == new BigDouble(1005) : economy.GetBalance(currency) == 1005),
+                "economy-" + kind + "-reopened-1005");
+            economy.Dispose();
+            store.Dispose();
+        }
+
+        private static bool EconomyReadFails(EconomyService economy, string currency, bool big)
+        {
+            try
+            {
+                if (big) economy.GetBigBalance(currency);
+                else economy.GetBalance(currency);
+                return false;
+            }
+            catch (IOException) { return true; }
+        }
+
+        private static string FileBytes(string path) => Convert.ToBase64String(File.ReadAllBytes(path));
+
+        private string WalletPath() => FixturePath(_wallet, _walletSalt, "wallet");
+
+        private string FixturePath(EncryptedStorageService store, string salt, string key)
         {
             // Reflection is fault-injection path discovery only, as in DurableRewardDeliveryTests.
             var method = typeof(EncryptedStorageService).GetMethod("GetFilePath", BindingFlags.Instance | BindingFlags.NonPublic);
             Check(method != null, "fault-path-method");
-            string path = Path.GetFullPath((string)method.Invoke(_wallet, new object[] { "wallet" }));
-            string folder = Path.GetFullPath(Path.Combine(Application.persistentDataPath, "SecureData_" + _walletSalt));
+            string path = Path.GetFullPath((string)method.Invoke(store, new object[] { key }));
+            string folder = Path.GetFullPath(Path.Combine(Application.persistentDataPath, "SecureData_" + salt));
             Check(Path.GetDirectoryName(path) == folder && Path.GetExtension(path) == ".dat", "fault-path-contained");
             return path;
         }

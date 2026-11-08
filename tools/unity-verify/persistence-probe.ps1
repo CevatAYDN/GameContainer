@@ -143,6 +143,14 @@ function Invoke-ProbePhase([string]$Variant, [string]$Scenario, [string]$Phase, 
             @($script:seen | Where-Object {
                 $_ -match " event=REOPENED committedBalance=$reopenedBalance receipt=$([regex]::Escape($Receipt)) pending=1$"
             }).Count -ne 1) { throw 'Missing unique reopened wallet/receipt marker.' }
+        if ($Variant -eq 'bool' -and $Scenario -eq 'wallet') {
+            $economyMarker = switch ($Phase) {
+                'arm' { 'ECONOMY_ARMED' } 'recover' { 'ECONOMY_REOPENED' } 'verify' { 'ECONOMY_VERIFIED' }
+            }
+            if (@($script:seen | Where-Object {
+                $_ -match " event=$economyMarker longBalance=1005 bigBalance=1005$"
+            }).Count -ne 1) { throw "Missing unique $economyMarker marker with both recovered balances." }
+        }
         # Kill only after the validated terminal marker, and only while that same process owns the app.
         if ((Get-ProbePid) -ne $record.pid) { throw 'Process changed before force-stop; refusing to stop it.' }
         $record.forceStopRequested = $true

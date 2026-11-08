@@ -419,6 +419,7 @@ Features marked as beta:
 #### Version 0.7.0 (Unreleased)
 
 **Breaking Changes:**
+- Issue #339: `EconomyService` throws `IOException` on the first load of an unreadable or undecodable saved balance instead of returning/caching zero. This also applies to a mutation that first loads that currency. Handle the unavailable state and explicitly retry after recovery; no `IEconomyService` member was added. See `MIGRATION.md`.
 - Issue #336 adds `IContextBuilder.SuppressUnheardSignalHints()`. A custom implementation must add the method; Nexus's own builder is updated. Existing diagnostic defaults are unchanged.
 - Issue #337: parent context disposal now ends descendant contexts first. A child cannot outlive its parent, and attaching one after parent teardown starts throws `ObjectDisposedException`. Async cleanup limits and migration steps are in `MIGRATION.md`.
 - Issue #238 removed public members that nothing references (the search is in the changelog):
