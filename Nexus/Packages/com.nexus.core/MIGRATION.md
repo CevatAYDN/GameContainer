@@ -20,6 +20,32 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 
 On `main`, not yet released. The [changelog](CHANGELOG.md)'s `[Unreleased]` section lists every change since 0.6.0.
 
+#### Confirm reward persistence before acknowledging delivery
+
+Issue #338 adds `IPlayerPrefsService.TrySave()` and `SaveOrThrow()`. Existing
+implementations still compile: the default `TrySave()` returns false, not an
+inferred success from void `Save()`. `EncryptedStorageService` implements
+confirmation for all pending writes/deletes; custom stores must implement
+their own real confirmation before using this path. In-memory test stores and
+`UnityPlayerPrefsService` do not claim durable confirmation.
+
+Existing reward callbacks still acknowledge on normal return. A callback that
+only called void `Save()` can therefore still consume a receipt after a failed
+write. Opt in by confirming the actual game state with `SaveOrThrow()` before
+returning; startup replay confirms before `AcknowledgeReward(id)`. Propagate
+failure out of the callback. A signal bus or event handler that catches a
+listener's exception is not that propagation boundary.
+Inside a live callback, copy `AdController.DeliveringReward` to identify that
+delivery. `PendingReward` is for startup/replay: a reentrant notification can
+replace it before an older callback runs.
+
+Keep the reward state and applied receipt id in one atomically replaced blob,
+and reconcile a pending receipt before accepting another reward. Separate
+economy/pending-id keys are not a transaction, even if `TrySave()` reports
+success after a later retry. The bridge's
+[Confirmed Reward Saves](../com.nexus.ads.bridge.nexus/README.md#confirmed-reward-saves)
+section gives both callback forms, startup replay and the guarantee boundaries.
+
 #### Per-context unheard-signal diagnostics
 
 Issue #336 adds `void SuppressUnheardSignalHints()` to `IContextBuilder`.

@@ -186,13 +186,13 @@ namespace Nexus.Ads
             {
                 Raise(new PolicyViolation(verdict.Rule, placement ?? "", format, verdict.Reason));
                 WakeAfterTouch(verdict, declared);
-                onResult?.Invoke(AdResult.Blocked);
+                DeliverResult(onResult, AdResult.Blocked);
                 return;
             }
             if (State != Phase.Running)
             {
                 NotReady(declared, State.ToString());
-                onResult?.Invoke(AdResult.NotReady);
+                DeliverResult(onResult, AdResult.NotReady);
                 return;
             }
             var slot = _slots[format];
@@ -200,7 +200,7 @@ namespace Nexus.Ads
             {
                 NotReady(declared, "nothing loaded");
                 if (slot.State == SlotState.Idle) Preload(format);
-                onResult?.Invoke(AdResult.NotReady);
+                DeliverResult(onResult, AdResult.NotReady);
                 return;
             }
             slot.State = SlotState.Showing;
@@ -216,7 +216,7 @@ namespace Nexus.Ads
                     if (expired && result == AdResult.Rewarded)
                     {
                         expired = false;
-                        Isolated(() => WriteReceipt(placement), format, placement, "writing the reward receipt");
+                        Isolated(() => WriteReceipt(placement, out _), format, placement, "writing the reward receipt");
                         Isolated(() => _telemetry.Record(new AdEvent(AdEventKind.Rewarded, format, placement, "after the show was ended as failed: kept as the pending reward")),
                             format, placement, "the telemetry sink");
                     }
@@ -230,14 +230,15 @@ namespace Nexus.Ads
                 slot.State = SlotState.Idle;
                 // Each step is isolated, so the game's result arrives exactly once whatever a subscriber or sink throws (issue #176).
                 // The receipt is durable before the game hears of the reward: a kill in between keeps it.
-                if (result == AdResult.Rewarded) Isolated(() => WriteReceipt(placement), format, placement, "writing the reward receipt");
+                RewardReceipt? receipt = null;
+                if (result == AdResult.Rewarded) Isolated(() => WriteReceipt(placement, out receipt), format, placement, "writing the reward receipt");
                 if (result == AdResult.Rewarded || result == AdResult.Closed) Isolated(() => _session.RecordShown(declared), format, placement, "recording the show");
                 Isolated(() => _telemetry.Record(new AdEvent(result == AdResult.Failed ? AdEventKind.ShowFailed : result == AdResult.Rewarded ? AdEventKind.Rewarded : AdEventKind.Closed, format, placement, detail)),
                     format, placement, "the telemetry sink");
                 Isolated(() => AdClosed?.Invoke(format, result), format, placement, "an AdClosed subscriber");
                 Preload(format);
                 RaiseReadyChanged();
-                onResult?.Invoke(result);
+                DeliverResult(onResult, result, receipt);
             }
             _expireOpenShow = detail => { expired = true; Answer(AdResult.Failed, detail); };
             _openShowFormat = format;
@@ -250,6 +251,14 @@ namespace Nexus.Ads
                 Answer(AdResult.Failed, "provider threw " + ex.GetType().Name + ": " + ex.Message);
                 throw;
             }
+        }
+
+        private void DeliverResult(Action<AdResult> callback, AdResult result, RewardReceipt? receipt = null)
+        {
+            var previous = DeliveringReward;
+            DeliveringReward = receipt;
+            try { callback?.Invoke(result); }
+            finally { DeliveringReward = previous; }
         }
 
         private void Isolated(Action step, AdFormat format, string placement, string what)
@@ -293,14 +302,14 @@ namespace Nexus.Ads
             var declared = _config.Find(placement);
             if (SwitchedOff(declared, onResult)) return;
             var verdict = Guard.Check(placement, AdFormat.Banner, new GuardState(_fullScreenOpen, State == Phase.AwaitingConsent));
-            if (!verdict.Allowed) { Raise(new PolicyViolation(verdict.Rule, placement ?? "", AdFormat.Banner, verdict.Reason)); onResult?.Invoke(AdResult.Blocked); return; }
-            if (State != Phase.Running) { NotReady(declared, State.ToString()); onResult?.Invoke(AdResult.NotReady); return; }
+            if (!verdict.Allowed) { Raise(new PolicyViolation(verdict.Rule, placement ?? "", AdFormat.Banner, verdict.Reason)); DeliverResult(onResult, AdResult.Blocked); return; }
+            if (State != Phase.Running) { NotReady(declared, State.ToString()); DeliverResult(onResult, AdResult.NotReady); return; }
             _lastPlacement[AdFormat.Banner] = placement;
             _provider.ShowBanner(placement, position);
             // the show counts for the placement's cooldown and caps, and a wake is armed for its cooldown's end (#282)
             Isolated(() => _session.RecordShown(declared), AdFormat.Banner, placement, "recording the show");
             ArmPacingWake();
-            onResult?.Invoke(AdResult.Closed);
+            DeliverResult(onResult, AdResult.Closed);
         }
 
         /// <summary>Attaches (or replaces) the ad-free entitlement after construction; the bridge wires it once the store exists.</summary>
@@ -328,15 +337,28 @@ namespace Nexus.Ads
         /// </summary>
         public RewardReceipt? PendingReward => RewardReceipts.Pending(_store);
 
+        /// <summary>
+        /// The receipt written for the current synchronous show-result callback, captured before
+        /// telemetry, close and readiness notifications can replace PendingReward. Null outside a
+        /// result callback, for non-reward results, or when writing its receipt failed. Nested result
+        /// callbacks restore the outer value even when they throw. Copy this value inside the callback
+        /// to identify its grant; use <see cref="PendingReward"/> only for pending/startup replay.
+        /// </summary>
+        public RewardReceipt? DeliveringReward { get; private set; }
+
         /// <summary>Clears the pending receipt when its id matches; any other id leaves it untouched.</summary>
         public void AcknowledgeReward(string receiptId) => RewardReceipts.Acknowledge(_store, receiptId);
 
-        private void WriteReceipt(string placement)
+        private void WriteReceipt(string placement, out RewardReceipt? writtenReceipt)
         {
+            writtenReceipt = null;
             _rewardSequence++;
             string id = _clock.UtcDay + "-" + _rewardSequence + "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+            var receipt = new RewardReceipt(id, placement);
             var replaced = RewardReceipts.Pending(_store);
-            RewardReceipts.Write(_store, new RewardReceipt(id, placement));
+            RewardReceipts.Write(_store, receipt);
+            // Capture this show's identity before even the replacement telemetry can reenter.
+            writtenReceipt = receipt;
             // the next start pays only the newest receipt: an earlier reward nobody acknowledged is lost, and said so (issue #178)
             if (replaced.HasValue)
                 _telemetry.Record(new AdEvent(AdEventKind.RewardReplaced, AdFormat.Rewarded, placement, "receipt " + replaced.Value.Id + " ('" + replaced.Value.Placement
@@ -582,7 +604,7 @@ namespace Nexus.Ads
         {
             if (declared == null || !(_killSwitch || AdFreeCovers(declared.Format))) return false;
             NotReady(declared, _killSwitch ? "kill switch" : "ad-free");
-            onResult?.Invoke(AdResult.NotReady);
+            DeliverResult(onResult, AdResult.NotReady);
             return true;
         }
 

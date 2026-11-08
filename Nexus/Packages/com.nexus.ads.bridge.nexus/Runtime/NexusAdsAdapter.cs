@@ -65,25 +65,21 @@ namespace Nexus.Ads.Bridge
 
         public bool IsRewardedReady(string placement) => _controller.IsReady(placement);
 
+        // The controller captured this show's receipt before any external notification (#338).
+        // A throwing callback retains it (#178); a newer pending receipt is never acknowledged here.
         public void ShowRewarded(string placement, Action<bool> onCompleted) => _controller.Show(placement, result =>
         {
+            var receipt = _controller.DeliveringReward;
             onCompleted?.Invoke(result == AdResult.Rewarded);
-            if (result == AdResult.Rewarded) AcknowledgeShownReward();
+            if (receipt.HasValue) _controller.AcknowledgeReward(receipt.Value.Id);
         });
 
         public void RequestReward(string placement, Action<AdOutcome> onOutcome) => _controller.Show(placement, result =>
         {
+            var receipt = _controller.DeliveringReward;
             onOutcome?.Invoke(Map(result));
-            if (result == AdResult.Rewarded) AcknowledgeShownReward();
-        });
-
-        // The game's callback returned: the receipt written for this show is paid. A callback that threw leaves it, so the next start
-        // pays it; without this every reward stayed pending and was paid again at the next start (issue #178).
-        private void AcknowledgeShownReward()
-        {
-            var receipt = _controller.PendingReward;
             if (receipt.HasValue) _controller.AcknowledgeReward(receipt.Value.Id);
-        }
+        });
 
         public void ShowBanner(string placement, string position)
             => _controller.ShowBanner(placement, string.Equals(position, "top", StringComparison.OrdinalIgnoreCase) ? BannerPosition.Top : BannerPosition.Bottom);

@@ -51,6 +51,27 @@ namespace Nexus.Core.Services
         bool HasKey(string key);
         void DeleteKey(string key);
         void Save();
+        /// <summary>
+        /// Commits pending changes and confirms success only when the store supports confirmation.
+        /// The default is false: a void <see cref="Save"/> cannot prove persistence.
+        /// This is not a transaction across keys; related state and its receipt id need one atomic blob.
+        /// </summary>
+        bool TrySave() => false;
+    }
+
+    /// <summary>Opt-in confirmation for consumers whose throwing callback retains a delivery receipt.</summary>
+    public static class PlayerPrefsSaveExtensions
+    {
+        /// <summary>
+        /// Throws when persistence failed or cannot be confirmed. Existing void Save behavior is unchanged.
+        /// Call before returning from a reward callback or acknowledging a startup receipt.
+        /// </summary>
+        public static void SaveOrThrow(this IPlayerPrefsService store)
+        {
+            if (store == null) throw new System.ArgumentNullException(nameof(store));
+            if (!store.TrySave())
+                throw new System.IO.IOException("The store could not confirm saving all pending changes.");
+        }
     }
 
     /// <summary>

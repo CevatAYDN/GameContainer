@@ -92,6 +92,7 @@ namespace Nexus.Core.Services
         // concurrent SetString/DeleteKey can never have its newer value hidden by an older
         // Save completion.
         private readonly Dictionary<string, long> _keyVersions = new(StringComparer.Ordinal);
+        private long _mutationVersion;
         private readonly object _lock = new();
         private volatile bool _disposed;
         private bool _disposing;
@@ -112,6 +113,7 @@ namespace Nexus.Core.Services
             _keyVersions.TryGetValue(key, out long version);
             version++;
             _keyVersions[key] = version;
+            _mutationVersion++;
             _unreadable.Remove(key); // every write, import and delete bumps the version: the key is no longer the unreadable file
             return version;
         }
@@ -661,7 +663,19 @@ namespace Nexus.Core.Services
                 {
                     if (_disposed || _disposing || !IsCurrentVersionLocked(key, readVersion)) return;
                 }
-                if (SaveKeyToDisk(key, value) && deleteLegacy) TryDeleteLegacyFile(key);
+                bool saved = SaveKeyToDisk(key, value);
+                if (saved && deleteLegacy) TryDeleteLegacyFile(key);
+                if (!saved)
+                {
+                    lock (_lock)
+                    {
+                        if (!_disposed && !_disposing && IsCurrentVersionLocked(key, readVersion))
+                        {
+                            _cache[key] = value;
+                            _dirtyKeys.Add(key);
+                        }
+                    }
+                }
             }
         }
 
@@ -1104,7 +1118,8 @@ namespace Nexus.Core.Services
             {
                 if (_disposed || _disposing) goto disposed;
                 _cache[key] = null;
-                _dirtyKeys.Remove(key);
+                // A delete waiting for the write lock is still uncommitted.
+                _dirtyKeys.Add(key);
                 version = BumpKeyVersionLocked(key);
             }
 
@@ -1114,12 +1129,16 @@ namespace Nexus.Core.Services
             {
                 bool shouldDelete;
                 lock (_lock) shouldDelete = !_disposed && !_disposing && IsCurrentVersionLocked(key, version);
-                if (shouldDelete && !DeleteKeyFilesFromDisk(key))
+                if (shouldDelete)
                 {
+                    bool deleted = DeleteKeyFilesFromDisk(key);
                     lock (_lock)
                     {
                         if (!_disposed && !_disposing && IsCurrentVersionLocked(key, version))
-                            _dirtyKeys.Add(key);
+                        {
+                            if (deleted) _dirtyKeys.Remove(key);
+                            else _dirtyKeys.Add(key);
+                        }
                     }
                 }
             }
@@ -1153,7 +1172,9 @@ namespace Nexus.Core.Services
 
             foreach (var recoveryPath in new[] { path + ".bak", path + ".tmp" })
             {
-                try { if (File.Exists(recoveryPath)) File.Delete(recoveryPath); }
+                // File.Exists also returns false on access/I/O errors. Only the delete
+                // can confirm removal; a genuinely missing file is already a no-op.
+                try { File.Delete(recoveryPath); }
                 catch (Exception ex)
                 {
                     NexusLog.WarnAlways($"[EncryptedStorage] Recovery file delete failed for '{key}': {ex.Message}");
@@ -1161,17 +1182,14 @@ namespace Nexus.Core.Services
                 }
             }
 
-            if (File.Exists(path))
+            try { File.Delete(path); }
+            catch (Exception ex)
             {
-                try { File.Delete(path); }
-                catch (Exception ex)
-                {
-                    NexusLog.WarnAlways($"[EncryptedStorage] Delete failed for key '{key}': {ex.Message}");
-                    ok = false;
-                }
+                NexusLog.WarnAlways($"[EncryptedStorage] Delete failed for key '{key}': {ex.Message}");
+                ok = false;
             }
 
-            if (legacyPath != null && File.Exists(legacyPath))
+            if (legacyPath != null)
             {
                 try { File.Delete(legacyPath); }
                 catch (Exception ex)
@@ -1183,19 +1201,35 @@ namespace Nexus.Core.Services
             return ok;
         }
 
-        public void Save()
+        public void Save() => SavePending(confirmationRequired: false);
+
+        /// <summary>
+        /// Confirms the filesystem commits of all pending writes/deletes at the final cache-lock check.
+        /// Returns false on any failed write, concurrent mutation, or disposal. Keys commit individually,
+        /// not as a multi-key transaction; exactly-once consumers keep state and receipt id in one blob.
+        /// </summary>
+        public bool TrySave() => SavePending(confirmationRequired: true);
+
+        private bool SavePending(bool confirmationRequired)
         {
-            if (_disposed) return;
+            long mutationVersion;
+            lock (_lock)
+            {
+                if (_disposed || (confirmationRequired && _disposing)) return false;
+                mutationVersion = _mutationVersion;
+            }
             lock (_writeLock)
             {
                 string[] keysToWrite;
                 lock (_lock)
                 {
-                    if (_disposed || _dirtyKeys.Count == 0) return;
+                    if (_disposed || (confirmationRequired && _disposing)) return false;
+                    if (_dirtyKeys.Count == 0) return !_disposing && _mutationVersion == mutationVersion;
                     keysToWrite = new string[_dirtyKeys.Count];
                     _dirtyKeys.CopyTo(keysToWrite);
                 }
 
+                bool allSucceeded = true;
                 foreach (var key in keysToWrite)
                 {
                     string val;
@@ -1204,7 +1238,10 @@ namespace Nexus.Core.Services
                     lock (_lock)
                     {
                         if (_disposed || !_cache.TryGetValue(key, out val))
+                        {
+                            allSucceeded = false;
                             continue;
+                        }
                         isTombstone = val == null;
                         // Value and version are read together under the lock; a SetString/DeleteKey
                         // that lands during the disk write below is caught by the version checks after it.
@@ -1224,6 +1261,7 @@ namespace Nexus.Core.Services
                     }
                     if (!success)
                     {
+                        allSucceeded = false;
                         lock (_lock)
                         {
                             if (!_disposed && IsCurrentVersionLocked(key, version))
@@ -1238,9 +1276,15 @@ namespace Nexus.Core.Services
                         // cached value.  A concurrent mutation remains dirty for retry.
                         if (!_disposed && IsCurrentVersionLocked(key, version))
                             _dirtyKeys.Remove(key);
+                        else
+                            allSucceeded = false;
                     }
                 }
-
+                // The linearization point: no accepted mutation since entry, no pending
+                // operation (including an AutoSave/delete waiting on _writeLock), and no disposal.
+                lock (_lock)
+                    return allSucceeded && !_disposed && !_disposing
+                        && _mutationVersion == mutationVersion && _dirtyKeys.Count == 0;
             }
         }
 

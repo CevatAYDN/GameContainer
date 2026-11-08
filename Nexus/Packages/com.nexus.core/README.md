@@ -204,6 +204,12 @@ written or deleted, which a game treats as a first run; and `Unreadable`, a file
 warning in every build saying which. On `Unreadable` the game decides before it writes the key, because a write replaces
 the unreadable file: it can tell the player, fall back to a cloud copy, or report the event. `GetString` and the typed
 getters keep returning the default in both other cases; `HasKey` answers true for an unreadable key.
+`Save()` keeps its void, best-effort contract. For a delivery that must not be acknowledged after
+a failed write, `TrySave()` confirms all pending encrypted writes/deletes; `SaveOrThrow()` throws
+on failed or unsupported confirmation (issue #338). Other `IPlayerPrefsService` implementations
+default to false until they implement real confirmation. This is not a multi-key transaction or
+a power-loss guarantee: keep reward state and receipt identity in one atomic blob. See
+[Confirmed Reward Saves](../com.nexus.ads.bridge.nexus/README.md#confirmed-reward-saves).
 Every live store saves its unsaved keys when the app pauses, on the main thread before `OnApplicationPause` returns, with
 or without a `Root` (issue #203); it also saves on quit, and on focus loss on a worker thread.
 `SettingsStores` names, per service (audio, haptics, economy, progression), the

@@ -141,6 +141,9 @@
          AdsCoreSuite proves every PolicyGuard rule, the retry, the gate and the simulator here, and scans
          these files for UnityEngine tokens because the stubs would otherwise hide a slip. -->
     <Compile Include="../../Nexus/Packages/com.nexus.ads/Runtime/Core/**/*.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.ads.bridge.nexus/Runtime/NexusAdsAdapter.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.ads.bridge.nexus/Tests/Editor/DurableRewardDeliveryTests.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Tests/Editor/EncryptedStorageCommitTests.cs" />
     <!-- UI-only file: NexusDebugHUD is an OnGUI debug surface backed by no-op stubs. -->
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Debug/NexusDebugHUD.cs" />
     <!-- AOT binder generator compile guard (editor-only file, stubbed UnityEditor APIs in GeneratorStubs.cs) -->

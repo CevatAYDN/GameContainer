@@ -13,6 +13,11 @@ everything under Unreleased is in the repository but not yet in a tagged package
 ## [Unreleased]
 
 ### Added
+- **Confirmed encrypted saves for durable reward delivery** (issue #338).
+  - `IPlayerPrefsService.TrySave()` defaults to false for stores that do not implement confirmation. `EncryptedStorageService` returns true only after all pending writes/deletes succeed, with no superseding mutation or disposal during the call. Failed recovery rewrites remain pending too.
+  - `SaveOrThrow()` turns failed/unconfirmed persistence into an `IOException`, so a reward callback can retain its receipt instead of acknowledging an unsaved grant. Existing void `Save()` and `AutoSave` behavior remain compatible.
+  - Confirmation is not a multi-key transaction or a stable-media/power-loss guarantee. Exactly-once replay requires reward state and receipt identity in one atomic blob; see the ads bridge's confirmed-save example.
+  - `EncryptedStorageCommitTests` and the bridge's `DurableRewardDeliveryTests` exercise real encrypted files in Unity and the host, including mixed failures, deletion, concurrent mutation, disposal and abrupt reopen.
 - **Per-context suppression of unheard-signal hints** (issue #336).
   - `IContextBuilder.SuppressUnheardSignalHints()` silences only that context's development-build hint for a signal without listeners. Other warnings, signal delivery and other contexts, including children, are unchanged.
   - Defaults are unchanged, including in the test harness. A headless test opts in through `NexusTestContext.Builder`; custom `IContextBuilder` implementations add or forward the new method (migration guide).

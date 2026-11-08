@@ -723,6 +723,7 @@ namespace NexusBench
             _failures += SignalsReviewSuite.Run();
             _failures += EvidenceSuite.Run();
             _failures += AdsCoreSuite.Run();
+            _failures += DurableRewardSuite.Run();
             _failures += CounterSampleSuite.Run();
             // Last: creates real Contexts and must not disturb earlier suites' assumptions
             // about active-context counts or trace-buffer state.
