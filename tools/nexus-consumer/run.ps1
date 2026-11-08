@@ -4,7 +4,8 @@ param(
     [string]$UnityCli = (Join-Path $env:LOCALAPPDATA 'Unity/bin/unity.exe'),
     [switch]$BuildPlayer,
     [switch]$BuildAndroid,
-    [switch]$ValidatePerformance
+    [switch]$ValidatePerformance,
+    [switch]$IncludeAdsBridge
 )
 # Clean UPM consumer gate: pack the embedded package into a tarball, create a fresh project that
 # installs it, import the three samples, run the smoke tests, optionally build and run a
@@ -25,21 +26,42 @@ function Save-Steps { $steps | ConvertTo-Json -Depth 6 -AsArray | Set-Content -L
 # install, so the gate refuses to run with uncommitted changes under the package instead of testing other content.
 $packDir = Join-Path $evidence 'package'
 New-Item -ItemType Directory -Path $packDir -Force | Out-Null
-$packagePath = 'Nexus/Packages/com.nexus.core'
-$dirty = & git -C $repo status --porcelain -- $packagePath
+$packageNames = @('com.nexus.core')
+if ($IncludeAdsBridge) { $packageNames += @('com.nexus.ads', 'com.nexus.ads.bridge.nexus', 'com.nexus.firebase') }
+$packagePaths = @($packageNames | ForEach-Object { "Nexus/Packages/$_" })
+$dirty = & git -C $repo status --porcelain --untracked-files=all -- @packagePaths
 if ($LASTEXITCODE -ne 0) { throw 'git status failed.' }
-if ($dirty) { throw ("Uncommitted changes under ${packagePath}; the gate packs HEAD. Commit or stash them first:`n" + ($dirty -join "`n")) }
-$commit = (& git -C $repo rev-parse HEAD).Trim()
-$version = ((& git -C $repo show "HEAD:$packagePath/package.json") -join "`n" | ConvertFrom-Json).version
-$archivePath = Join-Path $packDir ('com.nexus.core-' + $version + '.tgz')
-& git -C $repo archive --format=tar.gz --prefix=package/ -o $archivePath "HEAD:$packagePath"
-$steps.Add([ordered]@{ stage = 'pack'; exitCode = $LASTEXITCODE; commit = $commit; archive = $archivePath }); Save-Steps
-if ($LASTEXITCODE -ne 0) { throw "git archive failed (exit $LASTEXITCODE)." }
-$archive = Get-Item -LiteralPath $archivePath
+if ($dirty) { throw ("Uncommitted changes under packed packages; the gate packs HEAD. Commit or stash them first:`n" + ($dirty -join "`n")) }
+$commitOutput = & git -C $repo rev-parse HEAD
+if ($LASTEXITCODE -ne 0) { throw 'git rev-parse failed.' }
+$commit = ($commitOutput -join '').Trim()
+$archives = @{}
+$packageIdentities = @()
+foreach ($packageName in $packageNames) {
+    $packagePath = "Nexus/Packages/$packageName"
+    $metadata = & git -C $repo show "${commit}:$packagePath/package.json"
+    if ($LASTEXITCODE -ne 0) { throw "git show failed for $packageName." }
+    $version = (($metadata -join "`n") | ConvertFrom-Json).version
+    $archivePath = Join-Path $packDir ($packageName + '-' + $version + '.tgz')
+    & git -C $repo archive --format=tar.gz --prefix=package/ -o $archivePath "${commit}:$packagePath"
+    $packExit = $LASTEXITCODE
+    $stage = if ($packageName -eq 'com.nexus.core') { 'pack' } else { "pack-$packageName" }
+    $steps.Add([ordered]@{ stage = $stage; exitCode = $packExit; commit = $commit; archive = $archivePath }); Save-Steps
+    if ($packExit -ne 0) { throw "git archive failed for $packageName (exit $packExit)." }
+    $archives[$packageName] = Get-Item -LiteralPath $archivePath
+    $packageIdentities += [ordered]@{ package = $packageName; commit = $commit; archive = $archivePath
+        archiveSha256 = (Get-FileHash -LiteralPath $archivePath).Hash }
+}
+$archive = $archives['com.nexus.core']
 
 # 2. Fresh consumer project.
 $prepare = @('--archive', $archive.FullName, '--output', $evidence)
 if ($ValidatePerformance) { $prepare += '--testables' }
+if ($IncludeAdsBridge) {
+    $prepare += @('--ads-archive', $archives['com.nexus.ads'].FullName,
+        '--ads-bridge-archive', $archives['com.nexus.ads.bridge.nexus'].FullName,
+        '--firebase-archive', $archives['com.nexus.firebase'].FullName)
+}
 & python -I (Join-Path $PSScriptRoot 'prepare_clean_project.py') @prepare
 if ($LASTEXITCODE -ne 0) { throw 'prepare_clean_project.py failed.' }
 $consumer = Join-Path $evidence 'CleanConsumer'
@@ -86,6 +108,17 @@ if ($ValidatePerformance) {
     Invoke-ConsumerTests 'consumer-services' 'EditMode' 'LatestServiceRegressionTests'
     Invoke-ConsumerTests 'consumer-reentrancy' 'EditMode' 'ReadyReentrancyRegressionTests'
     Invoke-ConsumerTests 'consumer-lifecycle' 'PlayMode' 'LatestLifecycleRegressionTests'
+    Invoke-ConsumerTests 'consumer-context-hierarchy-shutdown' 'PlayMode' 'ContextHierarchyShutdownTests'
+    Invoke-ConsumerTests 'consumer-root-startup-failure' 'PlayMode' 'RootStartupFailureTests'
+    Invoke-ConsumerTests 'consumer-signal-bus' 'EditMode' 'SignalBusTests'
+    Invoke-ConsumerTests 'consumer-economy-unreadable-balance' 'EditMode' 'EconomyUnreadableBalanceTests'
+    Invoke-ConsumerTests 'consumer-encrypted-storage-commit' 'EditMode' 'EncryptedStorageCommitTests'
+}
+if ($IncludeAdsBridge) {
+    Invoke-ConsumerTests 'consumer-ads-public-api' 'EditMode' 'AdsBridgeConsumerTests'
+    Invoke-ConsumerTests 'consumer-ads-bridge-contract' 'EditMode' 'NexusAdsBridgeContractTests'
+    Invoke-ConsumerTests 'consumer-ads-durable-reward' 'EditMode' 'DurableRewardDeliveryTests'
+    Invoke-ConsumerTests 'consumer-ads-bridge-playmode' 'PlayMode' 'NexusAdsBridgePlayModeTests'
 }
 if ($BuildPlayer) {
     Invoke-EditorMethod 'consumer-build-mono' 'CleanConsumerSetup.BuildWindowsMono'
@@ -104,9 +137,13 @@ if ($BuildAndroid) {
     if (-not $linker.Success -or [int]$linker.Groups[1].Value -lt 1) { throw 'The Android build handed no Nexus package link.xml to the linker; see consumer-build-android-il2cpp-editor.log' }
     $steps[-1].packageLinkXmlFiles = [int]$linker.Groups[1].Value; Save-Steps
 }
-$head = (& git -C $repo rev-parse HEAD).Trim()
-@{ sourceCommit = $head; archive = $archive.FullName; archiveSha256 = (Get-FileHash -LiteralPath $archive.FullName).Hash
-   workingTreeDiff = ((& git -C $repo diff --stat) -join "`n") } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'source-identity.json') -Encoding utf8
+$headOutput = & git -C $repo rev-parse HEAD
+if ($LASTEXITCODE -ne 0) { throw 'git rev-parse failed.' }
+if (($headOutput -join '').Trim() -ne $commit) { throw 'HEAD changed during the consumer gate; rerun against one commit.' }
+$identity = @{ sourceCommit = $commit; archive = $archive.FullName; archiveSha256 = (Get-FileHash -LiteralPath $archive.FullName).Hash
+   workingTreeDiff = ((& git -C $repo diff --stat) -join "`n") }
+if ($IncludeAdsBridge) { $identity.packages = $packageIdentities }
+$identity | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evidence 'source-identity.json') -Encoding utf8
 foreach ($log in Get-ChildItem -LiteralPath $evidence -Filter '*.log' -Recurse) {
     $raw = Read-EvidenceLog $log.FullName
     [IO.File]::WriteAllText($log.FullName, [regex]::Replace($raw, '-accessToken\s+\S+', '-accessToken [REDACTED]'))

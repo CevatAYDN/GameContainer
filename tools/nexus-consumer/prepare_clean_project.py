@@ -20,10 +20,24 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--archive", type=Path, required=True, help="com.nexus.core-<version>.tgz that run.ps1 packs with git archive")
 parser.add_argument("--output", type=Path, required=True, help="evidence folder; the project is created at <output>/CleanConsumer")
 parser.add_argument("--testables", action="store_true", help="list com.nexus.core in testables, so the package's own tests compile in the consumer")
+parser.add_argument("--ads-archive", type=Path, help="com.nexus.ads tarball from the same commit as --archive")
+parser.add_argument("--ads-bridge-archive", type=Path, help="com.nexus.ads.bridge.nexus tarball from that same commit")
+parser.add_argument("--firebase-archive", type=Path, help="com.nexus.firebase adapter tarball from that same commit, without Google's SDK")
 args = parser.parse_args()
-archive = args.archive.resolve()
-if not archive.is_file():
-    raise SystemExit(f"Archive not found: {archive}")
+bundle_archives = (args.ads_archive, args.ads_bridge_archive, args.firebase_archive)
+if any(bundle_archives) and not all(bundle_archives):
+    parser.error("--ads-archive, --ads-bridge-archive and --firebase-archive must be supplied together")
+archives = {"com.nexus.core": args.archive.resolve()}
+if args.ads_archive:
+    archives.update({
+        "com.nexus.ads": args.ads_archive.resolve(),
+        "com.nexus.ads.bridge.nexus": args.ads_bridge_archive.resolve(),
+        "com.nexus.firebase": args.firebase_archive.resolve(),
+    })
+for archive in archives.values():
+    if not archive.is_file():
+        raise SystemExit(f"Archive not found: {archive}")
+archive = archives["com.nexus.core"]
 project = args.output.resolve() / "CleanConsumer"
 if project.exists():
     raise SystemExit(f"Refusing to overwrite an existing consumer: {project}")
@@ -38,13 +52,15 @@ def write(relative, content):
 original = json.loads((DEV_PROJECT / "Packages/manifest.json").read_text(encoding="utf-8-sig"))
 dependencies = {key: value for key, value in original["dependencies"].items() if key.startswith("com.unity.modules.")}
 dependencies.update({
-    "com.nexus.core": "file:" + archive.as_posix(),
+    **{name: "file:" + path.as_posix() for name, path in archives.items()},
     "com.unity.test-framework": original["dependencies"].get("com.unity.test-framework", "1.8.0"),
     # The Unity CLI (`unity run` / `unity test`) drives the project through this package; the development project carries the same version.
     "com.unity.pipeline": original["dependencies"].get("com.unity.pipeline", "0.9.1-exp.1"),
 })
 # A game lists no testables; only the package's own suites need them (issue #74).
-manifest = {"dependencies": dependencies, **({"testables": ["com.nexus.core"]} if args.testables else {})}
+manifest = {"dependencies": dependencies}
+if args.testables or args.ads_archive:
+    manifest["testables"] = list(archives)
 write("Packages/manifest.json", json.dumps(manifest, indent=2))
 write("ProjectSettings/ProjectVersion.txt", (DEV_PROJECT / "ProjectSettings/ProjectVersion.txt").read_text())
 
@@ -286,6 +302,38 @@ public sealed class UpmConsumerTests
     }
 }
 ''')
+if args.ads_archive:
+    write("Assets/Smoke/Tests/AdsBridge/NexusIntegrationSmoke.AdsBridge.Tests.asmdef", json.dumps({
+        "name": "NexusIntegrationSmoke.AdsBridge.Tests", "includePlatforms": ["Editor"],
+        "references": ["com.nexus.core", "Nexus.Ads.Core", "Nexus.Ads.Unity", "Nexus.Ads.Bridge.Nexus"],
+        "optionalUnityReferences": ["TestAssemblies"], "autoReferenced": False,
+    }, indent=2))
+    write("Assets/Smoke/Tests/AdsBridge/AdsBridgeConsumerTests.cs", r'''
+using System;
+using NUnit.Framework;
+using Nexus.Ads.Bridge;
+using Nexus.Core.Services;
+using UnityEditor.PackageManager;
+
+public sealed class AdsBridgeConsumerTests
+{
+    [Test] public void BridgeInstalledFromTarballs_RejectsAnInvalidGameConnection()
+    {
+        foreach (var name in new[] { "com.nexus.core", "com.nexus.ads", "com.nexus.ads.bridge.nexus", "com.nexus.firebase" })
+        {
+            var package = PackageInfo.FindForAssetPath("Packages/" + name + "/package.json");
+            Assert.IsNotNull(package, name);
+            Assert.AreEqual("LocalTarball", package.source.ToString(), name);
+        }
+        var factory = new AdAdapterFactory();
+        var error = Assert.Throws<ArgumentNullException>(() => NexusAdsBridge.Connect(null, factory));
+        Assert.AreEqual("ads", error.ParamName);
+        using var service = new AdService();
+        error = Assert.Throws<ArgumentNullException>(() => NexusAdsBridge.Attach(service, factory, null, "simulator"));
+        Assert.AreEqual("controller", error.ParamName);
+    }
+}
+''')
 write("Assets/Smoke/Tests/PlayMode/NexusIntegrationSmoke.PlayMode.Tests.asmdef", json.dumps({
     "name": "NexusIntegrationSmoke.PlayMode.Tests",
     "references": ["com.nexus.core", "NexusIntegrationSmoke.Runtime"],
@@ -335,5 +383,10 @@ public sealed class CodeFirstConsumerTests
 }
 ''')
 identity = {"project": str(project), "archive": str(archive), "sha256": hashlib.sha256(archive.read_bytes()).hexdigest()}
+if args.ads_archive:
+    identity["packages"] = [
+        {"package": name, "archive": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+        for name, path in archives.items()
+    ]
 (args.output.resolve() / "consumer-preparation.json").write_text(json.dumps(identity, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(identity, indent=2))
