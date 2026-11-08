@@ -244,6 +244,8 @@ namespace Nexus.Core
             _container.StrictInjection = true;
         }
 
+        public void SuppressUnheardSignalHints() => _signalBus.UnheardSignalHintsSuppressed = true;
+
         /// <summary>
         /// Clears the shared interface-metadata cache. Called by <see cref="NexusRuntime.Reset"/>
         /// so a recompile with Disable Domain Reload can never leave stale Type references.

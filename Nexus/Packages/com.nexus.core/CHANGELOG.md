@@ -13,6 +13,9 @@ everything under Unreleased is in the repository but not yet in a tagged package
 ## [Unreleased]
 
 ### Added
+- **Per-context suppression of unheard-signal hints** (issue #336).
+  - `IContextBuilder.SuppressUnheardSignalHints()` silences only that context's development-build hint for a signal without listeners. Other warnings, signal delivery and other contexts, including children, are unchanged.
+  - Defaults are unchanged, including in the test harness. A headless test opts in through `NexusTestContext.Builder`; custom `IContextBuilder` implementations add or forward the new method (migration guide).
 - **`[assembly: BinderExclude(prefixes)]` keeps types of the game's assembly off the generated binder** (issue #158).
   - Both generators gave a factory to every public class with one usable constructor in an assembly that references Nexus, SDK sources imported under `Assets/` included: 44 of Gigawatt's 139 factories are Voodoo, Adjust and GameAnalytics types. An SDK update that renames one of them breaks the binder, and every factory is registered at start-up. The only exclusion was a fixed list of assembly-name prefixes.
   - `[assembly: Nexus.Core.BinderExclude("Voodoo.", "com.adjust.", "GameAnalyticsSDK.", "GA")]` in the game's assembly: a type of that assembly whose namespace-qualified name starts with a prefix (ordinal, case-sensitive) gets no factory, injector or command dispatcher from either generator. An excluded type with `[Inject]` members is listed at the top of the binder (`excluded by [assembly: BinderExclude]`) and kept in `link.xml`; the container serves all of them through reflection.

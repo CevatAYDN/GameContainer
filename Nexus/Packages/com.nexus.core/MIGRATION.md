@@ -20,6 +20,19 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 
 On `main`, not yet released. The [changelog](CHANGELOG.md)'s `[Unreleased]` section lists every change since 0.6.0.
 
+#### Per-context unheard-signal diagnostics
+
+Issue #336 adds `void SuppressUnheardSignalHints()` to `IContextBuilder`.
+Existing games using Nexus's `ContextBuilder` need no change unless they want
+to suppress this hint in an intentionally headless context. A custom class
+implementing `IContextBuilder` must add the new method and apply it to its own
+context; a wrapper around Nexus's builder can forward the call.
+
+Call `test.Builder.SuppressUnheardSignalHints()` on a `NexusTestContext`, or
+call it on the builder supplied to `OnConfigure`. This does not disable the
+global logger, change signal delivery or propagate to child contexts.
+See [Testing Issues](TROUBLESHOOTING.md#unheard-signal-hints-in-headless-tests).
+
 #### Parent contexts now own descendant teardown
 
 Issue #337: disposing a parent context also disposes its children, deepest first, before its own services.

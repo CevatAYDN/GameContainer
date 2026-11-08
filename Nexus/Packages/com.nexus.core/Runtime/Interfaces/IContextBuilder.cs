@@ -249,6 +249,12 @@ namespace Nexus.Core
     public interface IContextBuilder : IModelBinder, IServiceBinder, ITypeBinder, ICommandBinder
     {
         /// <summary>
+        /// Suppresses only this context's no-subscriber hints from synchronous signal fires.
+        /// Signal delivery and other diagnostics are unchanged; child contexts do not inherit this setting.
+        /// </summary>
+        void SuppressUnheardSignalHints();
+
+        /// <summary>
         /// Dispatches a signal through the context's bus.
         /// </summary>
         /// <remarks>

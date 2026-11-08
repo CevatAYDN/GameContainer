@@ -152,6 +152,118 @@ namespace NexusBench
                 ok ? "IsEnabled=true set, Reset, release build: the fallback logger is disabled again" : "the fallback logger kept IsEnabled=true after Reset in a release build");
         }
 
+        private static void SuppressUnheardSignalHints_RepeatedFiresKeepOtherDiagnostics()
+        {
+            try
+            {
+                NexusBuild.OverrideForTests(true);
+                var logger = new SvcLoggerRecorder();
+                using var ctx = NexusTestHarness.CreateContext(builder =>
+                {
+                    builder.BindInstance<Nexus.Core.Services.ILoggerService>(logger);
+                    builder.SuppressUnheardSignalHints();
+                });
+                for (int i = 0; i < 10; i++)
+                {
+                    ctx.Dispatch(new UnheardSignal());
+                    ctx.Dispatch(new PerfSignal(i));
+                }
+                const string diagnostic = "336: unrelated warning still arrives";
+                NexusRuntime.Logger.LogWarning(diagnostic);
+                int hints = logger.Messages.FindAll(m => m.Contains("has no subscribers")).Count;
+                bool ok = hints == 0 && logger.IsEnabled && ReferenceEquals(NexusRuntime.Logger, logger)
+                    && logger.Messages.Contains(diagnostic);
+                Report(nameof(SuppressUnheardSignalHints_RepeatedFiresKeepOtherDiagnostics), ok,
+                    $"hints={hints} expected=0 for 20 fires/two types; loggerEnabled={logger.IsEnabled}; " +
+                    $"unrelatedWarning={logger.Messages.Contains(diagnostic)}" +
+                    (ok ? "" : $"; recorded=[{string.Join(" | ", logger.Messages)}]"));
+            }
+            finally { NexusBuild.OverrideForTests(null); }
+        }
+
+        private static void SuppressUnheardSignalHints_DoesNotAffectParentChildOrSibling()
+        {
+            var details = new List<string>();
+            bool ok = true;
+            try
+            {
+                NexusBuild.OverrideForTests(true);
+                foreach (bool suppressParent in new[] { true, false })
+                {
+                    using var parent = NexusTestHarness.CreateContext();
+                    var logger = new SvcLoggerRecorder();
+                    parent.Builder.BindInstance<Nexus.Core.Services.ILoggerService>(logger);
+                    using var child = NexusTestHarness.CreateChildContext(parent);
+                    using var sibling = NexusTestHarness.CreateContext();
+                    (suppressParent ? parent.Builder : child.Builder).SuppressUnheardSignalHints();
+
+                    int[] hints = new int[3];
+                    var contexts = new[] { parent, child, sibling };
+                    for (int i = 0; i < contexts.Length; i++)
+                    {
+                        int before = logger.Messages.Count;
+                        for (int fire = 0; fire < 3; fire++)
+                        {
+                            contexts[i].Dispatch(new UnheardSignal());
+                            contexts[i].Dispatch(new PerfSignal(fire));
+                        }
+                        hints[i] = logger.Messages.Count - before;
+                    }
+                    ok &= hints[0] == (suppressParent ? 0 : 2) && hints[1] == (suppressParent ? 2 : 0)
+                        && hints[2] == 2 && logger.IsEnabled;
+                    details.Add($"suppressed={(suppressParent ? "parent" : "child")}: parent/child/sibling hints={string.Join("/", hints)}");
+                }
+            }
+            finally { NexusBuild.OverrideForTests(null); }
+            Report(nameof(SuppressUnheardSignalHints_DoesNotAffectParentChildOrSibling), ok, string.Join("; ", details));
+        }
+
+        private static void SuppressUnheardSignalHints_SubscribersAndCommandsStillExecute()
+        {
+            try
+            {
+                NexusBuild.OverrideForTests(true);
+                using var ctx = NexusTestHarness.CreateContext();
+                var counter = new TestCounter();
+                ctx.Builder.SuppressUnheardSignalHints();
+                ctx.Builder.BindInstance(counter);
+                ctx.Builder.BindCommand<PerfSignal, PerfCommand>();
+                int received = 0, lastValue = -1;
+                using var subscription = ctx.Context.SignalBus.Subscribe<PerfSignal>(signal =>
+                {
+                    received++;
+                    lastValue = signal.Index;
+                });
+                ctx.Dispatch(new PerfSignal(42));
+                ctx.Dispatch(new PerfSignal(99));
+                Report(nameof(SuppressUnheardSignalHints_SubscribersAndCommandsStillExecute),
+                    counter.Value == 2 && received == 2 && lastValue == 99,
+                    $"commands={counter.Value} subscribers={received} expected=2 each; lastValue={lastValue} expected=99");
+            }
+            finally { NexusBuild.OverrideForTests(null); }
+        }
+
+        private static void SuppressUnheardSignalHints_WarmedFireHasZeroGCAllocations()
+        {
+            try
+            {
+                NexusBuild.OverrideForTests(true);
+                using var ctx = NexusTestHarness.CreateContext();
+                var logger = new SvcLoggerRecorder();
+                ctx.Builder.BindInstance<Nexus.Core.Services.ILoggerService>(logger);
+                ctx.Builder.SuppressUnheardSignalHints();
+                for (int i = 0; i < 100; i++) ctx.Context.SignalBus.Fire(new UnheardSignal());
+
+                long start = GC.GetAllocatedBytesForCurrentThread();
+                for (int i = 0; i < 5000; i++) ctx.Context.SignalBus.Fire(new UnheardSignal());
+                long allocated = GC.GetAllocatedBytesForCurrentThread() - start;
+                Report(nameof(SuppressUnheardSignalHints_WarmedFireHasZeroGCAllocations),
+                    allocated == 0 && logger.IsEnabled && logger.Messages.Count == 0,
+                    $"allocated={allocated} bytes for 5000 warmed fires (limit ==0); loggerEnabled={logger.IsEnabled}; hints={logger.Messages.Count}");
+            }
+            finally { NexusBuild.OverrideForTests(null); }
+        }
+
         private static void Setup()
         {
             _counter = new TestCounter();
@@ -569,6 +681,10 @@ namespace NexusBench
             Run("ReleasePlayer_MonitorsStayOffUntilTheGameTurnsThemOn", ReleasePlayer_MonitorsStayOffUntilTheGameTurnsThemOn);
             Run("DevelopmentBuild_DefaultsAndDiagnostics_FollowTheBuild", DevelopmentBuild_DefaultsAndDiagnostics_FollowTheBuild);
             Run("FallbackLogger_ResetLetsItFollowTheBuildAgain", FallbackLogger_ResetLetsItFollowTheBuildAgain);
+            Run("SuppressUnheardSignalHints_RepeatedFiresKeepOtherDiagnostics", SuppressUnheardSignalHints_RepeatedFiresKeepOtherDiagnostics);
+            Run("SuppressUnheardSignalHints_DoesNotAffectParentChildOrSibling", SuppressUnheardSignalHints_DoesNotAffectParentChildOrSibling);
+            Run("SuppressUnheardSignalHints_SubscribersAndCommandsStillExecute", SuppressUnheardSignalHints_SubscribersAndCommandsStillExecute);
+            Run("SuppressUnheardSignalHints_WarmedFireHasZeroGCAllocations", SuppressUnheardSignalHints_WarmedFireHasZeroGCAllocations);
             Run("Dispatch1000Signals_CompletesUnderTime", Dispatch1000Signals_CompletesUnderTime);
             Run("Subscribe1000AndFire_AllReceived", Subscribe1000AndFire_AllReceived);
             Run("CommandPool_ReusesInstances", CommandPool_ReusesInstances);

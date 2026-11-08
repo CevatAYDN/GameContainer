@@ -888,6 +888,24 @@ Increase to 256MB or higher
 
 ## Testing Issues
 
+### Unheard Signal Hints in Headless Tests
+
+A headless context may intentionally omit the mediators that subscribe to game
+signals. To suppress only its development-build "no subscribers or command
+handlers" hint, opt in through that context's builder (issue #336):
+
+```csharp
+using var test = NexusTestHarness.CreateContext();
+test.Builder.SuppressUnheardSignalHints();
+```
+
+The same method is available in an `IContextLifecycle.OnConfigure` callback.
+It affects only that context's signal bus: other contexts, including children,
+keep their own setting. The default still warns once per unheard signal type
+in development builds. Signal dispatch, other diagnostics and the global
+logger's `IsEnabled` value are unchanged. Test contexts are not automatically
+silenced; enable this only where absent subscribers are intentional.
+
 ### Tests Not Running
 
 **Symptoms:**

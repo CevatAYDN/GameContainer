@@ -194,6 +194,99 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
+        public void SuppressUnheardSignalHints_RepeatedFiresLeaveLoggerAndOtherWarningsEnabled()
+        {
+            IContextBuilder builder = new ContextBuilder(_container, _signalBus);
+            var logger = NexusRuntime.Logger;
+            bool enabled = logger.IsEnabled;
+            int hints = 0, diagnostics = 0;
+            const string diagnostic = "336: unrelated warning still arrives";
+            Application.LogCallback count = (message, _, type) =>
+            {
+                if (type != LogType.Warning) return;
+                if (message.Contains("has no subscribers")) hints++;
+                if (message == diagnostic) diagnostics++;
+            };
+            Application.logMessageReceived += count;
+            try
+            {
+                logger.IsEnabled = true;
+                builder.SuppressUnheardSignalHints();
+                for (int i = 0; i < 10; i++)
+                {
+                    _signalBus.Fire(new UnheardSignal());
+                    _signalBus.Fire(new SimpleSignal(i));
+                }
+                LogAssert.Expect(LogType.Warning, diagnostic);
+                NexusRuntime.Logger.LogWarning(diagnostic);
+
+                Assert.AreEqual(0, hints);
+                Assert.IsTrue(logger.IsEnabled);
+                Assert.AreSame(logger, NexusRuntime.Logger);
+                Assert.AreEqual(1, diagnostics);
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally { logger.IsEnabled = enabled; Application.logMessageReceived -= count; }
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void SuppressUnheardSignalHints_IsLocalAndNotInheritedByChildContexts(bool suppressParent)
+        {
+            using var parent = NexusTestHarness.CreateContext();
+            using var child = NexusTestHarness.CreateChildContext(parent);
+            using var sibling = NexusTestHarness.CreateContext();
+            var logger = NexusRuntime.Logger;
+            bool enabled = logger.IsEnabled;
+            int hints = 0;
+            Application.LogCallback count = (message, _, type) =>
+            {
+                if (type == LogType.Warning && message.Contains("has no subscribers") && message.Contains("UnheardSignal")) hints++;
+            };
+            Application.logMessageReceived += count;
+            try
+            {
+                logger.IsEnabled = true;
+                (suppressParent ? parent.Builder : child.Builder).SuppressUnheardSignalHints();
+                var contexts = new[] { parent, child, sibling };
+                for (int i = 0; i < contexts.Length; i++)
+                {
+                    bool suppressed = i == (suppressParent ? 0 : 1);
+                    if (!suppressed)
+                        LogAssert.Expect(LogType.Warning, new Regex(@"^\[Nexus\] Signal '.*\+UnheardSignal' fired but has no subscribers"));
+                    int before = hints;
+                    contexts[i].Dispatch(new UnheardSignal());
+                    contexts[i].Dispatch(new UnheardSignal());
+                    Assert.AreEqual(suppressed ? 0 : 1, hints - before, $"context index {i}");
+                }
+                Assert.IsTrue(logger.IsEnabled);
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally { logger.IsEnabled = enabled; Application.logMessageReceived -= count; }
+        }
+
+        [Test]
+        public void SuppressUnheardSignalHints_StillDeliversToSubscribersAndRegisteredCommands()
+        {
+            IContextBuilder builder = new ContextBuilder(_container, _signalBus);
+            builder.SuppressUnheardSignalHints();
+            builder.BindCommand<SimpleSignal, TestCommand>();
+            int received = 0, lastValue = -1;
+            using var subscription = _signalBus.Subscribe<SimpleSignal>(signal =>
+            {
+                received++;
+                lastValue = signal.Value;
+            });
+            _signalBus.Fire(new SimpleSignal(42));
+            _signalBus.Fire(new SimpleSignal(99));
+
+            Assert.AreEqual(2, received);
+            Assert.AreEqual(99, lastValue);
+            Assert.AreEqual(2, _results.ExecutedCount);
+            Assert.AreEqual(99, _results.LastExecutedValue);
+        }
+
+        [Test]
         public void Fire_ExecutesRegisteredCommandAndInjectsSignal()
         {
             _container.Bind<TestCommand>(isSingleton: false);
