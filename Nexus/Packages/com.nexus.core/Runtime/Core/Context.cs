@@ -47,9 +47,12 @@ namespace Nexus.Core
             data.EnableAutoDiscovery = false;
             data.AssemblyScopes = Array.Empty<string>();
             data.FailOnValidationErrors = true;
-            var context = Create(parent, data).OwnsContextData();
+            Context context = null;
             try
             {
+                context = new Context(parent, data, null, null, ownsContextData: true);
+                if (context.IsDisposed)
+                    throw new ObjectDisposedException(nameof(Context), "Context was disposed by a registration observer.");
                 var builder = new ContextBuilder(context.Container, context.SignalBusInternal);
                 configure(builder);
                 context.ConfigureWithBuilder(builder, scanAssemblies: false);
@@ -63,7 +66,11 @@ namespace Nexus.Core
             }
             catch
             {
-                try { await context.DisposeAsync(); }
+                try
+                {
+                    if (context != null) await context.DisposeAsync();
+                    else SafeDestroyUtility.SafeDestroy(data);
+                }
                 catch (Exception cleanupError) { NexusRuntime.Logger?.LogException(cleanupError); }
                 throw;
             }
@@ -80,7 +87,8 @@ namespace Nexus.Core
         // ContextData is caller-owned and must NEVER be destroyed here — only the runtime-
         // created instance gets torn down on dispose so pure contexts don't leak one
         // ScriptableObject per context lifetime (audit 3.9). Not readonly: set via
-        // OwnsContextData() before the context is configured, read only during dispose.
+        // OwnsContextData() before the context is configured, or the factory's constructor
+        // flag before registration observers can end the context; read during dispose.
         private bool _ownsContextData;
         // Double-dispose guard for the owned-data destroy (see DisposeShared).
         private bool _contextDataDestroyed;
@@ -105,6 +113,9 @@ namespace Nexus.Core
         private bool _configured;
         private volatile bool _configurationComplete;
         private int _disposeState;
+        private readonly object _childrenLock = new();
+        private List<Context> _children;
+        private TaskCompletionSource<bool> _teardownCompletion;
         private int _lifecycleState; // 0 = not started, 1 = starting, 2 = started
         private int _lazyDrainScheduled;
 
@@ -191,10 +202,11 @@ namespace Nexus.Core
         /// pre-built NexusDI + CommandPoolManager (null = build the standard modules).
         /// </summary>
         internal Context(Context parent, ContextData contextData, NexusDI container,
-            CommandPoolManager poolManager)
+            CommandPoolManager poolManager, bool ownsContextData = false)
         {
             _parent = parent;
             _contextData = contextData;
+            _ownsContextData = ownsContextData;
 
             if (container == null || poolManager == null)
             {
@@ -228,7 +240,26 @@ namespace Nexus.Core
             if (contextData?.EnableStrictInjection == true)
                 Container.StrictInjection = true;
 
-            NexusRuntime.RegisterContext(this);
+            try
+            {
+                // Ownership is independent of Root enablement, scene transforms and the runtime registry.
+                if (parent != null)
+                {
+                    lock (parent._childrenLock)
+                    {
+                        if (parent.IsDisposed) throw new ObjectDisposedException(nameof(parent), "Cannot attach a child to a shutting-down context.");
+                        (parent._children ??= new List<Context>()).Add(this);
+                    }
+                }
+                NexusRuntime.RegisterContext(this);
+                // A registration observer may have disposed the parent and cascaded to this context.
+                if (IsDisposed) NexusRuntime.UnregisterContext(this);
+            }
+            catch
+            {
+                Dispose();
+                throw;
+            }
         }
 
         /// <summary>
@@ -523,7 +554,7 @@ namespace Nexus.Core
         /// </summary>
         internal ValueTask RunPostContextAsync(CancellationToken ct)
         {
-            if (_postContextLifecycles.Count == 0) return default;
+            if (IsDisposed || _postContextLifecycles.Count == 0) return default;
 
             if (_configuredBuilder == null)
             {
@@ -543,7 +574,7 @@ namespace Nexus.Core
             var builder = _configuredBuilder;
             for (int i = 0; i < _postContextLifecycles.Count; i++)
             {
-                if (ct.IsCancellationRequested) break;
+                if (IsDisposed || ct.IsCancellationRequested) break;
                 try
                 {
                     _postContextLifecycles[i].OnPostContext(builder);
@@ -826,28 +857,85 @@ namespace Nexus.Core
             catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
         }
 
+        private bool TryBeginDispose(out Context[] children)
+        {
+            lock (_childrenLock)
+            {
+                if (_disposeState != 0) { children = null; return false; }
+                _teardownCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                Volatile.Write(ref _disposeState, 1);
+                children = _children?.ToArray() ?? Array.Empty<Context>();
+                _children = null;
+                return true;
+            }
+        }
+
+        private static void ReportChildTeardownFailure(Exception exception)
+        {
+            try { NexusRuntime.Logger?.LogException(exception); }
+            catch (Exception loggerError)
+            {
+                // A game logger must not stop sibling traversal or the parent's cleanup.
+                try { UnityEngine.Debug.LogError($"[Nexus] Child context teardown failed: {exception}\nLogger failed: {loggerError}"); }
+                catch { /* Even failure of the final log sink must not abandon an owner. */ }
+            }
+        }
+
+        /// <summary>
+        /// Ends descendants before this context. Never waits for asynchronous cleanup: async-only
+        /// stoppables and disposables retain their nonblocking contract. An independently running
+        /// child teardown cannot be joined here; use DisposeAsync for deterministic completion.
+        /// A child already disposed synchronously has handed off its background cleanup;
+        /// neither this call nor a later DisposeAsync can join or upgrade that background chain.
+        /// Repeated calls are no-ops, including calls made by teardown callbacks.
+        /// </summary>
         public void Dispose()
         {
-            if (Interlocked.Exchange(ref _disposeState, 1) != 0) return;
+            if (!TryBeginDispose(out var children)) return;
             try
             {
-                try { _cts.Cancel(); }
+                try
+                {
+                    for (int i = children.Length - 1; i >= 0; i--)
+                    {
+                        try { children[i].Dispose(); }
+                        catch (Exception ex) { ReportChildTeardownFailure(ex); }
+                        if (Volatile.Read(ref children[i]._disposeState) != 2)
+                        {
+                            try
+                            {
+                                NexusLog.WarnAlways($"[Nexus] Child context '{children[i].ScopeTag}' teardown is still running during parent " +
+                                    $"'{ScopeTag}' synchronous Dispose. Parent services will shut down without waiting; use DisposeAsync to join child teardown.");
+                            }
+                            catch (Exception ex) { ReportChildTeardownFailure(ex); }
+                        }
+                    }
+                }
                 finally
                 {
-                    try
+                    try { _cts.Cancel(); }
+                    finally
                     {
-                        DisposeShared(executeStoppables: true);
-                        // services and the other singletons together, a consumer before what it uses (#197)
-                        Container.DisposeSingletonsInReverseOrder();
-                        DisposeModules();
+                        try
+                        {
+                            DisposeShared(executeStoppables: true);
+                            // services and the other singletons together, a consumer before what it uses (#197)
+                            Container.DisposeSingletonsInReverseOrder();
+                            DisposeModules();
+                        }
+                        finally { Container.Dispose(); }
                     }
-                    finally { Container.Dispose(); }
                 }
             }
             finally
             {
                 try { CompleteTeardown(); }
-                finally { _cts.Dispose(); }
+                finally
+                {
+                    _cts.Dispose();
+                    Volatile.Write(ref _disposeState, 2);
+                    _teardownCompletion.TrySetResult(true);
+                }
             }
             // UnregisterContext is owned by DisposeShared (exactly once, after the
             // signal bus and pools are torn down) — the old trailing call here was a
@@ -855,40 +943,65 @@ namespace Nexus.Core
         }
 
         /// <summary>
-        /// Deterministic async teardown. Awaits every IAsyncDisposable singleton's
+        /// Deterministic async teardown. Awaits descendant teardown (including a child already
+        /// shutting down), then every IAsyncDisposable singleton's
         /// <c>DisposeAsync</c> (via <see cref="NexusDI.DisposeAsync"/>) instead of blocking
         /// the calling thread — eliminates the sync-over-async deadlock risk on the Unity
-        /// main thread during teardown.
+        /// main thread during teardown. Repeated calls on this context are no-ops; the first
+        /// call owns completion. A child's async cleanup must not await its ancestor's teardown
+        /// from inside its own teardown, which would create a circular wait.
+        /// A child previously disposed synchronously cannot be upgraded: its background
+        /// stoppables and async-only disposables are not joined by this call.
         /// </summary>
         public async ValueTask DisposeAsync()
         {
-            if (Interlocked.Exchange(ref _disposeState, 1) != 0) return;
+            if (!TryBeginDispose(out var children)) return;
             try
             {
-                try { _cts.Cancel(); }
+                try
+                {
+                    for (int i = children.Length - 1; i >= 0; i--)
+                    {
+                        try
+                        {
+                            await children[i].DisposeAsync();
+                            await children[i]._teardownCompletion.Task;
+                        }
+                        catch (Exception ex) { ReportChildTeardownFailure(ex); }
+                    }
+                }
                 finally
                 {
-                    try
-                    {
-                        using var shutdown = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                        await _orchestrator.ExecuteStoppableLifecyclesAsync(Container.GetActiveSingletons(), shutdown.Token);
-                    }
+                    try { _cts.Cancel(); }
                     finally
                     {
                         try
                         {
-                            DisposeShared(executeStoppables: false);
-                            await Container.DisposeSingletonsInReverseOrderAsync();
-                            DisposeModules();
+                            using var shutdown = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                            await _orchestrator.ExecuteStoppableLifecyclesAsync(Container.GetActiveSingletons(), shutdown.Token);
                         }
-                        finally { await Container.DisposeAsync(); }
+                        finally
+                        {
+                            try
+                            {
+                                DisposeShared(executeStoppables: false);
+                                await Container.DisposeSingletonsInReverseOrderAsync();
+                                DisposeModules();
+                            }
+                            finally { await Container.DisposeAsync(); }
+                        }
                     }
                 }
             }
             finally
             {
                 try { CompleteTeardown(); }
-                finally { _cts.Dispose(); }
+                finally
+                {
+                    _cts.Dispose();
+                    Volatile.Write(ref _disposeState, 2);
+                    _teardownCompletion.TrySetResult(true);
+                }
             }
             // UnregisterContext is owned by DisposeShared (exactly once, after the
             // signal bus and pools are torn down) — the old trailing call here was a
@@ -955,6 +1068,8 @@ namespace Nexus.Core
 
         private void CompleteTeardown()
         {
+            if (_parent != null)
+                lock (_parent._childrenLock) _parent._children?.Remove(this);
             // Unregister only after the container and all background disposables have been
             // handed off. Subscribers must never observe a context that is still resolvable.
             NexusRuntime.UnregisterContext(this);

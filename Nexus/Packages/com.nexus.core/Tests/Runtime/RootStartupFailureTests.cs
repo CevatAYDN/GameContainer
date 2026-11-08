@@ -40,6 +40,19 @@ namespace Nexus.Core.Tests
             public void OnDispose() { }
         }
 
+        private sealed class WaitsForCancellation : IContextLifecycle
+        {
+            public bool Started;
+            public void OnConfigure(IContextBuilder builder) { }
+            public ValueTask OnInitializeAsync(CancellationToken ct)
+            {
+                Started = true;
+                return new ValueTask(Task.Delay(Timeout.Infinite, ct));
+            }
+            public ValueTask OnStartAsync(CancellationToken ct) => default;
+            public void OnDispose() { }
+        }
+
         private sealed class DisposableLifecycle : IContextLifecycle, IDisposable
         {
             public int OnDisposeCalls, DisposeCalls;
@@ -94,6 +107,84 @@ namespace Nexus.Core.Tests
                 yield return WaitWhileStarting(child);
                 Assert.IsNull(child.Context, "the child still waits for a parent that failed to start");
                 Assert.IsFalse(child.IsInitialized);
+            }
+            finally
+            {
+                Object.DestroyImmediate(child.gameObject);
+                Object.DestroyImmediate(parent.gameObject);
+                Object.DestroyImmediate(data);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator AChildEnabledAfterParentStartupFailure_ReportsTheParentFailure()
+        {
+            var data = NewData();
+            var parent = NewRoot("LateParent337", data);
+            var child = NewRoot("LateChild337", data, parent);
+            try
+            {
+                parent.RegisterLifecycle(new FailsNextFrame());
+                child.RegisterLifecycle(new PlainLifecycle());
+                child.enabled = false;
+                LogAssert.Expect(LogType.Error, Failed("startup failure 190"));
+                parent.gameObject.SetActive(true);
+                child.gameObject.SetActive(true);
+                Assert.IsNotNull(child.Context, "Awake must create the child context before its delayed Start");
+                var context = child.Context;
+                yield return WaitWhileStarting(parent);
+                Assert.IsTrue(context.IsDisposed);
+                Assert.IsFalse(child.IsInitialized);
+
+                LogAssert.Expect(LogType.Error, Failed("Root 'LateChild337' cannot start: its parent root 'LateParent337' failed to start."));
+                child.enabled = true;
+                yield return WaitWhileStarting(child);
+                Assert.IsNull(child.Context);
+                Assert.IsFalse(child.IsInitialized);
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally
+            {
+                Object.DestroyImmediate(child.gameObject);
+                Object.DestroyImmediate(parent.gameObject);
+                Object.DestroyImmediate(data);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator AChildEnabledAfterParentStartupCancellation_StopsWithoutAFalseFailure()
+            => VerifyParentStartupCancellation(delayChildStart: true);
+
+        [UnityTest]
+        public IEnumerator AChildWaitingForParentStartupCancellation_StopsWithoutAFalseFailure()
+            => VerifyParentStartupCancellation(delayChildStart: false);
+
+        private static IEnumerator VerifyParentStartupCancellation(bool delayChildStart)
+        {
+            var data = NewData();
+            var parent = NewRoot("CancelledParent337", data);
+            var child = NewRoot("CancelledChild337", data, parent);
+            var pending = new WaitsForCancellation();
+            try
+            {
+                parent.RegisterLifecycle(pending);
+                child.RegisterLifecycle(new PlainLifecycle());
+                child.enabled = !delayChildStart;
+                parent.gameObject.SetActive(true);
+                child.gameObject.SetActive(true);
+                var context = child.Context;
+                yield return null;
+                Assert.IsTrue(pending.Started);
+                parent.Context.Dispose();
+                yield return WaitWhileStarting(parent);
+                Assert.IsNull(parent.Context);
+                Assert.IsTrue(context.IsDisposed);
+
+                if (delayChildStart) child.enabled = true;
+                yield return WaitWhileStarting(child);
+                Assert.IsNull(child.Context);
+                Assert.IsFalse(child.IsInitialized);
+                LogAssert.NoUnexpectedReceived();
             }
             finally
             {

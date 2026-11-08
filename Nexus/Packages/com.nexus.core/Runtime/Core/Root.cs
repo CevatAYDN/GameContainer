@@ -46,9 +46,18 @@ namespace Nexus.Core
         // Volatile: written on the main thread but polled by other Roots' startup loops,
         // which can resume on a worker thread when no SynchronizationContext is present.
         private volatile bool _isInitialized;
+        // The terminal flag includes expected cancellation; only faults produce dependency errors.
         private volatile bool _startupFailed;
+        private volatile bool _startupFaulted;
         /// <summary>True after async initialization (OnInitializeAsync + OnStartAsync) completes.</summary>
-        public bool IsInitialized => _isInitialized;
+        public bool IsInitialized
+        {
+            get
+            {
+                var context = Context;
+                return _isInitialized && context != null && !context.IsDisposed;
+            }
+        }
         /// <summary>Priority for sibling sorting; higher values initialize earlier.</summary>
         public int InitializationPriority => initializationPriority;
         /// <summary>Configuration data for this context.</summary>
@@ -293,8 +302,9 @@ namespace Nexus.Core
                 parentRoot.InitializeContext();
                 if (parentRoot._startupFailed)
                 {
-                    NexusRuntime.Logger?.LogError($"[Nexus] Root '{name}' cannot start: its parent root '{parentRoot.name}' failed to start.");
-                    MarkStartupFailed();
+                    if (parentRoot._startupFaulted)
+                        NexusRuntime.Logger?.LogError($"[Nexus] Root '{name}' cannot start: its parent root '{parentRoot.name}' failed to start.");
+                    MarkStartupFailed(parentRoot._startupFaulted);
                     return;
                 }
             }
@@ -333,7 +343,7 @@ namespace Nexus.Core
             }
             if (Context == null || Context.IsDisposed)
             {
-                MarkStartupFailed();
+                MarkStartupFailed(faulted: false);
                 Context = null;
                 return;
             }
@@ -414,6 +424,17 @@ namespace Nexus.Core
                 InitializeContext();
             }
             if (_startupFailed || Context == null) return;
+            // An ancestor may have ended this context while this Root's GameObject survives,
+            // before Start ran. Do not read LifetimeToken from the disposed CTS.
+            if (Context.IsDisposed)
+            {
+                bool parentFaulted = parentRoot != null && parentRoot._startupFaulted;
+                MarkStartupFailed(parentFaulted);
+                Context = null;
+                if (parentFaulted)
+                    NexusRuntime.Logger?.LogError($"[Nexus] Root initialization failed: Root '{gameObject.name}' cannot start: its parent root '{parentRoot.name}' failed to start.");
+                return;
+            }
             ReportLifecyclesAddedAfterAwake();
             // read once: a root destroyed during a wait below has no Context, and this token is the one its disposal cancels (#197)
             var lifetime = Context.LifetimeToken;
@@ -432,12 +453,18 @@ namespace Nexus.Core
                     while (!parentRoot.IsInitialized && !parentRoot._startupFailed && UnityEngine.Time.realtimeSinceStartupAsDouble < deadline)
                     {
                         await Task.Yield();
+                        // Failed-parent teardown cancels this context too; retain the failure diagnostic.
+                        if (parentRoot != null && parentRoot._startupFailed && parentRoot._startupFaulted) break;
                         lifetime.ThrowIfCancellationRequested();
                     }
 
                     // a parent that failed to start stops this root at once, not after the timeout (#190)
                     if (parentRoot._startupFailed)
-                        throw new InvalidOperationException($"Root '{gameObject.name}' cannot start: its parent root '{parentRoot.name}' failed to start.");
+                    {
+                        if (parentRoot._startupFaulted)
+                            throw new InvalidOperationException($"Root '{gameObject.name}' cannot start: its parent root '{parentRoot.name}' failed to start.");
+                        throw new OperationCanceledException(lifetime);
+                    }
 
                     if (!parentRoot.IsInitialized)
                     {
@@ -458,6 +485,7 @@ namespace Nexus.Core
                         if (r == null || r == this) continue;
                         if (r.parentRoot != this.parentRoot) continue;
                         if (!r.gameObject.activeInHierarchy || !r.enabled) continue;
+                        if (r.Context?.IsDisposed == true) continue;
 
                         bool runsBeforeUs = r.InitializationPriority > this.InitializationPriority;
                         if (r.InitializationPriority == this.InitializationPriority)
@@ -478,15 +506,18 @@ namespace Nexus.Core
                 foreach (var sibling in _siblingsToWait)
                 {
                     double deadline = UnityEngine.Time.realtimeSinceStartupAsDouble + siblingTimeoutSeconds;
-                    while (sibling != null && !sibling.IsInitialized && !sibling._startupFailed && UnityEngine.Time.realtimeSinceStartupAsDouble < deadline)
+                    while (sibling != null && sibling.Context?.IsDisposed != true && !sibling.IsInitialized && !sibling._startupFailed && UnityEngine.Time.realtimeSinceStartupAsDouble < deadline)
                     {
                         await Task.Yield();
                         lifetime.ThrowIfCancellationRequested();
                     }
 
                     // a sibling that failed to start stops this root at once, as its timeout would have (#190)
-                    if (sibling != null && sibling._startupFailed)
+                    if (sibling != null && sibling._startupFaulted)
                         throw new InvalidOperationException($"Root '{gameObject.name}' cannot start: sibling root '{sibling.gameObject.name}', which starts before it, failed to start.");
+
+                    // Cancellation or ancestor teardown ends its participation without a startup fault.
+                    if (sibling != null && (sibling._startupFailed || sibling.Context?.IsDisposed == true)) continue;
 
                     if (sibling != null && !sibling.IsInitialized)
                     {
@@ -517,7 +548,7 @@ namespace Nexus.Core
                 NexusRuntime.NotifyContextInitialized(Context);
                 if (Context == null || Context.IsDisposed)
                 {
-                    MarkStartupFailed();
+                    MarkStartupFailed(faulted: false);
                     Context = null;
                     return;
                 }
@@ -530,7 +561,7 @@ namespace Nexus.Core
             }
             catch (OperationCanceledException)
             {
-                MarkStartupFailed();
+                MarkStartupFailed(faulted: false);
                 // Cancelled, dispose context safely
                 if (Context != null)
                 {
@@ -552,8 +583,9 @@ namespace Nexus.Core
             }
         }
 
-        private void MarkStartupFailed()
+        private void MarkStartupFailed(bool faulted = true)
         {
+            _startupFaulted = faulted;
             _startupFailed = true;
             _isInitialized = false;
             lock (s_rootLock) s_allRoots.Remove(this);
@@ -567,6 +599,7 @@ namespace Nexus.Core
                 foreach (var root in s_allRoots)
                 {
                     if (root == null || !root.enabled || !root.gameObject.activeInHierarchy) continue;
+                    if (root.Context?.IsDisposed == true) continue;
                     if (!root.IsInitialized) return false;
                 }
                 return true;

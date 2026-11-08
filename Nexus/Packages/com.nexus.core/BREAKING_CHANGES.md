@@ -419,6 +419,7 @@ Features marked as beta:
 #### Version 0.7.0 (Unreleased)
 
 **Breaking Changes:**
+- Issue #337: parent context disposal now ends descendant contexts first. A child cannot outlive its parent, and attaching one after parent teardown starts throws `ObjectDisposedException`. Async cleanup limits and migration steps are in `MIGRATION.md`.
 - Issue #238 removed public members that nothing references (the search is in the changelog):
   - `NexusDI.WaitForBackgroundDispose`, `ClearPendingInjection` and `GetRegisteredSingletons`;
   - `InjectScanner.HasInjectableMembers`;

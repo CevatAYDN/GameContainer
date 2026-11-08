@@ -20,6 +20,22 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 
 On `main`, not yet released. The [changelog](CHANGELOG.md)'s `[Unreleased]` section lists every change since 0.6.0.
 
+#### Parent contexts now own descendant teardown
+
+Issue #337: disposing a parent context also disposes its children, deepest first, before its own services.
+This applies to both `Root` destruction and code-created contexts, including disabled child Roots.
+Child shutdown no longer needs a frame before parent shutdown to flush synchronous pending saves into
+parent-owned storage. A child must not outlive its parent; creating one after parent teardown starts
+throws `ObjectDisposedException`. Repeated child disposal remains harmless.
+
+Choose `DisposeAsync()` from the start, and use `await parent.DisposeAsync()` when child asynchronous
+cleanup must complete before parent services close. If a child already used synchronous `Dispose()`,
+a later parent `DisposeAsync()` cannot upgrade it or join the background work it handed off.
+`Root.OnDestroy` still uses synchronous, nonblocking `Dispose()`; an async-only cleanup continuation
+must not rely on parent services remaining alive. An independently running child teardown is not joined
+by synchronous parent disposal and produces a warning. Await the original async disposal call, not a
+repeated no-op call. Never await ancestor shutdown from inside a child's own cleanup.
+
 #### Removed members nobody called
 
 Issue #238 removed these public members:
