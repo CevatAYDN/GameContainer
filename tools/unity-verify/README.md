@@ -206,7 +206,8 @@ pwsh tools/unity-verify/check-stripped.ps1 -Out Nexus/artifacts/stripped-<level>
 It fails when a method that a kept interface declares has lost its implementation on a class of the
 Nexus or game assemblies, which IL2CPP reports as `EntryPointNotFoundException` at the call (exit 0
 none missing, 1 missing, 2 could not run). It matches by name, generic arity and parameter count, not
-parameter types. The packages' assemblies in that folder show what their `link.xml` files kept, and the
+parameter types: an overload with the same shape can hide a missing implementation.
+The packages' assemblies in that folder show what their `link.xml` files kept, and the
 probe's `framework services resolved 4/4 injected 4/4` line shows the services still construct and
 inject. Unity has no call that unsets a stripping level, so the build writes the previous level back
 explicitly. Record the settings and pre-existing diff before the run; afterwards
