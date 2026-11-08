@@ -17,6 +17,11 @@ backends.
   - Optional: **Android Build Support** (SDK + NDK) if you want the Android
     IL2CPP step.
 - The editor must be activated (license) on the machine.
+- Python 3.11+ (standard library only) and Git Bash on Windows
+  (`C:\Program Files\Git\bin\bash.exe`). No packages need installing.
+- Run only while no other Unity process owns `Nexus/`; do not edit its source
+  during verification. `UNITY_PATH` must name the installed pinned editor above
+  (a fake editor override is used only by the runner's regression tests).
 
 ## Quick start
 
@@ -26,31 +31,80 @@ UNITY_PATH="C:/Program Files/Unity/Hub/Editor/6000.6.8f1/Editor/Unity.exe" \
   bash tools/unity-verify/verify-unity-build.sh
 ```
 
-Logs and test result XMLs land in `tools/unity-verify/artifacts/`.
+Each invocation creates `tools/unity-verify/artifacts/run-<UTC>-<unique>/`.
+An explicit `UNITY_VERIFY_EVIDENCE_DIR` may name a new folder whose parent
+already exists; the runner refuses to reuse it, including after a failed run.
+Logs, XML, `source.commit` and validated build JSON records remain there on
+failure. No existing evidence, build folder or user data is deleted.
+
+The runner keeps four stages and stops on any nonzero editor exit or incomplete
+evidence. Tests omit `-quit` because the test runner owns termination. Python
+parses the `test-run` root and checks root and suite counts against actual test cases:
+missing/malformed XML, failed or inconclusive results, zero passed tests,
+skipped-only runs and inconsistent counts fail. Passed runs with legitimate
+skips are allowed. The observed Unity Test Framework 1.8 aggregate
+`result="Skipped:Ignored"` is also accepted, but only with both passed and skipped
+tests, zero failures/inconclusives, and consistent counts and nested states
+(`Passed`, or `Skipped` with `label="Ignored"`). A skipped-only child suite is
+allowed inside such a mixed run. Other aggregate results fail. The actual root
+result and passed/failed/inconclusive/skipped counts are printed. Nested
+result/label combinations are checked under both accepted roots: a `Passed`
+root also permits ordinary unlabeled or `Explicit` skips, but unknown labels
+cannot bypass validation by changing only the aggregate result.
+
+For each Windows build it requires a unique success line from the current log
+matching `NexusVerifyBuild`'s target and backend (`Mono2x` or `IL2CPP`), nonempty
+executable, `UnityPlayer.dll`, serialized player data, backend output (Mono
+managed assembly or IL2CPP `GameAssembly.dll` and metadata), and a matching
+`.commit` including its dirty annotation. Serialized `globalgamemanagers` and
+the commit sidecar must have been written after that stage started; copied
+engine templates may retain old timestamps. Build JSON records file hashes,
+sizes and timestamps. An existing directory or exit 0 alone is not proof.
+These are build checks, not proof that the player was launched or accepted on
+a device. The runner starts each stage on `Win64` to avoid stale Android defines.
+
+Focused tool regressions (fake editors only, no Unity/device/host harness):
+
+```powershell
+& "C:\Program Files\Git\bin\bash.exe" -n tools/unity-verify/verify-unity-build.sh
+python -B -m unittest discover -s tools/unity-verify -p test_verify_unity_build.py -v
+```
 
 ## The four verification steps (manual command list)
+
+Prefer the runner above for validated results. For manual investigation, use
+absolute paths: Unity resolves relative `-testResults` against the project,
+but relative `-logFile` against the working directory. Create fresh evidence:
+
+```bash
+ROOT="$(pwd)"
+mkdir -p "$ROOT/tools/unity-verify/artifacts"
+EVIDENCE="$(mktemp -d "$ROOT/tools/unity-verify/artifacts/manual-XXXXXX")"
+```
 
 ### 1. EditMode tests — editor + runtime compile under Mono
 
 ```bash
 "<Unity 6000.6.8f1>/Editor/Unity.exe" -batchmode -nographics \
-  -projectPath "Nexus" \
+  -buildTarget Win64 -projectPath "$ROOT/Nexus" \
   -runTests -testPlatform EditMode \
-  -testResults "tools/unity-verify/artifacts/editmode-results.xml" \
-  -logFile "tools/unity-verify/artifacts/editmode.log" -quit
+  -testResults "$EVIDENCE/editmode-results.xml" \
+  -logFile "$EVIDENCE/editmode.log"
+python tools/unity-verify/check_results.py tests "$EVIDENCE/editmode-results.xml"
 ```
 
 Compiles every editor + runtime assembly and runs the NUnit EditMode suite.
-Any `result="Failed"` in the XML is a failure.
+The structured checker rejects incomplete and unsuccessful results.
 
 ### 2. PlayMode tests — runtime boots and dispatches in a player context
 
 ```bash
 "<Unity 6000.6.8f1>/Editor/Unity.exe" -batchmode -nographics \
-  -projectPath "Nexus" \
+  -buildTarget Win64 -projectPath "$ROOT/Nexus" \
   -runTests -testPlatform PlayMode \
-  -testResults "tools/unity-verify/artifacts/playmode-results.xml" \
-  -logFile "tools/unity-verify/artifacts/playmode.log" -quit
+  -testResults "$EVIDENCE/playmode-results.xml" \
+  -logFile "$EVIDENCE/playmode.log"
+python tools/unity-verify/check_results.py tests "$EVIDENCE/playmode-results.xml"
 ```
 
 Runs the PlayMode suite (context lifecycle, signal dispatch, pooling, storage)
@@ -66,26 +120,30 @@ run enters play mode once, so it cannot show a static that a session leaves
 behind. `NexusVerify.PlayModeTwice` (`Nexus/Assets/Editor/PlayModeTwice.cs`) runs
 the suite twice in one editor; the second run starts with what the first left
 (issue #194). It refuses to run (exit 2) while domain reload is on, so set Enter
-Play Mode Options to not reload the domain first, and restore the setting after:
+Play Mode Options to not reload the domain first. Record the original value and
+existing diff; afterwards restore only the value changed for this run, preserving
+all pre-existing edits:
 
 ```bash
-sed -i 's/^  m_EnterPlayModeOptions: 0$/  m_EnterPlayModeOptions: 1/' Nexus/ProjectSettings/EditorSettings.asset
-"/c/Program Files/Unity/Hub/Editor/6000.6.8f1/Editor/Unity.exe" -batchmode   -projectPath "Nexus"   -executeMethod NexusVerify.PlayModeTwice.Run   -twiceResults "artifacts/playmode-twice"   -logFile "Nexus/artifacts/playmode-twice.log"
-git checkout -- Nexus/ProjectSettings/EditorSettings.asset
+"/c/Program Files/Unity/Hub/Editor/6000.6.8f1/Editor/Unity.exe" -batchmode \
+  -projectPath "$ROOT/Nexus" -executeMethod NexusVerify.PlayModeTwice.Run \
+  -twiceResults "$EVIDENCE/playmode-twice" -logFile "$EVIDENCE/playmode-twice.log"
+python tools/unity-verify/check_results.py tests "$EVIDENCE/playmode-twice-run1.xml"
+python tools/unity-verify/check_results.py tests "$EVIDENCE/playmode-twice-run2.xml"
 ```
 
 Without `-quit`: the method exits when the second run's job has ended, with 0 when
 neither run failed and 1 when one did. Each run writes NUnit XML
-(`artifacts/playmode-twice-run1.xml`, `-run2.xml`, relative to the project); the log
+(`playmode-twice-run1.xml`, `-run2.xml` in the chosen evidence folder); the log
 shows "Entering Playmode with Reload Domain disabled." once per run.
 
 ### 3. Mono player build — full player compile (Mono backend)
 
 ```bash
 "<Unity 6000.6.8f1>/Editor/Unity.exe" -batchmode -nographics \
-  -projectPath "Nexus" \
+  -buildTarget Win64 -projectPath "$ROOT/Nexus" \
   -executeMethod NexusVerify.NexusVerifyBuild.BuildStandaloneMono \
-  -logFile "tools/unity-verify/artifacts/mono-build.log" -quit
+  -logFile "$EVIDENCE/standalone-mono-build.log" -quit
 ```
 
 Produces `Nexus/builds/standalone-mono/` (each Windows player builds into its own folder, issue #102).
@@ -98,9 +156,9 @@ A success proves the whole game
 
 ```bash
 "<Unity 6000.6.8f1>/Editor/Unity.exe" -batchmode -nographics \
-  -projectPath "Nexus" \
+  -buildTarget Win64 -projectPath "$ROOT/Nexus" \
   -executeMethod NexusVerify.NexusVerifyBuild.BuildStandaloneIL2CPP \
-  -logFile "tools/unity-verify/artifacts/il2cpp-build.log" -quit
+  -logFile "$EVIDENCE/standalone-il2cpp-build.log" -quit
 ```
 
 Produces `Nexus/builds/standalone-il2cpp/`. It needs Visual Studio's C++ toolchain, which the machine
@@ -128,9 +186,9 @@ IL2CPP compiles the C# to C++ and strips unused code, so it validates that
 
 ```bash
 "<Unity 6000.6.8f1>/Editor/Unity.exe" -batchmode -nographics \
-  -projectPath "Nexus" \
+  -projectPath "$ROOT/Nexus" \
   -buildTarget Android -executeMethod NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPP \
-  -logFile "tools/unity-verify/artifacts/android-il2cpp-build.log" -quit
+  -logFile "$EVIDENCE/android-il2cpp-build.log" -quit
 ```
 
 The most realistic mobile pipeline (Android + IL2CPP + stripping). Start every Android build with `-buildTarget Android`: editor code a package compiles only under `#if UNITY_ANDROID` runs only in an editor that starts on Android. A build started on Windows switches the target inside the build call, without those assemblies, and its player lacks what they add, such as the notification permission and receiver of `com.unity.mobile.notifications` (#160, `Nexus/artifacts/notifications-20261102/`).
@@ -151,8 +209,9 @@ none missing, 1 missing, 2 could not run). It matches by name, generic arity and
 parameter types. The packages' assemblies in that folder show what their `link.xml` files kept, and the
 probe's `framework services resolved 4/4 injected 4/4` line shows the services still construct and
 inject. Unity has no call that unsets a stripping level, so the build writes the previous level back
-explicitly; run `git checkout -- Nexus/ProjectSettings/ProjectSettings.asset` after it (this also discards any
-other uncommitted change to that file).
+explicitly. Record the settings and pre-existing diff before the run; afterwards
+restore only verification-owned changes to `ProjectSettings.asset`. Never
+restore the whole file from Git over unrelated work.
 
 `NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPPDevelopment` builds the same player as a development
 build (`Nexus/builds/android-il2cpp-dev.apk`) with `Assets/Scripts/Verify/DeviceProbe.cs`, which exists
@@ -208,6 +267,40 @@ pointer events. The evidence goes to `Nexus/artifacts/<RunName>/` (`stack-probe.
 `logcat-<mode>.txt` for each launch); exit 0 passed, 1 failed, 2 could not run. It has the same application id as
 the players above, so it replaces them on the phone.
 
+### Persistence restart probe (#338)
+
+`persistence-probe.ps1` drives `Assets/Scripts/Verify/PersistenceProbe.cs` in the
+framework Android IL2CPP development player. Supply the frozen APK's SHA256,
+exact `.commit` text (including `(Packages or Assets modified)` when present),
+explicit authorized device serial and installed `aapt` executable:
+
+```powershell
+pwsh tools/unity-verify/persistence-probe.ps1 `
+  -Apk Nexus/builds/android-il2cpp-dev.apk `
+  -ExpectedApkSha256 <64-hex-sha256> -ExpectedCommit "<exact-build-commit>" `
+  -AdbSerial <serial> -Aapt "<installed-Android-build-tools>/aapt.exe"
+```
+
+The mandatory identity checks freeze the APK and sidecar in a fresh
+`Nexus/artifacts/<RunName>/` and verify them before installation and each phase.
+The APK must be debuggable with exactly the framework package
+`com.UnityTechnologies.com.unity.template.urpblank`; no game package is allowed.
+Installation uses `adb install -r`, with no game clear or uninstall. The probe
+must not already be running. It performs 12 launches: bool/outcome callbacks
+times wallet/ack faults times arm/recover/verify, checking run/phase/PID markers,
+receipts, reopened balance, pending acknowledgement and confirmed force-stop
+termination. Evidence includes `persistence-probe.json` and each phase's log.
+Exit 0 means all 12 restart checks were observed; 1 means failed/incomplete
+phases; 2 means preflight could not run. This is process-restart, simulator,
+single-wallet-JSON evidence, not power-loss, live ad SDK, multi-key transaction
+or consumer-game acceptance.
+
+Within the same 12 launches, the first bool/wallet scenario also checks #339's
+file-backed long and BigDouble balances: corrupt reads must throw and disposal
+must preserve the corrupt bytes, then explicit valid import must recover them.
+After saving a mutation, both later restart phases require balances of 1005;
+these additional economy checks do not constitute a multi-key transaction proof.
+
 ## Mode B: verify the Roslyn Source Generator binder (optional, opt-in)
 
 The four steps above compile the game with the **editor-time generator's** binder
@@ -226,30 +319,34 @@ and 2 were not run in Mode B.
 every assembly but `com.nexus.core.editor`, which has `Editor/csc.rsp`), not only the predefined ones. The generator
 writes a binder only into a game's runtime assembly; a Nexus package, editor or test assembly gets none (#264).
 
-One-file rule: only one binder may exist per assembly. Mode B removes the editor
+One-file rule: only one binder may exist per assembly. Mode B temporarily moves the editor
 file and lets the compiler generate the binder. While a `csc.rsp` that governs the binder's assembly names the
 generator, **Generate AOT Binder** and the pre-build step of every player build write only `link.xml` (#242); an editor
 binder left beside the generator stops both, with a message that names CS0101.
 
-```bash
-# 1) Switch the source generator on. Create Nexus/Assets/csc.rsp containing:
-#
-#      -analyzer:Packages/com.nexus.core/SourceGenerators~/Nexus.SourceGenerator.dll
-#
-# 2) Remove the editor-time binder so the generated class does not collide
-#    (the file is git-ignored; Unity deletes its tracked .meta on the next import):
-rm Nexus/Assets/Scripts/Nexus/NexusGeneratedBinder.g.cs
+Before switching, preserve the current binder and its `.meta` outside `Assets`,
+and record any existing `Assets/csc.rsp` contents and diff. Add only the analyzer
+line below to the response file, preserving other compiler options, then move
+the editor-time binder and its `.meta` out of `Assets`:
 
-# 3) Build the IL2CPP player (step 4 above); the compile now includes the source-generated binder:
-"C:/Program Files/Unity/Hub/Editor/6000.6.8f1/Editor/Unity.exe" -batchmode -nographics -quit \
-  -projectPath Nexus -executeMethod NexusVerify.NexusVerifyBuild.BuildStandaloneIL2CPP \
-  -logFile Nexus/artifacts/il2cpp-build.log
-
-# 4) Revert (back to the editor-time binder):
-rm Nexus/Assets/csc.rsp Nexus/Assets/csc.rsp.meta
-git checkout -- Nexus/Assets/Scripts/Nexus/NexusGeneratedBinder.g.cs.meta
-#    then run Nexus > Generate AOT Binder (or the GenerateBinder command in CLAUDE.md).
+```text
+-analyzer:Packages/com.nexus.core/SourceGenerators~/Nexus.SourceGenerator.dll
 ```
+
+Build the IL2CPP player (step 4 above); the compile now includes the source-generated binder:
+
+```bash
+"C:/Program Files/Unity/Hub/Editor/6000.6.8f1/Editor/Unity.exe" -batchmode -nographics -quit \
+  -buildTarget Win64 -projectPath "$ROOT/Nexus" \
+  -executeMethod NexusVerify.NexusVerifyBuild.BuildStandaloneIL2CPP \
+  -logFile "$EVIDENCE/modeb-il2cpp-build.log"
+```
+
+To return, remove only the analyzer line added for this run and restore the
+preserved binder and `.meta`. A newly created response file and `.meta` may be
+removed only when they are still solely this run's files; preserve any concurrent
+edits. Then run Nexus > Generate AOT Binder (or the command in `CLAUDE.md`).
+Inspect the scoped diff rather than using wholesale checkout or deletion.
 
 Unity does not treat an analyzer named in a `csc.rsp` as a compile input: after the generator DLL is rebuilt, an
 assembly keeps the binder the old DLL wrote until something else recompiles it, such as a change to its sources, its
@@ -262,7 +359,7 @@ prints the tail of its log. Common failure classes and where to look:
 
 | Symptom | Log line | Likely cause |
 |---|---|---|
-| `error CS####` | `mono-build.log` / `il2cpp-build.log` | C# compile error — fix and re-run |
+| `error CS####` | `standalone-mono-build.log` / `standalone-il2cpp-build.log` | C# compile error — fix and re-run |
 | `Build FAILED ... result=Failed` | build log | Asset/scripting issue at link time |
 | `Internal build system has thrown an exception` | build log | Missing build-support module |
 | `result="Failed"` in test XML | `editmode-results.xml` | Test assertion failure — inspect `<test-case>` entries |
