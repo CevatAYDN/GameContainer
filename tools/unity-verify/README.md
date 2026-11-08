@@ -290,11 +290,21 @@ Installation uses `adb install -r`, with no game clear or uninstall. The probe
 must not already be running. It performs 12 launches: bool/outcome callbacks
 times wallet/ack faults times arm/recover/verify, checking run/phase/PID markers,
 receipts, reopened balance, pending acknowledgement and confirmed force-stop
-termination. Evidence includes `persistence-probe.json` and each phase's log.
+termination. Evidence includes `persistence-probe.json`, each phase's log and
+`adb-commands.jsonl`: the exact serial/arguments, run and phase identity, UTC
+interval, native exit code and output lines of every ADB call, including failed
+calls. This retains the force-stop, PID-absence and `/proc/<pid>` checks rather
+than only their aggregate flags. A command-evidence write failure fails the run.
 Exit 0 means all 12 restart checks were observed; 1 means failed/incomplete
 phases; 2 means preflight could not run. This is process-restart, simulator,
 single-wallet-JSON evidence, not power-loss, live ad SDK, multi-key transaction
 or consumer-game acceptance.
+
+The command-recording regression needs no phone or ADB connection:
+
+```powershell
+pwsh -NoProfile -File tools/unity-verify/test_persistence_probe_evidence.ps1
+```
 
 Within the same 12 launches, the first bool/wallet scenario also checks #339's
 file-backed long and BigDouble balances: corrupt reads must throw and disposal

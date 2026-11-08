@@ -18,6 +18,9 @@ Set-StrictMode -Version Latest
 $Package = 'com.UnityTechnologies.com.unity.template.urpblank'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $evidence = $null
+$script:currentVariant = $null
+$script:currentScenario = $null
+$script:currentPhase = $null
 $exitCode = 2
 $result = [ordered]@{
     runToken = $RunToken; serial = $AdbSerial; package = $Package
@@ -27,8 +30,21 @@ $result = [ordered]@{
 }
 
 function Invoke-ProbeAdb([string[]]$a) {
-    $out = @(& adb.exe -s $AdbSerial @a 2>&1 | ForEach-Object { "$_" })
-    if ($LASTEXITCODE -ne 0) { throw "adb failed ($LASTEXITCODE): $($a -join ' '): $($out -join ' ')" }
+    $startedUtc = (Get-Date).ToUniversalTime().ToString('o')
+    # Windows PowerShell must retain redirected native stderr before checking the exit code.
+    $ErrorActionPreference = 'Continue'
+    $out = @(& adb.exe -s $AdbSerial @a 2>&1)
+    $nativeExitCode = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    $endedUtc = (Get-Date).ToUniversalTime().ToString('o')
+    $out = @($out | ForEach-Object { "$_" })
+    [ordered]@{
+        serial = $AdbSerial; arguments = @('-s', $AdbSerial) + $a; runToken = $RunToken
+        variant = $script:currentVariant; scenario = $script:currentScenario; phase = $script:currentPhase
+        startedUtc = $startedUtc; endedUtc = $endedUtc; exitCode = $nativeExitCode; outputLines = $out
+    } | ConvertTo-Json -Depth 4 -Compress |
+        Add-Content -LiteralPath (Join-Path $evidence 'adb-commands.jsonl') -Encoding utf8 -ErrorAction Stop
+    if ($nativeExitCode -ne 0) { throw "adb failed ($nativeExitCode): $($a -join ' '): $($out -join ' ')" }
     return $out
 }
 
@@ -68,6 +84,9 @@ function Read-ProbeLines([string]$ProcessId, [string]$Variant, [string]$Scenario
 }
 
 function Invoke-ProbePhase([string]$Variant, [string]$Scenario, [string]$Phase, [string]$Receipt, [string]$PreviousPid) {
+    $script:currentVariant = $Variant
+    $script:currentScenario = $Scenario
+    $script:currentPhase = $Phase
     Assert-ProbeIdentity
     if (Get-ProbePid) { throw 'Refusing to launch over an already running process.' }
     $record = [ordered]@{
