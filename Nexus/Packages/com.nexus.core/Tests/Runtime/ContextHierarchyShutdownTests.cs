@@ -21,6 +21,7 @@ namespace Nexus.Core.Tests
         {
             _data = ScriptableObject.CreateInstance<ContextData>();
             _data.EnableAutoDiscovery = false;
+            _data.AssemblyScopes = new[] { typeof(Context).Assembly.GetName().Name }; // Exclude the host game's sample handlers (#341).
             _salt = "Hierarchy337_" + Guid.NewGuid().ToString("N");
         }
 

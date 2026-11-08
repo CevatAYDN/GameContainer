@@ -67,6 +67,7 @@ namespace Nexus.Core.Tests
         {
             var data = ScriptableObject.CreateInstance<ContextData>();
             data.EnableAutoDiscovery = false;
+            data.AssemblyScopes = new[] { typeof(Context).Assembly.GetName().Name }; // Exclude the host game's sample handlers (#341).
             return data;
         }
 
