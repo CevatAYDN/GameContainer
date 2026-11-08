@@ -63,8 +63,9 @@ control value, and `BytesPerOperation=-1` (unavailable). This is never a zero-GC
 The host path still fails if calibration fails. Unity GC.Alloc recorder tests provide
 separate event-count evidence; this player tool measures latency, not frame budgets.
 
-Each run preserves JSON, build/player logs and NexusDI SHA-256; source changes during
-the run are rejected. The script redacts CLI access-token arguments in its owned logs.
+Each build run preserves JSON, build/player logs and NexusDI SHA-256; changes to
+that source file through the Mono stage are rejected. This is not a complete
+immutable build-input manifest. The script redacts CLI access-token arguments in its owned logs.
 Existing result JSON is never overwritten; select a new RunName. A run has 12 measurements
 (4 libraries × 3 scenarios). Warm metadata core DI
 measurements do not establish full Context startup, cold reflection cost, input/scene
@@ -88,3 +89,38 @@ integration or a universal ranking.
   `android-device.json` records `launchOnly`. Launches of several builds can then be interleaved, so
   drift between launches is told apart from a difference between builds (#111). Pass `-Generated`
   with a generated build's APK.
+
+## Checked Android evidence
+
+The Android path freezes the input APK and requires `aapt` to identify exactly
+`com.nexus.comparison` before any installation (#343). `-Aapt` selects the executable;
+otherwise it uses the pinned editor's Android build tools. Installation uses `-r`.
+An already-running comparison app is refused, not automatically stopped. Select a
+new evidence folder even after a failed run; `-ArtifactFolder` must stay under this
+repository's `Nexus/artifacts`.
+
+Every ADB call records serial, arguments, UTC interval, native exit and output in
+`adb-commands.jsonl`. Native and evidence-write failures abort the run. Before
+launch the previous benchmark result must be absent and log clearing must succeed.
+The launcher observes a new PID and accepts only its exact completion marker and
+canonical result path. Resolving the existing storage root also supports a first
+install whose result directory does not yet exist.
+
+`android-device.json` links the frozen APK to actual installed APK hashes before
+launch and after owned-process termination, the serial/PID, completion marker and
+result hash. `android-termination.json` and the command log retain the native
+process-end evidence. The run token identifies the **host transcript only**; the
+unchanged player does not emit it. Freshness follows the checked file-absence,
+new-process and installed-hash chain, not a player-emitted nonce.
+
+`android-results.json` is promoted only after the checked chain and owned-log
+finalization succeed. A failed run may retain raw/candidate evidence but is not
+accepted. Only the comparison's fixed result file is removed; no game save or
+whole app-data reset/uninstall is performed.
+
+Device-free regressions, including failed clear/start, stale result/marker,
+wrong-package and post-run hash mismatch:
+
+```powershell
+pwsh -NoProfile -File tools/nexus-comparison/test_device_evidence.ps1
+```
