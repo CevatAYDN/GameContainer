@@ -13,6 +13,91 @@ namespace Nexus.Editor.Tests
 #if UNITY_EDITOR
         [Test]
 #endif
+        public void Context_LateAAfterBStartsRetainsItsOfferThroughRestart()
+        {
+            var provider = new NotifyingProvider();
+            var store = new Store();
+            const string aContext = "offer-A|630\nödül", bContext = "offer-B|800";
+            using (var rig = new Rig(provider: provider, store: store))
+            {
+                ShowWithContext(rig.Controller, "first", aContext, _ => { });
+                provider.Results[0](AdResult.Closed);
+                ShowWithContext(rig.Controller, "first", bContext, result =>
+                {
+                    var b = rig.Controller.DeliveringReward.Value;
+                    Require(ContextOf(b) == bContext, "B's live receipt must carry B's saved offer token.");
+                    Require(ContextOf(rig.Controller.PendingReward.Value) == aContext, "A's pending token cannot be replaced by B.");
+                    rig.Controller.AcknowledgeReward(b.Id);
+                });
+                provider.Earned[0]();
+                provider.Earned[1]();
+                provider.Results[1](AdResult.Rewarded);
+            }
+            using var restarted = new Rig(store: store.Reopen());
+            var a = restarted.Controller.PendingReward.Value;
+            Require(ContextOf(a) == aContext && a.Placement == "first", "A must resolve offer 630, not the newest offer 800.");
+            restarted.Controller.AcknowledgeReward(a.Id);
+            Require(!restarted.Controller.PendingReward.HasValue, "Acknowledged B must not replay.");
+        }
+
+        // Reflection keeps this regression runnable against the pre-feature source for the RED record.
+        private static void ShowWithContext(AdController controller, string placement, string context, Action<AdResult> result)
+        {
+            var method = typeof(AdController).GetMethod("Show", new[] { typeof(string), typeof(string), typeof(Action<AdResult>) });
+            Require(method != null, "#414: there is no way to bind a caller's offer token to a show.");
+            method.Invoke(controller, new object[] { placement, context, result });
+        }
+
+        private static string ContextOf(RewardReceipt receipt)
+        {
+            var field = typeof(RewardReceipt).GetField("Context");
+            Require(field != null, "#414: receipt has no durable caller context.");
+            return (string)field.GetValue(receipt);
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void Context_MigratesV2WithoutGuessingAndDistinguishesNullFromEmpty()
+        {
+            var store = new Store();
+            const string key = "nexus.ads.reward.pending";
+            store.Set(key, "NXRQ2\nYQ==|Zmlyc3Q=\nYg==|c2Vjb25k");
+            Require(RewardReceipts.Pending(store)?.Context == null, "Legacy v2 must not invent offer context.");
+            RewardReceipts.Write(store, new RewardReceipt("c", "third", ""));
+            RewardReceipts.Write(store, new RewardReceipt("d", "fourth", "offer|\nödül"));
+            var reopened = store.Reopen();
+            RewardReceipts.Acknowledge(reopened, "a");
+            Require(RewardReceipts.Pending(reopened)?.Id == "b" && RewardReceipts.Pending(reopened)?.Context == null,
+                "Migration must keep both legacy identities and null context.");
+            RewardReceipts.Acknowledge(reopened, "b");
+            Require(RewardReceipts.Pending(reopened)?.Context == "", "Empty is a valid opaque token, not missing context.");
+            RewardReceipts.Acknowledge(reopened, "c");
+            Require(RewardReceipts.Pending(reopened)?.Context == "offer|\nödül", "Context must round-trip exactly.");
+            string before = reopened.Get(key);
+            ExpectUnreadable(() => RewardReceipts.Write(reopened, new RewardReceipt("d", "fourth", "different")));
+            Require(reopened.Get(key) == before, "Conflicting context for an existing receipt id cannot replace its offer.");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void Context_CorruptV3TailCannotBeDroppedDuringAckOrAppend()
+        {
+            var store = new Store();
+            const string key = "nexus.ads.reward.pending";
+            foreach (string row in new[] { "NXRQ3\nYQ==|Yg==", "NXRQ3\nYQ==|Yg==|?", "NXRQ3\nYQ==|Yg==|-\nYw==|ZA==|?" })
+            {
+                store.Set(key, row);
+                ExpectUnreadable(() => RewardReceipts.Acknowledge(store, "a"));
+                ExpectUnreadable(() => RewardReceipts.Write(store, new RewardReceipt("new", "placement", "offer")));
+                Require(store.Get(key) == row, "Invalid context data must be retained for explicit recovery.");
+            }
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
         public void A03_LateAThenRewardedBRetainsAAfterBAcknowledgement()
             => LateAThenB("first");
 

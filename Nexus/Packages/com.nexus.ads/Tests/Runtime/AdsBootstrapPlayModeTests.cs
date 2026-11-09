@@ -166,6 +166,25 @@ namespace Nexus.Ads.Tests.Runtime
         }
 
         [UnityTest]
+        public IEnumerator Context_FacadePreservesOfferInLiveAndPersistedReceipt()
+        {
+            yield return Boot(SimulatorScenario.Normal);
+            string seen = null;
+            Nexus.Ads.Unity.Ads.Show("shop_refill", "offer-before-show", result =>
+            {
+                Assert.AreEqual(AdResult.Rewarded, result);
+                seen = Nexus.Ads.Unity.Ads.DeliveringReward?.Context;
+            });
+            Assert.IsTrue(_bootstrap.Simulator.CompleteShow(AdResult.Rewarded), "Finish the interactive simulator's real show.");
+            Assert.AreEqual("offer-before-show", seen);
+            Assert.IsNull(Nexus.Ads.Unity.Ads.DeliveringReward, "Delivery context must not leak outside the callback.");
+            var pending = Nexus.Ads.Unity.Ads.PendingReward.Value;
+            Assert.AreEqual("offer-before-show", pending.Context);
+            Nexus.Ads.Unity.Ads.AcknowledgeReward(pending.Id);
+            Assert.IsFalse(Nexus.Ads.Unity.Ads.PendingReward.HasValue);
+        }
+
+        [UnityTest]
         public IEnumerator Interstitial_InTheFirstMinute_IsBlocked_WithAViolation()
         {
             yield return Boot(SimulatorScenario.Normal);

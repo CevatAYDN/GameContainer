@@ -19,7 +19,12 @@ capture/delivery times and whether its native handle has already been released.
 This verifies managed provider identity and late-reward recovery using received
 SDK events. It does **not** prove that an SDK emits a new native event after its
 object has been destroyed. An interrupted app cannot recover a reward whose
-event was never received/persisted. #384 retains that external evidence boundary.
+event was never received/persisted. For #384 closure the owner approved the
+received-event contract: active ownership, successful durable receipt write,
+idempotent confirmed game grant and id-specific acknowledgement. It excludes
+unreceived native events, storage failure, and process death before persistence;
+there is no server-side verification guarantee. This limitation remains documented
+after issue closure.
 
 Verification: deterministic hook tests, real pinned SDK-wrapper tests for both
 providers, native audio GC regression (#411), engine compile checks and a release
@@ -57,6 +62,16 @@ before retrying B. The game must deduplicate **all relevant ids**, not only the
 last applied id; use `EarnOnce` for the economy or an atomic applied-id ledger.
 Drain the pending queue until empty, stopping on any failure. A reward already
 overwritten by the pre-#413 package cannot be reconstructed by this migration.
+
+### #414: use different offer tokens even for the same placement
+
+Persist `offer-A` (630) and `offer-B` (800) before their respective shows and pass
+the keys through `Show(placement, context, callback)` or the bridge's contextual
+`RequestReward`. Delay A using `next`, then let B earn/ack. A's pending receipt must
+still contain `Context == "offer-A"`; B's delivery must contain `"offer-B"`. On
+restart, resolve A's saved offer by that token and pay 630, not the newest 800.
+Expected total is 1430 with receipt-id deduplication. Do not overwrite or delete
+A's saved offer on `Closed`; a late earned event may still use it.
 
 The Android development player also accepts an Intent string extra, independent
 of whether the panel is visible. Resolve the real launch activity; do not assume

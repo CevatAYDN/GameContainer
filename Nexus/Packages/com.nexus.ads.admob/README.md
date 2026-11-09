@@ -7,7 +7,10 @@ received SDK reward after close, replaying it, or delivering it during the next
 rewarded show. The debug panel and Android intent commands are documented in
 [provider reward fault testing](../../../docs/ADS_FAULT_TESTING.md). Release
 players compile out the hooks; fault injection does not prove native delivery
-after SDK handle destruction.
+after SDK handle destruction. #384's owner-approved contract covers received
+events under active ownership and successful persistence; it does not guarantee
+unreceived SDK events or durability through a failed write/process death before
+persistence. Consumer game acceptance remains separate.
 
 `AdMobProvider` and `UmpConsentFlow` in the assembly `Nexus.Ads.AdMob` (`Runtime/Provider`), the ad
 family's `IAdProvider` over `com.nexus.ads`, and `UmpAnalyticsConsent` in `Nexus.Ads.AdMob.Firebase`
@@ -71,7 +74,8 @@ What it does:
 
 Provider callbacks retain their originating ad/show (#384), so an old close cannot close or
 destroy a replacement. Public show completion remains once-only; a separate internal earned
-notification lets the controller preserve one pending receipt after close/watchdog completion.
+notification lets the controller append a pending receipt after close/watchdog completion.
+The queue preserves earlier unacknowledged rewards and each receipt's caller Context (#413/#414).
 This covers callbacks that reach the provider, not a guarantee of native delivery after handle
 destruction. Provider disposal releases its SDK objects and its own UMP flow; stale loads release
 their returned ad instead of reviving readiness (#390). A separately constructed UMP flow is

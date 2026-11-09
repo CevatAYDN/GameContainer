@@ -18,6 +18,69 @@ namespace Nexus.Editor.Tests
 #if UNITY_EDITOR
         [Test]
 #endif
+        public void Context_ServiceAndAdapterPreserveTokenInsideDeliveryBeforeAck()
+        {
+            using var rig = new Rig();
+            string delivered = null;
+            IAdService service = rig.Service;
+            service.RequestReward("reward", "saved-offer-630", outcome =>
+            {
+                Require(outcome == AdOutcome.Rewarded, "Expected rewarded outcome.");
+                delivered = rig.Controller.DeliveringReward.Value.Context;
+                Require(rig.Controller.PendingReward?.Context == delivered, "Receipt context must persist before delivery.");
+            });
+            rig.Provider.CompleteShow(AdResult.Rewarded);
+            Require(delivered == "saved-offer-630" && !rig.Controller.PendingReward.HasValue,
+                "The entire IAdService -> adapter -> controller route must keep context and acknowledge its receipt.");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public async Task Context_GrantAsyncFailureRetainsTokenForReplay()
+        {
+            using var rig = new Rig();
+            var pending = rig.Service.RequestRewardAsync("reward", "offer-800", () => throw new System.IO.IOException("save failed"));
+            try { rig.Provider.CompleteShow(AdResult.Rewarded); }
+            catch (System.IO.IOException) { }
+            bool failed = false;
+            try { await pending; }
+            catch (System.IO.IOException) { failed = true; }
+            Require(failed && rig.Controller.PendingReward?.Context == "offer-800", "Failure must preserve this offer, not return Rewarded or discard context.");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void Context_UnsupportedAdapterRejectsBeforeShowingAndLegacyStillWorks()
+        {
+            using var service = new AdService();
+            var adapter = new LegacyAdapter();
+            service.SetNetworkAdapter(adapter);
+            bool rejected = false;
+            try { service.RequestReward("reward", "offer", _ => { }); }
+            catch (NotSupportedException) { rejected = true; }
+            Require(rejected && adapter.Shows == 0, "Never silently drop a context token on a legacy adapter.");
+            AdOutcome? outcome = null;
+            service.RequestReward("reward", null, result => outcome = result);
+            Require(adapter.Shows == 1 && outcome == AdOutcome.Rewarded, "Null context preserves the legacy route.");
+        }
+
+        private sealed class LegacyAdapter : IAdNetworkAdapter
+        {
+            public int Shows;
+            public void Initialize(Action ready) => ready?.Invoke();
+            public bool IsInterstitialReady(string placement) => true;
+            public bool IsRewardedReady(string placement) => true;
+            public void ShowInterstitial(string placement, Action closed) => closed?.Invoke();
+            public void ShowRewarded(string placement, Action<bool> completed) { Shows++; completed(true); }
+            public void ShowBanner(string placement, string position) { }
+            public void HideBanner() { }
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
         public async Task A02_LegacyAwaitReturnsTheOutcomeAfterTheBridgeAcknowledgesItsCallback()
         {
             using var rig = new Rig();

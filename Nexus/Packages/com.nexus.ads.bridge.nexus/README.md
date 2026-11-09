@@ -122,6 +122,45 @@ do not downgrade to a pre-#413 package while the queue is nonempty.
 
 ### Rewards Paid Into Nexus Economy
 
+#### Bind the offer before showing (#414)
+
+Persist a unique, immutable offer record **before** calling the ad API. Pass its
+key as an opaque context token; the framework captures it per show and persists
+it on `RewardReceipt.Context`, even for late delivery after another show starts:
+
+```csharp
+string offerKey = PersistOfferAndConfirm(amount: 630); // game-owned; throws on failed save
+ads.RequestReward("triple", offerKey, outcome =>
+{
+    if (outcome != AdOutcome.Rewarded) return;
+    var receipt = controller.DeliveringReward ?? throw new IOException("No receipt.");
+    var offer = LoadConfirmedOffer(receipt.Context); // never the newest offer for this placement
+    economy.EarnOnce(offer.CurrencyId, offer.Amount, receipt.Id, receipt.Placement);
+    // NexusAdsAdapter acknowledges this id after normal callback return.
+});
+```
+
+The context is an offer lookup key, **not** the idempotency key (that remains
+`receipt.Id`). It is not sent to the SDK, interpreted, or filled from the latest
+game state. Keep each offer until its receipt is acknowledged; an ad returning
+`Closed` is not proof no late reward can arrive. Startup uses each queued receipt's
+same `Context` and placement. Missing/unknown context stops grant/ack, never guesses
+the latest offer. Retain the game's explicit legacy migration path for null-context
+receipts; neither old single-row nor NXRQ2 data contains an offer token to recover.
+
+Available routes: `AdController.Show(placement, context, callback)`,
+`Ads.Show(placement, context, callback)`,
+`IAdService.RequestReward(placement, context, callback)`, and the grant-before-ack
+`RequestRewardAsync(placement, context, Action grant, ct)`. Existing overloads
+remain unchanged. Custom `IAdService` implementations and adapters must opt in
+(`IAdContextAdapter` for adapters); non-null tokens fail **before showing** when
+unsupported. Null uses the legacy service path; empty is a valid opaque token.
+
+The receipt row now uses NXRQ3, reading both NXRQ2 and legacy `id|placement` with
+null context and migrating on successful mutation. Do not downgrade with pending
+data. Offer contents are not serialized for the game; persisting only a token is
+not enough if its game-owned offer record is overwritten or deleted.
+
 For a currency owned by `IEconomyService`, use `EarnOnce(currencyId, amount, receiptId, reason)`
 or `EarnBigOnce` (core issue #350); do not introduce a second game-owned wallet. The methods
 store the balance and applied ids together and confirm the economy's actual store, bypassing

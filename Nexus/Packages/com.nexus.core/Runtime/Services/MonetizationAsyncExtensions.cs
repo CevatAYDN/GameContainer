@@ -36,6 +36,11 @@ namespace Nexus.Core.Services
         /// </summary>
         /// <param name="grant">Synchronous grant that must persist (and throw on a failed save) before it returns.</param>
         public static Task<AdOutcome> RequestRewardAsync(this IAdService ads, string placement, Action grant, CancellationToken ct = default)
+            => RequestRewardAsync(ads, placement, null, grant, ct);
+
+        /// <summary>Contextual grant-before-ack path. The synchronous grant reads its adapter's delivering receipt;
+        /// context is the offer key and the receipt id remains the idempotency key.</summary>
+        public static Task<AdOutcome> RequestRewardAsync(this IAdService ads, string placement, string context, Action grant, CancellationToken ct = default)
         {
             if (ads == null) throw new ArgumentNullException(nameof(ads));
             if (grant == null) throw new ArgumentNullException(nameof(grant));
@@ -44,7 +49,7 @@ namespace Nexus.Core.Services
             var registration = ct.Register(() => tcs.TrySetCanceled(ct));
             try
             {
-                ads.RequestReward(placement, outcome =>
+                ads.RequestReward(placement, context, outcome =>
                 {
                     registration.Dispose();
                     if (outcome == AdOutcome.Rewarded)

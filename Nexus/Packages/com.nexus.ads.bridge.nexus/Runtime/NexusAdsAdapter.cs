@@ -11,7 +11,7 @@ namespace Nexus.Ads.Bridge
     /// policy's interstitial floor (set by <see cref="NexusAdsBridge"/>). Revenue is forwarded to
     /// <see cref="AdService.RaiseImpression"/> by the bridge.
     /// </summary>
-    public sealed class NexusAdsAdapter : IAdNetworkAdapter, IAdOutcomeAdapter, IAdReadinessAdapter, IAdConsentAdapter, IDisposable
+    public sealed class NexusAdsAdapter : IAdNetworkAdapter, IAdOutcomeAdapter, IAdContextAdapter, IAdReadinessAdapter, IAdConsentAdapter, IDisposable
     {
         public const string ProviderName = "nexus-ads";
 
@@ -74,7 +74,9 @@ namespace Nexus.Ads.Bridge
             if (receipt.HasValue) _controller.AcknowledgeReward(receipt.Value.Id);
         });
 
-        public void RequestReward(string placement, Action<AdOutcome> onOutcome) => _controller.Show(placement, result =>
+        public void RequestReward(string placement, Action<AdOutcome> onOutcome) => RequestReward(placement, null, onOutcome);
+
+        public void RequestReward(string placement, string context, Action<AdOutcome> onOutcome) => _controller.Show(placement, context, result =>
         {
             var receipt = _controller.DeliveringReward;
             onOutcome?.Invoke(Map(result));

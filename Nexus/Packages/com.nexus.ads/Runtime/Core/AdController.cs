@@ -175,6 +175,11 @@ namespace Nexus.Ads
         /// <see cref="AdResult.Failed"/>, the format reloads, and the exception then reaches the caller.
         /// </summary>
         public void Show(string placement, Action<AdResult> onResult)
+            => Show(placement, null, onResult);
+
+        /// <summary>Captures an opaque caller token for this show's receipt, including late delivery and restart.
+        /// Persist the token's offer before calling; it is not interpreted or sent to the ad SDK.</summary>
+        public void Show(string placement, string context, Action<AdResult> onResult)
         {
             var declared = _config.Find(placement);
             // one banner path: this one showed without recording the show, so the placement's cooldown and caps held for ShowBanner only (issue #327)
@@ -211,7 +216,7 @@ namespace Nexus.Ads
             {
                 if (_disposed || !earned || rewardRecorded) return;
                 rewardRecorded = true;
-                Isolated(() => WriteReceipt(placement, out _), format, placement, "writing the reward receipt");
+                Isolated(() => WriteReceipt(placement, context, out _), format, placement, "writing the reward receipt");
                 Isolated(() => _telemetry.Record(new AdEvent(AdEventKind.Rewarded, format, placement,
                     "earned reward retained after the show ended without Rewarded: kept as the pending reward")),
                     format, placement, "the telemetry sink");
@@ -243,7 +248,7 @@ namespace Nexus.Ads
                 if (result == AdResult.Rewarded)
                 {
                     earned = rewardRecorded = true;
-                    Isolated(() => WriteReceipt(placement, out receipt), format, placement, "writing the reward receipt");
+                    Isolated(() => WriteReceipt(placement, context, out receipt), format, placement, "writing the reward receipt");
                 }
                 else KeepEarnedReward();
                 if (result == AdResult.Rewarded || result == AdResult.Closed) Isolated(() => _session.RecordShown(declared), format, placement, "recording the show");
@@ -370,12 +375,12 @@ namespace Nexus.Ads
         /// <summary>Removes only the named receipt from the queue, preserving other unacknowledged rewards.</summary>
         public void AcknowledgeReward(string receiptId) => RewardReceipts.Acknowledge(_store, receiptId);
 
-        private void WriteReceipt(string placement, out RewardReceipt? writtenReceipt)
+        private void WriteReceipt(string placement, string context, out RewardReceipt? writtenReceipt)
         {
             writtenReceipt = null;
             _rewardSequence++;
             string id = _clock.UtcDay + "-" + _rewardSequence + "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
-            var receipt = new RewardReceipt(id, placement);
+            var receipt = new RewardReceipt(id, placement, context);
             RewardReceipts.Write(_store, receipt);
             // Delivery identity is this show, not the queue head (which can belong to a late older show).
             writtenReceipt = receipt;

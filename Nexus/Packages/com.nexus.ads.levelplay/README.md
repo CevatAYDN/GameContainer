@@ -95,10 +95,14 @@ reverted, it comes back on the next open.
 
 Callbacks retain their original ad/show identity (#384). The public result completes once;
 the built-in controller also receives a separate earned notification, allowing a delivered
-late notification to retain one pending receipt after ordinary close or watchdog completion.
+late notification to append a pending receipt after ordinary close or watchdog completion.
+The queue preserves earlier unacknowledged rewards and each receipt's caller Context (#413/#414).
 Duplicate earning notifications do not recreate an acknowledged receipt. No collection of old
 SDK ads is retained. These controlled callback guarantees do not establish that the native SDK
-delivers a callback after its handle is destroyed; that device/provider boundary remains open.
+delivers a callback after its handle is destroyed. The owner-approved #384 contract
+covers events received by active owners and successfully persisted, with idempotent
+game grants; it excludes unreceived native events, failed persistence and process
+death before persistence. Closing the framework issue does not certify game acceptance.
 
 Editor/development builds expose `provider.RewardFaults` (#412): delay a received
 reward after close, replay it, or deliver A's reward when B opens. The Ads debug

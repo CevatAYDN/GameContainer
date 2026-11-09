@@ -32,11 +32,16 @@ namespace Nexus.Ads
     {
         public readonly string Id;
         public readonly string Placement;
+        /// <summary>Opaque caller offer token captured before Show. Null for legacy/uncontextualized calls.</summary>
+        public readonly string Context;
 
-        public RewardReceipt(string id, string placement)
+        public RewardReceipt(string id, string placement) : this(id, placement, null) { }
+
+        public RewardReceipt(string id, string placement, string context)
         {
             Id = id;
             Placement = placement;
+            Context = context;
         }
     }
 
@@ -49,7 +54,8 @@ namespace Nexus.Ads
     public static class RewardReceipts
     {
         internal const string Key = "nexus.ads.reward.pending";
-        private const string Header = "NXRQ2\n";
+        private const string LegacyQueueHeader = "NXRQ2\n";
+        private const string Header = "NXRQ3\n";
         private static readonly Encoding Utf8 = new UTF8Encoding(false, true);
 
         /// <summary>The oldest unacknowledged reward, or null. Invalid data throws instead of being reset.</summary>
@@ -78,7 +84,8 @@ namespace Nexus.Ads
             foreach (var existing in receipts)
                 if (existing.Id == receipt.Id)
                 {
-                    if (existing.Placement != receipt.Placement) throw new InvalidDataException("Reward id has conflicting placements.");
+                    if (existing.Placement != receipt.Placement || existing.Context != receipt.Context)
+                        throw new InvalidDataException("Reward id has conflicting placement/context.");
                     return;
                 }
             receipts.Add(receipt);
@@ -91,7 +98,8 @@ namespace Nexus.Ads
             string raw = store?.Get(Key);
             var receipts = new List<RewardReceipt>();
             if (string.IsNullOrEmpty(raw)) return receipts;
-            if (!raw.StartsWith(Header, StringComparison.Ordinal))
+            bool hasContext = raw.StartsWith(Header, StringComparison.Ordinal);
+            if (!hasContext && !raw.StartsWith(LegacyQueueHeader, StringComparison.Ordinal))
             {
                 int bar = raw.IndexOf('|');
                 if (bar <= 0 || raw.IndexOf('\n', 0, bar) >= 0)
@@ -104,12 +112,13 @@ namespace Nexus.Ads
             {
                 foreach (string row in raw.Substring(Header.Length).Split('\n'))
                 {
-                    int bar = row.IndexOf('|');
-                    if (bar <= 0) throw new FormatException("Invalid reward queue row.");
-                    string id = Utf8.GetString(Convert.FromBase64String(row.Substring(0, bar)));
-                    string placement = Utf8.GetString(Convert.FromBase64String(row.Substring(bar + 1)));
+                    string[] parts = row.Split('|');
+                    if (parts.Length != (hasContext ? 3 : 2)) throw new FormatException("Invalid reward queue row.");
+                    string id = Utf8.GetString(Convert.FromBase64String(parts[0]));
+                    string placement = Utf8.GetString(Convert.FromBase64String(parts[1]));
+                    string context = !hasContext || parts[2] == "-" ? null : Utf8.GetString(Convert.FromBase64String(parts[2]));
                     if (id.Length == 0 || !ids.Add(id)) throw new FormatException("Empty or duplicate reward id.");
-                    receipts.Add(new RewardReceipt(id, placement));
+                    receipts.Add(new RewardReceipt(id, placement, context));
                 }
             }
             catch (Exception error) when (error is FormatException || error is DecoderFallbackException)
@@ -125,7 +134,8 @@ namespace Nexus.Ads
             {
                 if (i != 0) buffer.Append('\n');
                 buffer.Append(Convert.ToBase64String(Utf8.GetBytes(receipts[i].Id))).Append('|')
-                    .Append(Convert.ToBase64String(Utf8.GetBytes(receipts[i].Placement)));
+                    .Append(Convert.ToBase64String(Utf8.GetBytes(receipts[i].Placement))).Append('|')
+                    .Append(receipts[i].Context == null ? "-" : Convert.ToBase64String(Utf8.GetBytes(receipts[i].Context)));
             }
             return buffer.ToString();
         }

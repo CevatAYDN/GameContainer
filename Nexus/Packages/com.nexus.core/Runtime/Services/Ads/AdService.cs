@@ -65,6 +65,13 @@ namespace Nexus.Core.Services
 
         /// <summary>Rewarded flow with a structured result; NotReady when nothing is loaded, without calling the adapter.</summary>
         void RequestReward(string placement, Action<AdOutcome> onOutcome);
+        /// <summary>Context-capable implementations preserve this token in their reward receipt. A custom service
+        /// must opt in: non-null tokens are never silently dropped.</summary>
+        void RequestReward(string placement, string context, Action<AdOutcome> onOutcome)
+        {
+            if (context != null) throw new NotSupportedException("This ad service does not support reward context.");
+            RequestReward(placement, onOutcome);
+        }
         /// <summary>Raised when ad readiness may have changed (adapter set and initialized, the adapter reports a change, or the
         /// interstitial cooldown ends while an <see cref="ITickService"/> ticks the service).</summary>
         event Action ReadyChanged;
@@ -198,6 +205,21 @@ namespace Nexus.Core.Services
                 outcomes.RequestReward(placement, onOutcome);
             else
                 adapter.ShowRewarded(placement, success => onOutcome?.Invoke(success ? AdOutcome.Rewarded : AdOutcome.Closed));
+        }
+
+        public void RequestReward(string placement, string context, Action<AdOutcome> onOutcome)
+        {
+            if (context == null) { RequestReward(placement, onOutcome); return; }
+            IAdNetworkAdapter adapter;
+            lock (_lock)
+            {
+                if (_disposeState != 0) throw new ObjectDisposedException(nameof(AdService));
+                adapter = _adapter;
+            }
+            if (!(adapter is IAdContextAdapter contextual))
+                throw new NotSupportedException("The selected ad adapter cannot preserve reward context.");
+            if (!adapter.IsRewardedReady(placement)) { onOutcome?.Invoke(AdOutcome.NotReady); return; }
+            contextual.RequestReward(placement, context, onOutcome);
         }
 
         public bool PrivacyOptionsRequired

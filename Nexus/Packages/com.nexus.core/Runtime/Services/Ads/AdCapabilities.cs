@@ -26,6 +26,13 @@ namespace Nexus.Core.Services
         void RequestReward(string placement, Action<AdOutcome> onOutcome);
     }
 
+    /// <summary>Optional capability for preserving a caller's offer token in durable reward receipts (#414).</summary>
+    [Preserve]
+    public interface IAdContextAdapter
+    {
+        void RequestReward(string placement, string context, Action<AdOutcome> onOutcome);
+    }
+
     /// <summary>Optional adapter capability: raised whenever ad readiness may have changed (loaded, shown, consent changed).</summary>
     [Preserve]
     public interface IAdReadinessAdapter

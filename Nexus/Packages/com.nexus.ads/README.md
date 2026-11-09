@@ -244,6 +244,12 @@ Stop on any read/grant/save/ack failure. Acknowledging B out of order leaves A i
 Inside a live callback, capture `DeliveringReward` before invoking game listeners;
 `PendingReward` is for startup/replay and may belong to a different show (#380, #413).
 Both the controller and static `Ads` facade expose `DeliveringReward`.
+For dynamic offers use `Show(placement, context, callback)` (#414). Persist the
+offer before showing and pass its lookup key. `RewardReceipt.Context` keeps that
+exact token through late delivery and startup replay; resolve the offer by this
+token, never by the newest placement offer. Context is not the payment idempotency
+key: deduplicate by `receipt.Id`. Null-context legacy receipts need an explicit
+game migration policy. The bridge provides the matching `RequestReward` overload.
 Legacy `id|placement` data is read and migrated on the first successful mutation. The queue stays
 in the same `nexus.ads.reward.pending` row, with one write per append/ack; corrupt data throws and
 is preserved rather than reset. Do not downgrade while queued receipts exist: older packages

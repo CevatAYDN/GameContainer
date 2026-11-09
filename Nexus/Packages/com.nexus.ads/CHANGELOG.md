@@ -1,5 +1,17 @@
 # Changelog
 
+## Caller offer context (#414)
+
+- Contextual `Show` / bridge `RequestReward` overloads capture an opaque caller
+  token before provider work. `RewardReceipt.Context` persists it on live, late and
+  replayed rewards. Existing calls/constructors use null context.
+- NXRQ3 reads NXRQ2 and legacy single receipts without inventing tokens. All
+  mutations retain each receipt's own context; unknown/corrupt formats fail closed.
+- Non-null context on unsupported custom services/adapters throws before showing.
+  The context-aware async grant overload preserves grant-before-ack semantics.
+- Games must retain immutable offer records and use Context for offer lookup,
+  Id for payment deduplication. No automatic repair of old ambiguous offers.
+
 ## Reward queue correction (#413)
 
 - Late reward A is no longer overwritten by B. All unacknowledged receipts live in one

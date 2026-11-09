@@ -3,7 +3,9 @@
 Tracking: [GameContainer #353](https://github.com/CevatAYDN/GameContainer/issues/353).
 This is the live record for the owner's 2026-11-09 request, not a release certificate.
 Base HEAD: `6bc6cc4321fb53ed5a6209816d3cb2a590b9aebc`.
-The fixes are working-tree changes; no commit, push or consumer re-pin has been performed.
+Published checkpoints: `1fee270d`, `05b5de61`, and `b70feced`. The final context
+API/closure commit is identified in #414/#384/#353. Consumer pins are owned by the
+game repositories; this checkout did not modify their sources or pins.
 
 ## Acceptance Boundary
 
@@ -12,6 +14,17 @@ physical-device observations and live store/provider acceptance are different ev
 A passing count does not prove every possible execution or every future game correct.
 An issue is closed only for its stated, reproduced behavior; unpublished source is
 identified explicitly in its closure comment.
+
+**Owner-approved final reward contract (2026-11-09):** Nexus preserves show and
+caller-offer identity for events received by an active provider/controller, and
+retains successfully persisted receipts until id-specific acknowledgement. Game
+grant idempotency/confirmation and the underlying store's durability are required.
+No unconditional delivery is claimed before durable write, after owner disposal,
+on storage failure/process termination, or for an event the native SDK never
+delivers. Fault injection demonstrates processing of a received event, not new
+native-event production after destruction. The owner explicitly accepted this
+boundary for #384/#353 closure instead of requiring a server-verification backend.
+Game integration and physical acceptance remain their own tracked deliverables.
 
 The earlier #344-#352 remediation is recorded in
 [the immutable remediation report](archive/REMEDIATION-2026-11-09.md).
@@ -54,7 +67,7 @@ to individual issues. Source candidates were not counted as bugs until reproduce
 | #389 | Terminal update status ends the wait; late failed/accepted activity results are classified correctly | Actual SDK1.8.3 managed request objects; 6 targeted and 9 existing tests |
 | #402, #403, #404, #405, #406, #407 | Fail-closed progression/clock reads, path/query failures, retired writes, capture ordering and stale negative cache | Storage25 host regressions and native cases, including observer-disposal and lock-order follow-ups |
 | #382 | Opt-in `RequestRewardAsync(placement, grant, ct)`: grant runs inside the callback before acknowledgement; a throwing grant faults the task and keeps the receipt; legacy overload unchanged | Four new host regressions (`A02_GrantOverload*`) plus the two legacy characterizations; full host run passed |
-| #384 | Managed callbacks preserve show identity, but delivery after native handle destruction is not established | Controlled late-callback regressions pass; actual provider/device boundary OPEN |
+| #384 | Received callbacks preserve identity; #413 retains all receipts and #414 binds the original offer | Controlled SDK regressions + consumer device reports; owner-approved received-event contract above. Spontaneous native post-destroy delivery is not claimed |
 | #391 | One process-wide SDK manager (no handler accumulation); a status-only terminal request is ended through the SDK's own error path so the next start is accepted | `sdk-googleplay-p06-red-01`: 3 expected failures on the baseline runtime; `sdk-googleplay-p06-green-01`: 18 passed / 0 failed, 0 CS diagnostics (SDK appupdate1.8.3) |
 | #410 | Not a Nexus defect: Unity's own `com.unity3d.player.PlayAssetDeliveryUnityWrapper` probes the optional class by reflection and logs the `ClassNotFoundException` when Play Asset Delivery is absent | `410-empty-unity-probe`: an empty Unity6000.6.8f1 IL2CPP project with no Nexus package logs the same line on the same phone; string evidence from the engine's `classes.jar` |
 
@@ -181,6 +194,42 @@ binder/build validation and, for ChipCrisis, actual offline-clock consumer paths
 
 ## Closure Status
 
+### Final context API and owner-approved closure (#414, #384, #353)
+
+`RewardReceipt.Context` stores the caller's opaque offer key captured by contextual
+`Show` / bridge `RequestReward` before SDK work. NXRQ3 reads NXRQ2 and original
+single rows with null context; no old offer association is invented. Existing
+calls remain compatible. Unsupported custom services/adapters reject non-null
+tokens before showing; the grant-before-ack async overload also carries context.
+Games resolve the immutable offer by Context and deduplicate payment by Id.
+
+RED: the pre-feature controller cannot bind the caller token. GREEN includes late
+A=630 after B=800 starts, B's live context, encrypted reopen, total1430 (not1600),
+legacy/null/empty/malformed token handling, unsupported-adapter rejection, and
+facade/callback lifetime. Final native EditMode **1021/0/1**, PlayMode **322/0/2**;
+existing configuration skips are unchanged. LevelPlay9.5.1 **7/7**, AdMob11.6.0
+**10/10** with context assertions; Android Development/Release player scripts and
+fault API exclusion passed. Host **644/0** and four engine-module compile variants passed.
+The initial facade test failed because it did not finish its interactive simulator;
+the corrected fixture explicitly completes the show (no product assertion relaxed).
+Evidence: `framework-closure-20261109/issue414-*`, SDK snapshots
+`framework-full-review-20261109/issue414-{levelplay,admob}/`.
+
+Final Android Development IL2CPP build succeeded: APK **102,405,930 bytes**,
+SHA256 `5556293E1F4BF28C0F8AD68FD3048D77A29BA8A0E3109D0F82C670E243AE0B2E`,
+`framework-full-review-20261109/issue414-android/android-il2cpp-dev.apk`. The
+sidecar identifies the pre-commit dirty source tree. BuildReport has **11
+warnings** (existing UAC0009/pipeline warnings), zero C# errors; no zero-warning
+claim or new physical-device run. SDK compilation and device observation remain
+separate. Documentation check: **152 files / 0 broken links**.
+
+#414 is resolved by the contextual receipt API. #384 is resolved under the explicit
+owner-approved received-event contract, with the original identity/loss defects
+covered by #413/#414 and SDK tests. #353 records completed framework review and
+remediation within that scope, not mathematical flawlessness or game release
+certification. Consumer work remains Formatron#11 and ChipCrisis#18 (and their
+device parent issues); their open status is not concealed by framework closure.
+
 ### ChipCrisis follow-up: #413
 
 The device `next` experiment exposed a missed boundary: after A is delivered late
@@ -226,7 +275,8 @@ Consumer follow-up: re-pin, retain idempotency for out-of-order receipts, use
 `DeliveringReward` in callbacks and drain `PendingReward` on startup. Re-run the
 device `next` case through B's reward, then restart twice. Prior lost receipts
 cannot be reconstructed. Do not downgrade with queued data. #384's spontaneous
-native-event-after-destruction boundary remains separate and open.
+native-event-after-destruction boundary remains explicitly outside the final
+owner-approved guarantee; this historical #413 step did not establish it.
 
 ### Formatron follow-up: #411 and #412
 
@@ -262,11 +312,10 @@ native-event-after-destruction boundary remains separate and open.
   signal timing failures during concurrent compiler load remain recorded; the
   final serial full suites passed without changing their thresholds.
 
-The full-review fixes #354-#409 are closed except #384:
-#382 and #391 were resolved in a follow-up with red/green evidence, and #410 was
-attributed to the Unity engine. Overall #353 remains open while #384's native
-callback-after-destroy boundary is unestablished.
-Closing local fixes does not publish them.
+The earlier #354-#409 remediation, #410 attribution and #411-#414 follow-ups are
+recorded above. Final #384/#353 closure uses the owner-approved contract, not an
+assertion that an unobserved native callback was observed. Published SHA and
+consumer adoption steps are recorded in the corresponding issue comments.
 
 ## Preservation
 

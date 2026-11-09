@@ -23,22 +23,24 @@ namespace Nexus.Editor.Tests
         {
             using var rig = new Rig();
             rig.Provider.RewardFaults.DebugDeliverRewardDuringNextShow();
-            rig.Controller.Show("first", _ => { });
+            rig.Controller.Show("first", "offer-A-630", _ => { });
             rig.CloseMockRewarded();
             rig.Scheduler.Advance(2);
             string b = null;
-            rig.Controller.Show(placement, result =>
+            rig.Controller.Show(placement, "offer-B-800", result =>
             {
                 Assert.That(result, Is.EqualTo(AdResult.Rewarded));
                 var delivered = rig.Controller.DeliveringReward.Value;
                 b = delivered.Id;
                 Assert.That(delivered.Placement, Is.EqualTo(placement));
+                Assert.That(delivered.Context, Is.EqualTo("offer-B-800"));
                 rig.Controller.AcknowledgeReward(b);
             });
             string a = rig.Controller.PendingReward.Value.Id;
             rig.CloseMockRewarded(); // B also earns, unlike the earlier #412 test that ended before this boundary.
             Assert.That(b, Is.Not.Null.And.Not.EqualTo(a));
             Assert.That(rig.Controller.PendingReward?.Id, Is.EqualTo(a), "B must not replace A (#413).");
+            Assert.That(rig.Controller.PendingReward?.Context, Is.EqualTo("offer-A-630"), "A cannot inherit B's offer (#414).");
             rig.Controller.AcknowledgeReward(a);
             Assert.That(rig.Controller.PendingReward, Is.Null);
             rig.Provider.RewardFaults.DebugReplayLastReward();

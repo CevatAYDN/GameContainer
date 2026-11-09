@@ -457,6 +457,35 @@ namespace Nexus.Ads.Bridge.Tests
 #if UNITY_EDITOR
         [Test]
 #endif
+        public void Context_EncryptedReopenResolvesOriginalOffersWhenBAcknowledgesBeforeA()
+        {
+            using var files = new Files();
+            using var rig = new Rig(files.OpenReceipts());
+            using var economy = new EconomyService { PlayerPrefsService = files.OpenGame() };
+            // These fixed persisted offer keys represent the game's pre-ad records, not the latest offer amount.
+            var offers = new Dictionary<string, long> { { "offer-a", 630 }, { "offer-b", 800 } };
+            rig.Adapter.RequestReward("reward", "offer-a", _ => throw new IOException("A awaits recovery"));
+            ExpectIOException(() => rig.Complete(AdResult.Rewarded));
+            rig.Adapter.RequestReward("reward", "offer-b", _ =>
+            {
+                var b = rig.Controller.DeliveringReward.Value;
+                Require(b.Context == "offer-b", "B's callback must bind to B's pre-ad offer.");
+                economy.EarnOnce("coin", offers[b.Context], b.Id);
+            });
+            rig.Complete(AdResult.Rewarded);
+            using var restart = new Rig(files.OpenReceipts());
+            using var reopenedEconomy = new EconomyService { PlayerPrefsService = files.OpenGame() };
+            var a = restart.Controller.PendingReward.Value;
+            Require(a.Context == "offer-a", "Encrypted reopen must recover A's token rather than B's newest offer.");
+            reopenedEconomy.EarnOnce("coin", offers[a.Context], a.Id);
+            restart.Controller.AcknowledgeReward(a.Id);
+            using var final = new EconomyService { PlayerPrefsService = files.OpenGame() };
+            Require(final.GetBalance("coin") == 1430, "Distinct offers pay 630+800, never 800+800.");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
         public void Queue_FailedAppendPreservesAllPreviouslyPersistedReceipts()
             => FailedQueueMutation(append: true);
 

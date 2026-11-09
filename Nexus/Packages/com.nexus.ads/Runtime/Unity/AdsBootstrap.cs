@@ -388,10 +388,14 @@ namespace Nexus.Ads.Unity
         public static bool IsReady(string placement) => Controller != null && Controller.IsReady(placement);
 
         public static void Show(string placement, Action<AdResult> onResult = null)
+            => Show(placement, null, onResult);
+
+        /// <summary>Shows with a caller offer token persisted in the earned receipt. Null means no context.</summary>
+        public static void Show(string placement, string context, Action<AdResult> onResult)
         {
             var controller = Controller;
             if (controller == null) { onResult?.Invoke(AdResult.NotReady); return; }
-            controller.Show(placement, onResult);
+            controller.Show(placement, context, onResult);
         }
 
         public static void HideBanner() => Controller?.HideBanner();

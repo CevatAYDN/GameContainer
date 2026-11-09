@@ -31,6 +31,7 @@ namespace NexusBench
             Check(nameof(tests.Queue_FailedAppendPreservesAllPreviouslyPersistedReceipts), tests.Queue_FailedAppendPreservesAllPreviouslyPersistedReceipts);
             Check(nameof(tests.Queue_FailedNonHeadAcknowledgementPreservesAllPreviouslyPersistedReceipts), tests.Queue_FailedNonHeadAcknowledgementPreservesAllPreviouslyPersistedReceipts);
             Check(nameof(tests.Queue_OutOfOrderEconomyCommitsAndInterruptedAckDoNotDoublePayAfterRestart), tests.Queue_OutOfOrderEconomyCommitsAndInterruptedAckDoNotDoublePayAfterRestart);
+            Check(nameof(tests.Context_EncryptedReopenResolvesOriginalOffersWhenBAcknowledgesBeforeA), tests.Context_EncryptedReopenResolvesOriginalOffersWhenBAcknowledgesBeforeA);
             var commits = new EncryptedStorageCommitTests();
             Check(nameof(commits.MixedSuccessfulAndFailedKeys_NeverConfirmTheBatch), commits.MixedSuccessfulAndFailedKeys_NeverConfirmTheBatch);
             Check(nameof(commits.AutoSaveFailure_RemainsUnconfirmed_AndReopensThePreviousValue), commits.AutoSaveFailure_RemainsUnconfirmed_AndReopensThePreviousValue);
