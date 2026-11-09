@@ -110,11 +110,15 @@ and receipt keys can partially commit. The example below uses one JSON wallet an
 public receipt API. For startup/replay, `Ads.PendingReward` / `Ads.AcknowledgeReward(id)` are
 the facade equivalent. Inside a live reward callback, use `AdController.DeliveringReward`:
 this is the receipt for that delivery, captured before telemetry, close, or readiness handlers
-can trigger another show. `PendingReward` can already refer to a newer reward at that point.
+can trigger another show. `PendingReward` can refer to an older or different reward at that point.
 `DeliveringReward` is callback-scoped (copy it synchronously), null for non-reward results or a
 failed receipt write, and restored after a nested callback even if that callback throws.
-The example reconciles the single pending receipt before accepting another reward. A last-receipt field is
-not a general historical receipt ledger, and the ads store keeps only one pending receipt.
+Since #413 the ads store keeps a versioned queue in one row. `PendingReward` is the oldest entry;
+`AcknowledgeReward(id)` removes only that id, even if a newer B is paid while late A remains pending.
+Replay until empty, stopping on failure. A single last-receipt field is insufficient when callbacks
+and replay can apply ids out of order: use the economy's `EarnOnce` ledger, or persist all relevant
+applied ids atomically with custom game state. Legacy single-receipt data migrates on mutation;
+do not downgrade to a pre-#413 package while the queue is nonempty.
 
 ### Rewards Paid Into Nexus Economy
 
@@ -132,12 +136,12 @@ bool applied = economy.EarnOnce(currencyId, savedOfferAmount, receipt.Id, receip
 // The return confirms the currency, including a retry of an already-applied receipt.
 // Send secondary notifications only after this call; they do not prove persistence.
 
-// Startup: resolve the persisted offer data for this pending receipt first.
-var pending = controller.PendingReward;
-if (pending.HasValue)
+// Startup: resolve EACH receipt's persisted offer; do not reuse the newest offer's amount.
+while (controller.PendingReward is RewardReceipt pending)
 {
-    economy.EarnOnce(currencyId, savedOfferAmount, pending.Value.Id, pending.Value.Placement);
-    controller.AcknowledgeReward(pending.Value.Id);
+    var offer = ResolvePersistedOffer(pending); // game-specific; fail if context is missing
+    economy.EarnOnce(offer.CurrencyId, offer.Amount, pending.Id, pending.Placement);
+    controller.AcknowledgeReward(pending.Id);
 }
 ```
 
@@ -153,6 +157,7 @@ one-way wallet format. Custom economy implementations must explicitly support th
 
 ```csharp
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Nexus.Ads;
 using Nexus.Core.Services;
@@ -164,7 +169,8 @@ public sealed class DurableRewards
     public sealed class Wallet
     {
         public int Balance;
-        public string LastReceiptId;
+        public string LastReceiptId; // legacy field: retain and migrate before writing
+        public List<string> AppliedReceiptIds = new List<string>();
     }
 
     private readonly IPlayerPrefsService _save; // a supported store, e.g. EncryptedStorageService
@@ -184,10 +190,13 @@ public sealed class DurableRewards
         if (status == StorageReadStatus.Unreadable) throw new IOException("Wallet is unreadable.");
         var wallet = status == StorageReadStatus.Absent ? new Wallet() : JsonUtility.FromJson<Wallet>(json);
         if (wallet == null) throw new IOException("Wallet is invalid.");
-        if (wallet.LastReceiptId != receipt.Id)
+        wallet.AppliedReceiptIds ??= new List<string>();
+        if (!string.IsNullOrEmpty(wallet.LastReceiptId) && !wallet.AppliedReceiptIds.Contains(wallet.LastReceiptId))
+            wallet.AppliedReceiptIds.Add(wallet.LastReceiptId);
+        if (!wallet.AppliedReceiptIds.Contains(receipt.Id))
         {
             wallet.Balance += 10; // this game's fixed shop_refill grant
-            wallet.LastReceiptId = receipt.Id;
+            wallet.AppliedReceiptIds.Add(receipt.Id);
             _save.SetString("wallet", JsonUtility.ToJson(wallet));
         }
         _save.SaveOrThrow(); // also required on an idempotent replay of a prior committed grant
@@ -195,10 +204,11 @@ public sealed class DurableRewards
 
     public void ReplayPending()
     {
-        var receipt = _controller.PendingReward;
-        if (!receipt.HasValue) return;
-        Grant(receipt.Value); // failure leaves the receipt pending
-        _controller.AcknowledgeReward(receipt.Value.Id);
+        while (_controller.PendingReward is RewardReceipt receipt)
+        {
+            Grant(receipt); // failure leaves this and later receipts pending
+            _controller.AcknowledgeReward(receipt.Id);
+        }
     }
 
     private void GrantCurrent()
@@ -229,6 +239,8 @@ receipt supplies the missing grant. Keep reward delivery serialized and recover 
 wallets explicitly instead of resetting them. These guarantees depend on the blob store's atomic
 commit and the receipt store's durable persistence; `TrySave()` adds no durable guarantee to
 unimplemented stores and does not make two live caches over the same files safe.
+The custom example retains its applied-id history; do not prune ids merely because a newer
+receipt was paid. Historical ambiguity in a legacy last-id-only save cannot be reconstructed.
 
 `TrySave()` confirms successful OS/filesystem operations at the commit check, **not** an
 `fsync`/stable-media or sudden-power-loss guarantee. The encrypted store does not force file and

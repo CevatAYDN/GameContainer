@@ -42,6 +42,22 @@ last received reward** must not recreate an acknowledged receipt. **Reset** ends
 the experiment and delivers a held, received reward rather than dropping it.
 Only one fault can be pending. Destroying the provider cancels the experiment.
 
+### #413: continue the `next` experiment through B's own reward
+
+Checking A immediately when B opens is insufficient. Let B earn and finish too,
+and acknowledge **B's `DeliveringReward` id** in its live callback. Before #413,
+B overwrote A; the old #412 tests stopped before this second reward and missed
+the loss. With the queue fix A must remain the oldest `PendingReward` after B's
+successful acknowledgement. Restart, grant A idempotently and acknowledge A;
+restart again and confirm neither receipt is replayed. Repeat with the same and
+different placements, retaining the original offer/context per receipt.
+
+If B's grant commits but acknowledgement is interrupted, startup may process A
+before retrying B. The game must deduplicate **all relevant ids**, not only the
+last applied id; use `EarnOnce` for the economy or an atomic applied-id ledger.
+Drain the pending queue until empty, stopping on any failure. A reward already
+overwritten by the pre-#413 package cannot be reconstructed by this migration.
+
 The Android development player also accepts an Intent string extra, independent
 of whether the panel is visible. Resolve the real launch activity; do not assume
 UnityPlayerActivity versus UnityPlayerGameActivity:

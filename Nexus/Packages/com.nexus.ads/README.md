@@ -199,9 +199,12 @@ if (controller != null && Ads.IsReady(AdPlacements.ShopRefill))
 
 Ads.Show(AdPlacements.LevelEnd); // interstitial: NaturalBreak placement, paced by the guard
 
-// at start-up, before or after the ads start: a reward the previous run was killed in the middle of
-var receipt = Ads.PendingReward;
-if (receipt.HasValue) { Wallet.GrantAndConfirm(receipt.Value); Ads.AcknowledgeReward(receipt.Value.Id); }
+// At startup: drain oldest first; any failure stops replay without acknowledging it.
+while (Ads.PendingReward is RewardReceipt receipt)
+{
+    Wallet.GrantAndConfirm(receipt);
+    Ads.AcknowledgeReward(receipt.Id);
+}
 ```
 
 Or drop `AdRewardedButton` on a uGUI Button with a `CanvasGroup`: it hides itself while nothing can
@@ -234,10 +237,19 @@ provider no longer has (AdMob drops one after an hour, or at a consent change) i
 readiness check and reloads, with an `Expired` telemetry event (issue #175). A paid reward is written to the store before the game hears of
 it (`PendingReward`, read from `PlayerPrefs` and so available before the ads start); `AdRewardedButton`
 acknowledges it after its listeners ran, the bridge's `IAdService` once the game's callback returned,
-and a game that saves asynchronously acknowledges it itself. One receipt is kept: a reward written
-over an unacknowledged one is logged in every build (`RewardReplaced`, issue #178).
+and a game that saves asynchronously acknowledges it itself. Unacknowledged receipts are appended
+to a durable queue (#413), so a late A reward cannot be overwritten by B. `PendingReward` returns
+the oldest; after a confirmed idempotent grant, acknowledge its id and read again until empty.
+Stop on any read/grant/save/ack failure. Acknowledging B out of order leaves A intact.
 Inside a live callback, capture `DeliveringReward` before invoking game listeners;
-`PendingReward` is for startup/replay and can already hold a newer delivery (#380).
+`PendingReward` is for startup/replay and may belong to a different show (#380, #413).
+Both the controller and static `Ads` facade expose `DeliveringReward`.
+Legacy `id|placement` data is read and migrated on the first successful mutation. The queue stays
+in the same `nexus.ads.reward.pending` row, with one write per append/ack; corrupt data throws and
+is preserved rather than reset. Do not downgrade while queued receipts exist: older packages
+cannot read the new format. `RewardReplaced` is retained as an enum value for compatibility but
+the built-in controller no longer emits it. Queue persistence inherits the store's guarantees;
+this does not create an atomic transaction between the game's wallet and the receipt store.
 The bridge's outcome-only `RequestRewardAsync` can complete after callback-return
 acknowledgement; it is not the confirmed-grant boundary (#382).
 

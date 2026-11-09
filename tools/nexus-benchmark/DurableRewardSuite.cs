@@ -27,6 +27,10 @@ namespace NexusBench
             Check(nameof(tests.TelemetryAndAdClosedReentry_KeepTheOriginalGrantAndTheNewerPendingReceipt), tests.TelemetryAndAdClosedReentry_KeepTheOriginalGrantAndTheNewerPendingReceipt);
             Check(nameof(tests.DeliverySnapshot_RestoresAfterNestedAndNonRewardCallbacks_AndClearsAfterThrow), tests.DeliverySnapshot_RestoresAfterNestedAndNonRewardCallbacks_AndClearsAfterThrow);
             Check(nameof(tests.ReceiptWriteFailure_DoesNotDeliverAnOlderPendingId), tests.ReceiptWriteFailure_DoesNotDeliverAnOlderPendingId);
+            Check(nameof(tests.Queue_BAcknowledgementPreservesUnpaidAOnDiskAcrossRestart), tests.Queue_BAcknowledgementPreservesUnpaidAOnDiskAcrossRestart);
+            Check(nameof(tests.Queue_FailedAppendPreservesAllPreviouslyPersistedReceipts), tests.Queue_FailedAppendPreservesAllPreviouslyPersistedReceipts);
+            Check(nameof(tests.Queue_FailedNonHeadAcknowledgementPreservesAllPreviouslyPersistedReceipts), tests.Queue_FailedNonHeadAcknowledgementPreservesAllPreviouslyPersistedReceipts);
+            Check(nameof(tests.Queue_OutOfOrderEconomyCommitsAndInterruptedAckDoNotDoublePayAfterRestart), tests.Queue_OutOfOrderEconomyCommitsAndInterruptedAckDoNotDoublePayAfterRestart);
             var commits = new EncryptedStorageCommitTests();
             Check(nameof(commits.MixedSuccessfulAndFailedKeys_NeverConfirmTheBatch), commits.MixedSuccessfulAndFailedKeys_NeverConfirmTheBatch);
             Check(nameof(commits.AutoSaveFailure_RemainsUnconfirmed_AndReopensThePreviousValue), commits.AutoSaveFailure_RemainsUnconfirmed_AndReopensThePreviousValue);

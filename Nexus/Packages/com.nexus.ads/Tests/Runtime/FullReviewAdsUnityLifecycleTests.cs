@@ -33,7 +33,6 @@ namespace Nexus.Editor.Tests
                     newerId = rig.Bootstrap.Controller.DeliveringReward.Value.Id;
                     throw new IOException("the reentrant grant did not commit");
                 });
-                LogAssert.Expect(LogType.Warning, new Regex(@"^\[Nexus Ads\] RewardReplaced "));
                 Assert.Throws<IOException>(() => rig.Bootstrap.Simulator.CompleteShow(AdResult.Rewarded));
             });
 

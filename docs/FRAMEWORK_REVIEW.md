@@ -181,6 +181,53 @@ binder/build validation and, for ChipCrisis, actual offline-clock consumer paths
 
 ## Closure Status
 
+### ChipCrisis follow-up: #413
+
+The device `next` experiment exposed a missed boundary: after A is delivered late
+during B, B must also earn and acknowledge. The earlier #412 test stopped while B
+was still open. On the old core, two controlled regressions (same/different
+placement) failed for each provider with `Expected A id / actual null` after B.
+
+The receipt store now appends to a versioned queue in the existing single row.
+`PendingReward` is the oldest entry, `DeliveringReward` identifies the live
+callback, and acknowledgement removes only its id, including non-head B. Legacy
+single rows migrate on mutation; corrupt data is preserved with an exception.
+The queue has no eviction policy; replay must drain it after confirmed grants.
+It inherits the store's durability and does not promise a cross-store transaction.
+
+Verification on Unity6000.6.8f1: host **637 passed / 0 failed**; targeted native controller/durable
+tests **35/35**; full EditMode **1014 passed / 0 failed / 1 skipped**, full PlayMode
+**321 passed / 0 failed / 2 skipped**. LevelPlay9.5.1: **2/2 red, 7/7 green**;
+AdMob11.6.0: **2/2 red, 10/10 green**. Real encrypted-file tests cover reopen after
+B's ack, failed append/ack retaining both prior receipts, and an interrupted B
+economy commit followed by A/B replay without duplicate credit (`EarnOnce`).
+Legacy migration, distinct placements, duplicate/unknown/non-head ack and corrupt
+tail preservation are also exercised. No game code or pin was edited.
+
+Evidence: `Nexus/artifacts/framework-closure-20261109/issue413-*` and
+`Nexus/artifacts/framework-full-review-20261109/issue413-com.nexus.ads.{levelplay,admob}-{red,green}/`.
+The native runner's historical source digest covers core/FSM only; explicit
+`issue413-inputs-before.json` / `issue413-inputs-after.json` additionally cover all
+changed files and match. SDK snapshots record their own inputs.
+
+Both SDK projects passed Android Development/Release player-script compilation
+and fault-tool exclusion checks; all four engine-module compile variants passed.
+The framework Android Development IL2CPP build also succeeded (APK 102,397,445
+bytes; SHA256 `D10132CFAECC2CB20ED8B0AAEB18F4BCEB23C9F20355912E1FC920843802C812`).
+Artifact: `framework-full-review-20261109/issue413-android/android-il2cpp-dev.apk`.
+Its sidecar identifies the pre-commit dirty working tree, not a clean published
+build. No new physical-device run was performed. BuildReport counted **11
+warnings**, including LevelPlay's existing UAC0009 conditional-compilation
+diagnostics despite its local pragma; C# errors were zero. This APK is not a
+zero-warning release acceptance claim. Main-project EditMode/PlayMode reported
+no CS/UAC compiler diagnostics.
+
+Consumer follow-up: re-pin, retain idempotency for out-of-order receipts, use
+`DeliveringReward` in callbacks and drain `PendingReward` on startup. Re-run the
+device `next` case through B's reward, then restart twice. Prior lost receipts
+cannot be reconstructed. Do not downgrade with queued data. #384's spontaneous
+native-event-after-destruction boundary remains separate and open.
+
 ### Formatron follow-up: #411 and #412
 
 - **#411:** Source and per-play gain now share one value-type pool entry. There

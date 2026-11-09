@@ -399,9 +399,12 @@ namespace Nexus.Ads.Unity
         // the receipt is a PlayerPrefs row, read before the controller exists: before StartAds, or before the posted start ran (issue #178)
         private static readonly PlayerPrefsPacingStore ReceiptStore = new PlayerPrefsPacingStore();
 
-        /// <summary>A paid reward no one acknowledged yet (the previous run may have been killed); pay it, then acknowledge.
-        /// Readable at start-up, before the ads start.</summary>
+        /// <summary>The oldest unacknowledged reward. Grant/persist, acknowledge, then read again until empty.
+        /// Readable before ads start; decoding/storage errors propagate. Stop replay on failure.</summary>
         public static RewardReceipt? PendingReward => RewardReceipts.Pending(ReceiptStore);
+
+        /// <summary>This live callback's receipt, never the older queue head. Copy it synchronously.</summary>
+        public static RewardReceipt? DeliveringReward => Controller?.DeliveringReward;
 
         public static void AcknowledgeReward(string receiptId) => RewardReceipts.Acknowledge(ReceiptStore, receiptId);
 

@@ -425,6 +425,123 @@ namespace Nexus.Ads.Bridge.Tests
             }
         }
 
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void Queue_BAcknowledgementPreservesUnpaidAOnDiskAcrossRestart()
+        {
+            using var files = new Files();
+            using var rig = new Rig(files.OpenReceipts());
+            var game = files.OpenGame();
+            ExpectIOException(() => rig.Deliver(true, () => throw new IOException("A is not paid")));
+            string a = rig.Controller.PendingReward.Value.Id;
+            string b = null;
+            rig.Deliver(true, () =>
+            {
+                var delivered = rig.Controller.DeliveringReward.Value;
+                b = delivered.Id;
+                Require(rig.Controller.PendingReward?.Id == a, "B's callback must not change the queue head to B.");
+                Grant(game, delivered);
+            });
+            Require(b != a && ReadWallet(files.OpenGame()).Balance == 10, "B is persisted once using its delivery id.");
+            using var restart = new Rig(files.OpenReceipts());
+            var replayGame = files.OpenGame();
+            Require(restart.Controller.PendingReward?.Id == a, "B's adapter acknowledgement must retain A on disk.");
+            Grant(replayGame, restart.Controller.PendingReward.Value);
+            restart.Controller.AcknowledgeReward(a);
+            using var secondRestart = new Rig(files.OpenReceipts());
+            Require(!secondRestart.Controller.PendingReward.HasValue && ReadWallet(files.OpenGame()).Balance == 20,
+                "A and B are both paid once, and neither replays after its acknowledgement.");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void Queue_FailedAppendPreservesAllPreviouslyPersistedReceipts()
+            => FailedQueueMutation(append: true);
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void Queue_FailedNonHeadAcknowledgementPreservesAllPreviouslyPersistedReceipts()
+            => FailedQueueMutation(append: false);
+
+        private static void FailedQueueMutation(bool append)
+        {
+            using var files = new Files();
+            var storage = files.OpenReceipts();
+            using var rig = new Rig(storage);
+            string a = null, b = null;
+            ExpectIOException(() => rig.Deliver(true, () =>
+            {
+                a = rig.Controller.DeliveringReward.Value.Id;
+                throw new IOException("A pending");
+            }));
+            ExpectIOException(() => rig.Deliver(true, () =>
+            {
+                b = rig.Controller.DeliveringReward.Value.Id;
+                throw new IOException("B pending");
+            }));
+            const string key = "nexus.ads.reward.pending";
+            files.Block(storage, key);
+            files.ExpectFailedDispose(storage);
+            if (append)
+                ExpectIOException(() => rig.Deliver(true, () =>
+                {
+                    Require(!rig.Controller.DeliveringReward.HasValue, "C's failed write must not borrow A or B's id.");
+                    throw new IOException("C not durable");
+                }));
+            else ExpectIOException(() => rig.Controller.AcknowledgeReward(b));
+
+            // Observe the disk before cleanup can retry the failed buffered save.
+            using var restart = new Rig(files.OpenReceipts());
+            Require(restart.Controller.PendingReward?.Id == a, "Failed mutation must preserve the durable head.");
+            files.Close(storage);
+            files.Unblock(storage, key);
+            restart.Controller.AcknowledgeReward(a);
+            Require(restart.Controller.PendingReward?.Id == b, "The durable non-head receipt must also survive.");
+            restart.Controller.AcknowledgeReward(b);
+            using var final = new Rig(files.OpenReceipts());
+            Require(!final.Controller.PendingReward.HasValue, "Only the two previously durable receipts may replay.");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void Queue_OutOfOrderEconomyCommitsAndInterruptedAckDoNotDoublePayAfterRestart()
+        {
+            using var files = new Files();
+            using var rig = new Rig(files.OpenReceipts());
+            using var economy = new EconomyService { PlayerPrefsService = files.OpenGame() };
+            string a = null, b = null;
+            ExpectIOException(() => rig.Deliver(true, () =>
+            {
+                a = rig.Controller.DeliveringReward.Value.Id;
+                throw new IOException("A awaits replay");
+            }));
+            ExpectIOException(() => rig.Deliver(true, () =>
+            {
+                b = rig.Controller.DeliveringReward.Value.Id;
+                Require(economy.EarnOnce("coin", 20, b), "B must commit once before interruption.");
+                throw new IOException("process interrupted after B commit, before ack");
+            }));
+            using var restarted = new Rig(files.OpenReceipts());
+            using var reopenedEconomy = new EconomyService { PlayerPrefsService = files.OpenGame() };
+            var replayed = new List<string>();
+            while (restarted.Controller.PendingReward is RewardReceipt receipt)
+            {
+                bool applied = reopenedEconomy.EarnOnce("coin", receipt.Id == a ? 10 : 20, receipt.Id);
+                Require(applied == (receipt.Id == a), "Only A is unpaid; B's durable id must deduplicate after paying A.");
+                replayed.Add(receipt.Id);
+                restarted.Controller.AcknowledgeReward(receipt.Id);
+            }
+            Require(replayed.Count == 2 && replayed[0] == a && replayed[1] == b, "Replay drains A then B.");
+            using var finalEconomy = new EconomyService { PlayerPrefsService = files.OpenGame() };
+            using var finalReceipts = new Rig(files.OpenReceipts());
+            Require(finalEconomy.GetBalance("coin") == 30 && !finalReceipts.Controller.PendingReward.HasValue,
+                "Interrupted out-of-order delivery must pay exactly 10+20, never 50.");
+        }
+
         private static void ExpectIOException(Action action)
         {
             try { action(); }

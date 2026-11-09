@@ -1,3 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+
 namespace Nexus.Ads
 {
     /// <summary>An impression's revenue as the mediation reports it, forwarded to analytics; a provider that leaves <see cref="Placement"/> empty gets the placement the controller last showed for that format.</summary>
@@ -36,31 +41,94 @@ namespace Nexus.Ads
     }
 
     /// <summary>
-    /// The pending reward receipt, an <see cref="IPacingStore"/> row, so a game reads it at start-up before any controller exists
-    /// (issue #178). One receipt is kept: a reward written over an unacknowledged one is recorded as
-    /// <see cref="AdEventKind.RewardReplaced"/>.
+    /// Unacknowledged rewards in one versioned <see cref="IPacingStore"/> row, readable before a controller exists.
+    /// Appends preserve older receipts (#413); acknowledgements remove only the named id, including out of order.
+    /// The legacy id|placement row is read without rewriting it until a successful mutation.
+    /// All calls use the store's owning/main thread, like the controller. No in-memory queue is cached.
     /// </summary>
     public static class RewardReceipts
     {
         internal const string Key = "nexus.ads.reward.pending";
+        private const string Header = "NXRQ2\n";
+        private static readonly Encoding Utf8 = new UTF8Encoding(false, true);
 
-        /// <summary>The reward the game has not acknowledged yet, or null.</summary>
+        /// <summary>The oldest unacknowledged reward, or null. Invalid data throws instead of being reset.</summary>
         public static RewardReceipt? Pending(IPacingStore store)
         {
-            string raw = store?.Get(Key);
-            if (string.IsNullOrEmpty(raw)) return null;
-            int bar = raw.IndexOf('|');
-            return bar <= 0 ? (RewardReceipt?)null : new RewardReceipt(raw.Substring(0, bar), raw.Substring(bar + 1));
+            var receipts = Read(store);
+            return receipts.Count == 0 ? (RewardReceipt?)null : receipts[0];
         }
 
-        /// <summary>Clears the pending receipt when its id matches; any other id leaves it untouched.</summary>
+        /// <summary>Removes only this id; unknown or repeated acknowledgements do not write the store.</summary>
         public static void Acknowledge(IPacingStore store, string receiptId)
         {
-            var pending = Pending(store);
-            if (pending.HasValue && pending.Value.Id == receiptId) store.Set(Key, "");
+            var receipts = Read(store);
+            int index = receipts.FindIndex(receipt => receipt.Id == receiptId);
+            if (index < 0) return;
+            receipts.RemoveAt(index);
+            store.Set(Key, Encode(receipts));
         }
 
-        internal static void Write(IPacingStore store, RewardReceipt receipt) => store.Set(Key, receipt.Id + "|" + receipt.Placement);
+        internal static void Write(IPacingStore store, RewardReceipt receipt)
+        {
+            if (store == null) throw new ArgumentNullException(nameof(store));
+            if (string.IsNullOrEmpty(receipt.Id) || receipt.Placement == null)
+                throw new ArgumentException("A reward requires an id and a placement.", nameof(receipt));
+            var receipts = Read(store);
+            foreach (var existing in receipts)
+                if (existing.Id == receipt.Id)
+                {
+                    if (existing.Placement != receipt.Placement) throw new InvalidDataException("Reward id has conflicting placements.");
+                    return;
+                }
+            receipts.Add(receipt);
+            // One store write replaces the complete row. Never split head/tail across independent keys.
+            store.Set(Key, Encode(receipts));
+        }
+
+        private static List<RewardReceipt> Read(IPacingStore store)
+        {
+            string raw = store?.Get(Key);
+            var receipts = new List<RewardReceipt>();
+            if (string.IsNullOrEmpty(raw)) return receipts;
+            if (!raw.StartsWith(Header, StringComparison.Ordinal))
+            {
+                int bar = raw.IndexOf('|');
+                if (bar <= 0 || raw.IndexOf('\n', 0, bar) >= 0)
+                    throw new InvalidDataException("Unreadable reward receipt; the stored row was preserved.");
+                receipts.Add(new RewardReceipt(raw.Substring(0, bar), raw.Substring(bar + 1)));
+                return receipts;
+            }
+            var ids = new HashSet<string>(StringComparer.Ordinal);
+            try
+            {
+                foreach (string row in raw.Substring(Header.Length).Split('\n'))
+                {
+                    int bar = row.IndexOf('|');
+                    if (bar <= 0) throw new FormatException("Invalid reward queue row.");
+                    string id = Utf8.GetString(Convert.FromBase64String(row.Substring(0, bar)));
+                    string placement = Utf8.GetString(Convert.FromBase64String(row.Substring(bar + 1)));
+                    if (id.Length == 0 || !ids.Add(id)) throw new FormatException("Empty or duplicate reward id.");
+                    receipts.Add(new RewardReceipt(id, placement));
+                }
+            }
+            catch (Exception error) when (error is FormatException || error is DecoderFallbackException)
+            { throw new InvalidDataException("Unreadable reward queue; the stored row was preserved.", error); }
+            return receipts;
+        }
+
+        private static string Encode(List<RewardReceipt> receipts)
+        {
+            if (receipts.Count == 0) return "";
+            var buffer = new StringBuilder(Header);
+            for (int i = 0; i < receipts.Count; i++)
+            {
+                if (i != 0) buffer.Append('\n');
+                buffer.Append(Convert.ToBase64String(Utf8.GetBytes(receipts[i].Id))).Append('|')
+                    .Append(Convert.ToBase64String(Utf8.GetBytes(receipts[i].Placement)));
+            }
+            return buffer.ToString();
+        }
     }
 
     public enum AdEventKind
@@ -91,8 +159,8 @@ namespace Nexus.Ads
         /// <summary>A subscriber or a telemetry sink threw while the controller answered a show or raised ReadyChanged; the detail
         /// names the step and the exception. The rest of the answer, the game's result included, still ran (issue #176).</summary>
         HandlerFailed,
-        /// <summary>A paid reward was written over a receipt the game never acknowledged, whose reward the next start no longer
-        /// sees; the detail names both receipts (issue #178).</summary>
+        /// <summary>Legacy replacement event (#178), retained for enum compatibility. Since #413 the built-in controller
+        /// appends receipts and does not emit this event.</summary>
         RewardReplaced,
     }
 

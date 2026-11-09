@@ -352,22 +352,22 @@ namespace Nexus.Ads
         }
 
         /// <summary>
-        /// The reward the game has not acknowledged yet: written to the store before the show result is
-        /// delivered, cleared by <see cref="AcknowledgeReward"/>. A game checks it at start-up and pays
-        /// a reward the previous run was killed in the middle of. Null when nothing is pending.
+        /// The oldest unacknowledged reward, written before its result is delivered. At startup, grant and
+        /// persist this receipt idempotently, acknowledge its id, then read again until empty (#413).
+        /// Stop on any read/grant/save/ack failure. Null when nothing is pending.
         /// </summary>
         public RewardReceipt? PendingReward => RewardReceipts.Pending(_store);
 
         /// <summary>
         /// The receipt written for the current synchronous show-result callback, captured before
-        /// telemetry, close and readiness notifications can replace PendingReward. Null outside a
+        /// telemetry, close and readiness notifications can mutate the pending queue. Null outside a
         /// result callback, for non-reward results, or when writing its receipt failed. Nested result
         /// callbacks restore the outer value even when they throw. Copy this value inside the callback
         /// to identify its grant; use <see cref="PendingReward"/> only for pending/startup replay.
         /// </summary>
         public RewardReceipt? DeliveringReward { get; private set; }
 
-        /// <summary>Clears the pending receipt when its id matches; any other id leaves it untouched.</summary>
+        /// <summary>Removes only the named receipt from the queue, preserving other unacknowledged rewards.</summary>
         public void AcknowledgeReward(string receiptId) => RewardReceipts.Acknowledge(_store, receiptId);
 
         private void WriteReceipt(string placement, out RewardReceipt? writtenReceipt)
@@ -376,14 +376,9 @@ namespace Nexus.Ads
             _rewardSequence++;
             string id = _clock.UtcDay + "-" + _rewardSequence + "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
             var receipt = new RewardReceipt(id, placement);
-            var replaced = RewardReceipts.Pending(_store);
             RewardReceipts.Write(_store, receipt);
-            // Capture this show's identity before even the replacement telemetry can reenter.
+            // Delivery identity is this show, not the queue head (which can belong to a late older show).
             writtenReceipt = receipt;
-            // the next start pays only the newest receipt: an earlier reward nobody acknowledged is lost, and said so (issue #178)
-            if (replaced.HasValue)
-                _telemetry.Record(new AdEvent(AdEventKind.RewardReplaced, AdFormat.Rewarded, placement, "receipt " + replaced.Value.Id + " ('" + replaced.Value.Placement
-                    + "') was never acknowledged and is replaced by " + id + ": acknowledge each reward once it is paid"));
         }
 
         public bool PrivacyOptionsRequired => _consent != null && _consent.PrivacyOptionsRequired;

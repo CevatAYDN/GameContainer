@@ -877,24 +877,21 @@ namespace NexusBench
                 second.Dispose();
             }
 
-            // #178: a reward written over an unacknowledged receipt lost the earlier one without a word
+            // #413 supersedes the old #178 loss warning: appending must preserve both receipts.
             using (var rig = new AdsRig().Running())
             {
                 rig.Show("shop_refill"); rig.Provider.ShowCallback(AdResult.Rewarded);
                 var first = rig.Controller.PendingReward;
                 rig.Provider.Fill(AdFormat.Rewarded);
                 rig.Show("shop_refill"); rig.Provider.ShowCallback(AdResult.Rewarded);
+                bool keptFirst = rig.Controller.PendingReward?.Id == first?.Id;
+                rig.Controller.AcknowledgeReward(first.Value.Id);
                 var second = rig.Controller.PendingReward;
-                var row = rig.Telemetry.Events.Find(e => e.Kind == AdEventKind.RewardReplaced);
-                var lines = new List<string>();
-                new AdFailureLog(lines.Add, violations: false).Record(row);
                 rig.Controller.AcknowledgeReward(second.Value.Id);
-                rig.Provider.Fill(AdFormat.Rewarded);
-                rig.Show("shop_refill"); rig.Provider.ShowCallback(AdResult.Rewarded);
-                Check("AC54. ARewardOverAnUnacknowledgedReceipt_IsRecordedAndLogged_NamingBoth",
-                    first.HasValue && second.HasValue && first.Value.Id != second.Value.Id && rig.Telemetry.Count(AdEventKind.RewardReplaced) == 1
-                    && row.Detail != null && row.Detail.Contains(first.Value.Id) && row.Detail.Contains(second.Value.Id) && lines.Count == 1,
-                    $"row=[{row}] log=[{string.Join(" | ", lines)}] rows after an acknowledged reward={rig.Telemetry.Count(AdEventKind.RewardReplaced)} (expected 1)");
+                Check("AC54. ARewardBehindAnUnacknowledgedReceipt_PreservesBoth",
+                    keptFirst && first.HasValue && second.HasValue && first.Value.Id != second.Value.Id
+                    && !rig.Controller.PendingReward.HasValue && rig.Telemetry.Count(AdEventKind.RewardReplaced) == 0,
+                    "both identities survive, acknowledgement drains each once, no replacement/loss event");
             }
 
             // late attachment: the bridge wires the store's entitlement and remote config after the controller started

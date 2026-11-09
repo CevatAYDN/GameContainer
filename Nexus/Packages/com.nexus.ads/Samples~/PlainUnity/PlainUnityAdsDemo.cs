@@ -40,8 +40,12 @@ namespace NexusAdsSamples.PlainUnity
 
         private void Start()
         {
-            var receipt = Ads.PendingReward;
-            if (receipt.HasValue) { _coins += 50; Ads.AcknowledgeReward(receipt.Value.Id); _last = "paid a reward the last run was killed in the middle of"; }
+            while (Ads.PendingReward is RewardReceipt receipt)
+            {
+                _coins += 50; // Demo-only counter. A real game persists its grant and applied id before ack.
+                Ads.AcknowledgeReward(receipt.Id);
+                _last = "replayed pending reward";
+            }
         }
 
         private void OnGUI()
@@ -57,7 +61,7 @@ namespace NexusAdsSamples.PlainUnity
                     _last = "rewarded: " + result;
                     if (result != AdResult.Rewarded) return;
                     _coins += 50;
-                    var receipt = Ads.PendingReward;
+                    var receipt = Ads.DeliveringReward;
                     if (receipt.HasValue) Ads.AcknowledgeReward(receipt.Value.Id);
                 });
             GUI.enabled = true;

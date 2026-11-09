@@ -1,5 +1,17 @@
 # Changelog
 
+## Reward queue correction (#413)
+
+- Late reward A is no longer overwritten by B. All unacknowledged receipts live in one
+  versioned row; `PendingReward` returns the oldest and acknowledgement removes only its id.
+  Legacy `id|placement` is read and migrated on mutation. Corrupt queue data is preserved with
+  an exception. Do not downgrade with pending queued data.
+- Added `Ads.DeliveringReward` for facade users; live callbacks must use their delivery id,
+  while startup replay drains `PendingReward` until empty and stops on failures. Consumers
+  must retain idempotency for out-of-order ids (`EarnOnce` or an atomic applied-id ledger).
+- `RewardReplaced` remains for enum compatibility; built-in receipt writes no longer emit it.
+  The historical #178 single-slot behavior documented below is superseded.
+
 The changelog of the ad package family: `com.nexus.ads` (core, Unity layer, editor), the provider
 packages (`com.nexus.ads.levelplay`, the `Nexus.Ads.AdMob` and `Nexus.Ads.AdMob.Firebase` assemblies of
 `com.nexus.ads.admob`, whose legacy `AdMobAdapter`, removed in #14, has its history in the core's changelog) and

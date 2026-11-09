@@ -13,6 +13,124 @@ namespace Nexus.Editor.Tests
 #if UNITY_EDITOR
         [Test]
 #endif
+        public void A03_LateAThenRewardedBRetainsAAfterBAcknowledgement()
+            => LateAThenB("first");
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void A03_LateAThenDifferentPlacementBRetainsBothIdentities()
+            => LateAThenB("second");
+
+        private static void LateAThenB(string nextPlacement)
+        {
+            var provider = new NotifyingProvider();
+            var store = new Store();
+            string firstId, secondId = null;
+            using (var rig = new Rig(provider: provider, store: store))
+            {
+                var firstResults = new List<AdResult>();
+                rig.Controller.Show("first", firstResults.Add);
+                provider.Results[0](AdResult.Closed);
+                rig.Controller.Show(nextPlacement, result =>
+                {
+                    Require(result == AdResult.Rewarded, "B must keep its own result.");
+                    var receipt = rig.Controller.DeliveringReward.Value;
+                    Require(receipt.Placement == nextPlacement, "B must keep its own placement.");
+                    secondId = receipt.Id;
+                    rig.Controller.AcknowledgeReward(receipt.Id);
+                });
+                provider.Earned[0]();
+                firstId = rig.Controller.PendingReward.Value.Id;
+                provider.Earned[1]();
+                provider.Results[1](AdResult.Rewarded);
+                Require(firstId != secondId, "Two earned shows need distinct identities.");
+                Require(rig.Controller.PendingReward?.Id == firstId,
+                    "B's write and acknowledgement discarded A's unacknowledged late reward (#413).");
+                Require(firstResults.SequenceEqual(new[] { AdResult.Closed }), "A must not complete twice.");
+                provider.Earned[0]();
+                provider.Earned[1]();
+            }
+            using var restarted = new Rig(store: store.Reopen());
+            Require(restarted.Controller.PendingReward?.Id == firstId, "A must survive controller/process reconstruction.");
+            restarted.Controller.AcknowledgeReward(firstId);
+            Require(!restarted.Controller.PendingReward.HasValue, "Acknowledged B must not replay behind A.");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void QueueMigratesLegacyAndAcknowledgesOutOfOrderWithoutLosingOtherIds()
+        {
+            var store = new Store();
+            const string key = "nexus.ads.reward.pending";
+            store.Set(key, "legacy-id|old|placement\nwith-unicode-ödül");
+            Require(RewardReceipts.Pending(store)?.Id == "legacy-id", "Read existing single-slot saves.");
+            var second = new RewardReceipt("b|id", "second\n|ödül");
+            var third = new RewardReceipt("c", "third");
+            RewardReceipts.Write(store, second);
+            RewardReceipts.Write(store, third);
+            RewardReceipts.Write(store, second);
+            var reopened = store.Reopen();
+            string before = reopened.Get(key);
+            RewardReceipts.Acknowledge(reopened, "unknown");
+            Require(reopened.Get(key) == before, "Unknown ack must not rewrite a queue.");
+            RewardReceipts.Acknowledge(reopened, "c");
+            RewardReceipts.Acknowledge(reopened, "c");
+            Require(RewardReceipts.Pending(reopened)?.Id == "legacy-id", "Out-of-order ack must preserve head.");
+            RewardReceipts.Acknowledge(reopened, "legacy-id");
+            var pending = RewardReceipts.Pending(reopened);
+            Require(pending?.Id == second.Id && pending?.Placement == second.Placement, "Queue fields must round-trip losslessly.");
+            RewardReceipts.Acknowledge(reopened, second.Id);
+            Require(!RewardReceipts.Pending(reopened).HasValue && reopened.Get(key) == "", "All receipts acknowledged exactly once.");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void QueueFailedAppendAndAckKeepPreviouslyPersistedReceipts()
+        {
+            var store = new Store();
+            RewardReceipts.Write(store, new RewardReceipt("a", "first"));
+            RewardReceipts.Write(store, new RewardReceipt("b", "second"));
+            string before = store.Get("nexus.ads.reward.pending");
+            store.FailWrites = true;
+            ExpectUnreadable(() => RewardReceipts.Write(store, new RewardReceipt("c", "third")));
+            ExpectUnreadable(() => RewardReceipts.Acknowledge(store, "b"));
+            Require(store.Get("nexus.ads.reward.pending") == before, "Failed mutations must not discard the durable row.");
+            var reopened = store.Reopen();
+            RewardReceipts.Acknowledge(reopened, "a");
+            Require(RewardReceipts.Pending(reopened)?.Id == "b", "Both existing receipts survive failed mutations and reopen.");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void QueueCorruptTailCannotBePartiallyAcknowledgedOrOverwritten()
+        {
+            var store = new Store();
+            const string key = "nexus.ads.reward.pending";
+            foreach (string raw in new[] { "unreadable", "NXRQ2\n", "NXRQ2\nYQ==|Yg==\nbroken", "NXRQ2\nYQ==|Yg==\nYQ==|Yw==" })
+            {
+                store.Set(key, raw);
+                ExpectUnreadable(() => RewardReceipts.Pending(store));
+                ExpectUnreadable(() => RewardReceipts.Acknowledge(store, "a"));
+                ExpectUnreadable(() => RewardReceipts.Write(store, new RewardReceipt("new", "placement")));
+                Require(store.Get(key) == raw, "Unreadable data must remain unchanged, including a corrupt queue tail.");
+            }
+        }
+
+        private static void ExpectUnreadable(Action action)
+        {
+            try { action(); }
+            catch (System.IO.IOException) { return; }
+            catch (System.IO.InvalidDataException) { return; }
+            throw new InvalidOperationException("Failed persistence/decoding must be observable.");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
         public void A03_Robustness_DuplicateResultAfterClosePreservesOneReceiptWithoutASecondCompletion()
         {
             using var rig = new Rig();
@@ -198,7 +316,7 @@ namespace Nexus.Editor.Tests
             public readonly Scheduler Scheduler;
             public readonly AdController Controller;
 
-            public Rig(IConsentFlow consent = null, Provider provider = null)
+            public Rig(IConsentFlow consent = null, Provider provider = null, Store store = null)
             {
                 Provider = provider ?? new Provider();
                 var clock = new Clock();
@@ -207,7 +325,7 @@ namespace Nexus.Editor.Tests
                     new[] { new AdPlacement("first", AdFormat.Rewarded), new AdPlacement("second", AdFormat.Rewarded) },
                     AdPolicy.Default, new ProviderConfig("", null, false, null, false, false, false, "G"), BuildKind.Editor);
                 Controller = new AdController(config, Provider, clock, new Visibility(), new MainThread(),
-                    Scheduler, new Store(), new Telemetry(), consent);
+                    Scheduler, store ?? new Store(), new Telemetry(), consent);
                 Controller.Start();
             }
 
@@ -308,8 +426,19 @@ namespace Nexus.Editor.Tests
         private sealed class Store : IPacingStore
         {
             private readonly Dictionary<string, string> _rows = new Dictionary<string, string>();
+            public bool FailWrites;
             public string Get(string key) => _rows.TryGetValue(key, out string value) ? value : null;
-            public void Set(string key, string value) => _rows[key] = value;
+            public void Set(string key, string value)
+            {
+                if (FailWrites) throw new System.IO.IOException("Injected durable row write failure");
+                _rows[key] = value;
+            }
+            public Store Reopen()
+            {
+                var copy = new Store();
+                foreach (var row in _rows) copy._rows.Add(row.Key, row.Value);
+                return copy;
+            }
         }
         private sealed class Telemetry : IAdTelemetry { public void Record(in AdEvent e) { } }
     }

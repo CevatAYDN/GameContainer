@@ -17,6 +17,34 @@ namespace Nexus.Editor.Tests
 {
     public sealed class FullReviewAdsLevelPlaySdkTests
     {
+        [TestCase("first")]
+        [TestCase("second")]
+        public void NextFault_LateARemainsPendingAfterBRewardsAndAcknowledges(string placement)
+        {
+            using var rig = new Rig();
+            rig.Provider.RewardFaults.DebugDeliverRewardDuringNextShow();
+            rig.Controller.Show("first", _ => { });
+            rig.CloseMockRewarded();
+            rig.Scheduler.Advance(2);
+            string b = null;
+            rig.Controller.Show(placement, result =>
+            {
+                Assert.That(result, Is.EqualTo(AdResult.Rewarded));
+                var delivered = rig.Controller.DeliveringReward.Value;
+                b = delivered.Id;
+                Assert.That(delivered.Placement, Is.EqualTo(placement));
+                rig.Controller.AcknowledgeReward(b);
+            });
+            string a = rig.Controller.PendingReward.Value.Id;
+            rig.CloseMockRewarded(); // B also earns, unlike the earlier #412 test that ended before this boundary.
+            Assert.That(b, Is.Not.Null.And.Not.EqualTo(a));
+            Assert.That(rig.Controller.PendingReward?.Id, Is.EqualTo(a), "B must not replace A (#413).");
+            rig.Controller.AcknowledgeReward(a);
+            Assert.That(rig.Controller.PendingReward, Is.Null);
+            rig.Provider.RewardFaults.DebugReplayLastReward();
+            Assert.That(rig.Controller.PendingReward, Is.Null);
+        }
+
         [TestCase(false)]
         [TestCase(true)]
         public void FaultHook_RealSdkRewardSurvivesDestroyAndCannotRewardTheNextShow(bool duringNext)
