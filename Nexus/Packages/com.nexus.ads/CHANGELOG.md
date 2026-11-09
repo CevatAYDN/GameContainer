@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreadable reward row quarantine (#415)
+
+- An unreadable `nexus.ads.reward.pending` row (bad base64, wrong field count, duplicate id,
+  unknown header) no longer blocks every later payout. The next earned reward copies the raw row
+  to `nexus.ads.reward.pending.corrupt.<n>` (first free `n`, never overwriting an earlier one),
+  then writes its receipt to a queue that restarts empty, so `DeliveringReward` is set.
+  The copy is written first: a failing store leaves the row untouched and the write fails.
+  A conflicting reward id, or a store `IOException`, never quarantines.
+- New `AdEventKind.RewardQuarantined` (appended last; the detail names the key), written in
+  every build by `AdFailureLog`.
+- New explicit recovery for startup replay: `RewardReceipts.QuarantineUnreadable(store)`,
+  `AdController.QuarantineUnreadableRewards()` and `Ads.QuarantineUnreadableRewards()` move an
+  unreadable row aside and empty the queue, returning the key, or return null and write nothing
+  when the row is readable. `PendingReward` and `AcknowledgeReward` still throw on an unreadable
+  row and never write. The rewards that row held are not recovered.
+
 ## Caller offer context (#414)
 
 - Contextual `Show` / bridge `RequestReward` overloads capture an opaque caller

@@ -200,6 +200,9 @@ if (controller != null && Ads.IsReady(AdPlacements.ShopRefill))
 Ads.Show(AdPlacements.LevelEnd); // interstitial: NaturalBreak placement, paced by the guard
 
 // At startup: drain oldest first; any failure stops replay without acknowledging it.
+// An unreadable row throws InvalidDataException from PendingReward: move it aside (#415), then read again.
+try { _ = Ads.PendingReward; }
+catch (InvalidDataException) { Ads.QuarantineUnreadableRewards(); } // returns the key that now holds the row
 while (Ads.PendingReward is RewardReceipt receipt)
 {
     Wallet.GrantAndConfirm(receipt);
@@ -228,10 +231,10 @@ still unanswered after 30 s (`Unanswered`, once each; the wait goes on), every f
 and LevelPlay providers write the SDK's reason on the line before), a subscriber or telemetry sink
 that threw while a show was answered or readiness changed (`HandlerFailed`, once per step and
 exception; issue #176), every turn of the kill switch on or off (`KillSwitch on` / `off`, issue #234;
-a configuration that changes what runs), and in a release build the policy block above. Successes are
-not logged.
-`InitFailed`, `ConsentRefused`, `Unanswered`, `HandlerFailed` and `Initialized` are telemetry events
-too. A show's result reaches the game exactly once whatever a subscriber, a sink or the reload
+a configuration that changes what runs), every unreadable reward row moved aside (`RewardQuarantined`,
+#415), and in a release build the policy block above. Successes are not logged.
+`InitFailed`, `ConsentRefused`, `Unanswered`, `HandlerFailed`, `Initialized` and `RewardQuarantined`
+are telemetry events too. A show's result reaches the game exactly once whatever a subscriber, a sink or the reload
 throws; an SDK load that throws is a failed load, retried with the back-off. A loaded ad the
 provider no longer has (AdMob drops one after an hour, or at a consent change) is seen at the next
 readiness check and reloads, with an `Expired` telemetry event (issue #175). A paid reward is written to the store before the game hears of
@@ -251,8 +254,19 @@ token, never by the newest placement offer. Context is not the payment idempoten
 key: deduplicate by `receipt.Id`. Null-context legacy receipts need an explicit
 game migration policy. The bridge provides the matching `RequestReward` overload.
 Legacy `id|placement` data is read and migrated on the first successful mutation. The queue stays
-in the same `nexus.ads.reward.pending` row, with one write per append/ack; corrupt data throws and
-is preserved rather than reset. Do not downgrade while queued receipts exist: older packages
+in the same `nexus.ads.reward.pending` row, with one write per append/ack; corrupt data is preserved
+rather than reset: `PendingReward` and `AcknowledgeReward` throw `InvalidDataException` and write
+nothing. An unreadable row never stops later payouts (#415): the next earned reward copies the raw
+row to `nexus.ads.reward.pending.corrupt.<n>` (`n` = 0, 1, 2, ..., the first free number; an earlier
+quarantined row is never overwritten), then writes its own receipt to a queue that restarts empty,
+so `DeliveringReward` is set as usual, and a `RewardQuarantined` event names the key (a store
+failure while copying leaves the row untouched and fails the write, as before). The receipts the
+row held are not recovered; the quarantined value is there for the game to inspect. A game whose
+startup replay hits the exception calls `Ads.QuarantineUnreadableRewards()` (or
+`AdController.QuarantineUnreadableRewards()`, or `RewardReceipts.QuarantineUnreadable(store)`):
+it does the same move, empties the main row, returns the key, or returns null and writes nothing
+when the row is readable. A conflicting id (same id, other placement or context) is not an
+unreadable row and still throws. Do not downgrade while queued receipts exist: older packages
 cannot read the new format. `RewardReplaced` is retained as an enum value for compatibility but
 the built-in controller no longer emits it. Queue persistence inherits the store's guarantees;
 this does not create an atomic transaction between the game's wallet and the receipt store.

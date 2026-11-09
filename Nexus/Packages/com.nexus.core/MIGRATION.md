@@ -145,7 +145,9 @@ failure out of the callback. A signal bus or event handler that catches a
 listener's exception is not that propagation boundary.
 Inside a live callback, copy `AdController.DeliveringReward` to identify that
 delivery. `PendingReward` is for startup/replay: a reentrant notification can
-replace it before an older callback runs.
+replace it before an older callback runs. If it throws `InvalidDataException`
+(an unreadable row), call `AdController.QuarantineUnreadableRewards()` (or
+`Ads.QuarantineUnreadableRewards()`) and read again (#415).
 
 Keep the reward state and applied receipt id in one atomically replaced blob,
 and reconcile a pending receipt before accepting another reward. Separate

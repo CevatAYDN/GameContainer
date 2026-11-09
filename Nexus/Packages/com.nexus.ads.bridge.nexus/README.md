@@ -74,7 +74,10 @@ A paid reward is written to the store before the game hears of it, and the adapt
 it once the game's `RequestReward` or `ShowRewarded` callback returned, so a receipt still pending
 at start-up is a reward whose callback never ran or threw (the app was killed in between). Check
 the static facade's `Ads.PendingReward` at start-up (it is read before the ads start), pay it, then
-`Ads.AcknowledgeReward(receipt.Value.Id)`. `IAdService` does not carry the receipt: a game whose
+`Ads.AcknowledgeReward(receipt.Value.Id)`. If `Ads.PendingReward` throws `InvalidDataException`
+(an unreadable row), call `Ads.QuarantineUnreadableRewards()` once and read again (#415); the row
+is kept under a `nexus.ads.reward.pending.corrupt.<n>` key, and a later earned reward does the
+same by itself. `IAdService` does not carry the receipt: a game whose
 reward carries data of its own (an amount captured at the offer, a target) keeps that data itself.
 
 ## Confirmed Reward Saves

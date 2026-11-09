@@ -75,23 +75,33 @@ namespace Nexus.Editor.Tests
             RewardReceipts.Acknowledge(reopened, "c");
             Require(RewardReceipts.Pending(reopened)?.Context == "offer|\nödül", "Context must round-trip exactly.");
             string before = reopened.Get(key);
-            ExpectUnreadable(() => RewardReceipts.Write(reopened, new RewardReceipt("d", "fourth", "different")));
+            Expect<System.IO.InvalidDataException>(() => RewardReceipts.Write(reopened, new RewardReceipt("d", "fourth", "different")),
+                "A conflicting context for an existing receipt id must be refused.");
             Require(reopened.Get(key) == before, "Conflicting context for an existing receipt id cannot replace its offer.");
+            Require(string.IsNullOrEmpty(reopened.Get(key + ".corrupt.0")),
+                "A conflicting id is not an unreadable row: nothing may be quarantined (#415).");
         }
 
 #if UNITY_EDITOR
         [Test]
 #endif
-        public void Context_CorruptV3TailCannotBeDroppedDuringAckOrAppend()
+        public void Context_CorruptV3RowIsNeverPartiallyAcknowledgedAndAnAppendKeepsItWholeInQuarantine()
         {
             var store = new Store();
             const string key = "nexus.ads.reward.pending";
+            int slot = 0;
             foreach (string row in new[] { "NXRQ3\nYQ==|Yg==", "NXRQ3\nYQ==|Yg==|?", "NXRQ3\nYQ==|Yg==|-\nYw==|ZA==|?" })
             {
                 store.Set(key, row);
                 ExpectUnreadable(() => RewardReceipts.Acknowledge(store, "a"));
-                ExpectUnreadable(() => RewardReceipts.Write(store, new RewardReceipt("new", "placement", "offer")));
-                Require(store.Get(key) == row, "Invalid context data must be retained for explicit recovery.");
+                Require(store.Get(key) == row, "An acknowledgement must not drop or rewrite an unreadable row.");
+                string quarantined = RewardReceipts.Write(store, new RewardReceipt("new", "placement", "offer"));
+                Require(quarantined == key + ".corrupt." + slot++ && store.Get(quarantined) == row,
+                    "Invalid context data must be retained exactly for explicit recovery (#415).");
+                var pending = RewardReceipts.Pending(store);
+                Require(pending?.Id == "new" && pending?.Context == "offer",
+                    "The earned reward must be written to a queue that restarts with only the new receipt.");
+                RewardReceipts.Acknowledge(store, "new");
             }
         }
 
@@ -191,18 +201,146 @@ namespace Nexus.Editor.Tests
 #if UNITY_EDITOR
         [Test]
 #endif
-        public void QueueCorruptTailCannotBePartiallyAcknowledgedOrOverwritten()
+        public void QueueCorruptTailCannotBePartiallyAcknowledgedAndAnAppendQuarantinesTheWholeRow()
         {
             var store = new Store();
             const string key = "nexus.ads.reward.pending";
+            int slot = 0;
             foreach (string raw in new[] { "unreadable", "NXRQ2\n", "NXRQ2\nYQ==|Yg==\nbroken", "NXRQ2\nYQ==|Yg==\nYQ==|Yw==" })
             {
                 store.Set(key, raw);
                 ExpectUnreadable(() => RewardReceipts.Pending(store));
                 ExpectUnreadable(() => RewardReceipts.Acknowledge(store, "a"));
-                ExpectUnreadable(() => RewardReceipts.Write(store, new RewardReceipt("new", "placement")));
-                Require(store.Get(key) == raw, "Unreadable data must remain unchanged, including a corrupt queue tail.");
+                Require(store.Get(key) == raw, "Reading and acknowledging must leave unreadable data unchanged, including a corrupt queue tail.");
+                string quarantined = RewardReceipts.Write(store, new RewardReceipt("new", "placement"));
+                Require(quarantined == key + ".corrupt." + slot++ && store.Get(quarantined) == raw,
+                    "The unreadable row must survive byte for byte under a fresh quarantine key (#415).");
+                Require(RewardReceipts.Pending(store)?.Id == "new", "The queue must go on with only the new receipt.");
+                RewardReceipts.Acknowledge(store, "new");
             }
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void CorruptPendingRow_IsQuarantinedByTheNextEarnedRewardSoItStillHasAReceipt()
+        {
+            const string key = "nexus.ads.reward.pending", corrupt = "NXRQ3\n!!notbase64|x|-";
+            var store = new Store();
+            store.Set(key, corrupt);
+            using var rig = new Rig(store: store);
+            AdResult? answer = null;
+            RewardReceipt? delivered = null;
+            rig.Controller.Show("first", result => { answer = result; delivered = rig.Controller.DeliveringReward; });
+
+            rig.Provider.Results[0](AdResult.Rewarded);
+
+            Require(answer == AdResult.Rewarded && delivered.HasValue,
+                "#415: an unreadable pending row left the Rewarded callback without a receipt, so the game could never pay again.");
+            Require(store.Get(key + ".corrupt.0") == corrupt, "The unreadable row must be kept exactly, under the first quarantine key.");
+            Require(rig.Controller.PendingReward?.Id == delivered.Value.Id, "The pending rewards must restart with the new receipt.");
+            var quarantined = rig.Events.Of(AdEventKind.RewardQuarantined);
+            Require(quarantined.Count == 1 && quarantined[0].Detail.Contains(key + ".corrupt.0") && quarantined[0].Placement == "first"
+                && rig.Events.Of(AdEventKind.HandlerFailed).Count == 0,
+                "The quarantine must be reported once, naming its key, and not as a failed receipt write.");
+
+            rig.Controller.Show("first", _ => { });
+            rig.Provider.Results[1](AdResult.Rewarded);
+
+            Require(rig.Events.Of(AdEventKind.RewardQuarantined).Count == 1 && store.Get(key + ".corrupt.1") == null,
+                "A healed row must take the next reward without being quarantined again.");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void QuarantineUnreadableRewards_UnblocksStartupReplayAndReportsOnce()
+        {
+            const string key = "nexus.ads.reward.pending", corrupt = "NXRQ3\n!!notbase64|x|-";
+            var store = new Store();
+            store.Set(key, corrupt);
+            using var rig = new Rig(store: store);
+            Expect<System.IO.InvalidDataException>(() => { _ = rig.Controller.PendingReward; }, "Startup replay must still see an unreadable row.");
+            Require(store.Get(key) == corrupt, "Reading the pending reward must not change an unreadable row.");
+
+            string moved = rig.Controller.QuarantineUnreadableRewards();
+
+            Require(moved == key + ".corrupt.0" && store.Get(moved) == corrupt && store.Get(key) == "",
+                "The row must move unchanged to the first quarantine key and the main row be emptied.");
+            Require(!rig.Controller.PendingReward.HasValue, "Replay must find an empty queue after the recovery.");
+            Require(rig.Events.Of(AdEventKind.RewardQuarantined).Count == 1, "The recovery must raise one telemetry row.");
+            Require(rig.Controller.QuarantineUnreadableRewards() == null && rig.Events.Of(AdEventKind.RewardQuarantined).Count == 1,
+                "A row that is readable again must not be quarantined or reported again.");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void Quarantine_NeverOverwritesAnEarlierQuarantinedRow()
+        {
+            const string key = "nexus.ads.reward.pending", first = "unreadable-one", second = "NXRQ3\n!!notbase64|x|-", third = "NXRQ2\nbroken";
+            var store = new Store();
+            store.Set(key, first);
+            string firstKey = RewardReceipts.Write(store, new RewardReceipt("a", "placement"));
+            store.Set(key, second);
+            string secondKey = RewardReceipts.Write(store, new RewardReceipt("b", "placement"));
+            store.Set(key, third);
+            string thirdKey = RewardReceipts.QuarantineUnreadable(store);
+
+            Require(firstKey == key + ".corrupt.0" && secondKey == key + ".corrupt.1" && thirdKey == key + ".corrupt.2",
+                "Each unreadable row must take the first free quarantine key.");
+            Require(store.Get(firstKey) == first && store.Get(secondKey) == second && store.Get(thirdKey) == third,
+                "An earlier quarantined row must never be overwritten by a later one.");
+            Require(store.Get(key) == "" && !RewardReceipts.Pending(store).HasValue, "The explicit recovery must leave an empty queue.");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void QuarantineUnreadable_OnAnEmptyOrReadableRowReturnsNullAndWritesNothing()
+        {
+            const string key = "nexus.ads.reward.pending";
+            foreach (string raw in new[] { null, "", "legacy|placement", "NXRQ2\nYQ==|Yg==", "NXRQ3\nYQ==|Yg==|-" })
+            {
+                var store = new Store();
+                if (raw != null) store.Set(key, raw);
+                int writes = store.Writes;
+                Require(RewardReceipts.QuarantineUnreadable(store) == null && store.Writes == writes && store.Get(key) == raw,
+                    "A row that decodes (or is empty) is not unreadable: nothing may be written for '" + raw + "'.");
+            }
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void Quarantine_CopiesFirstSoAFailingStoreLeavesTheUnreadableRowIntact()
+        {
+            const string key = "nexus.ads.reward.pending", raw = "NXRQ3\n!!notbase64|x|-";
+            var store = new Store();
+            store.Set(key, raw);
+
+            store.FailWrites = true;
+            Expect<System.IO.IOException>(() => RewardReceipts.Write(store, new RewardReceipt("a", "placement")),
+                "A failing store must fail the write.");
+            Expect<System.IO.IOException>(() => RewardReceipts.QuarantineUnreadable(store), "A failing store must fail the recovery.");
+            store.FailWrites = false;
+            Require(store.Get(key) == raw && store.Get(key + ".corrupt.0") == null,
+                "When the copy cannot be written the unreadable row must stay exactly where it is.");
+
+            store.FailKey = key;
+            Expect<System.IO.IOException>(() => RewardReceipts.Write(store, new RewardReceipt("a", "placement")),
+                "A failing main-row write must fail the write.");
+            store.FailKey = null;
+            Require(store.Get(key) == raw && store.Get(key + ".corrupt.0") == raw,
+                "The copy must exist before the main row is touched, so a failure in between loses nothing.");
+        }
+
+        // exactly this failure: an unrelated one (a store's IOException for an unreadable-row case, say) is not swallowed
+        private static void Expect<T>(Action action, string message) where T : Exception
+        {
+            try { action(); }
+            catch (T) { return; }
+            throw new InvalidOperationException(message);
         }
 
         private static void ExpectUnreadable(Action action)
@@ -400,6 +538,7 @@ namespace Nexus.Editor.Tests
             public readonly Provider Provider;
             public readonly Scheduler Scheduler;
             public readonly AdController Controller;
+            public readonly RecordingTelemetry Events = new RecordingTelemetry();
 
             public Rig(IConsentFlow consent = null, Provider provider = null, Store store = null)
             {
@@ -410,7 +549,7 @@ namespace Nexus.Editor.Tests
                     new[] { new AdPlacement("first", AdFormat.Rewarded), new AdPlacement("second", AdFormat.Rewarded) },
                     AdPolicy.Default, new ProviderConfig("", null, false, null, false, false, false, "G"), BuildKind.Editor);
                 Controller = new AdController(config, Provider, clock, new Visibility(), new MainThread(),
-                    Scheduler, store ?? new Store(), new Telemetry(), consent);
+                    Scheduler, store ?? new Store(), Events, consent);
                 Controller.Start();
             }
 
@@ -512,10 +651,14 @@ namespace Nexus.Editor.Tests
         {
             private readonly Dictionary<string, string> _rows = new Dictionary<string, string>();
             public bool FailWrites;
+            /// <summary>Only a write to this key fails.</summary>
+            public string FailKey;
+            public int Writes;
             public string Get(string key) => _rows.TryGetValue(key, out string value) ? value : null;
             public void Set(string key, string value)
             {
-                if (FailWrites) throw new System.IO.IOException("Injected durable row write failure");
+                if (FailWrites || key == FailKey) throw new System.IO.IOException("Injected durable row write failure");
+                Writes++;
                 _rows[key] = value;
             }
             public Store Reopen()
@@ -525,6 +668,11 @@ namespace Nexus.Editor.Tests
                 return copy;
             }
         }
-        private sealed class Telemetry : IAdTelemetry { public void Record(in AdEvent e) { } }
+        private sealed class RecordingTelemetry : IAdTelemetry
+        {
+            private readonly List<AdEvent> _events = new List<AdEvent>();
+            public void Record(in AdEvent e) => _events.Add(e);
+            public List<AdEvent> Of(AdEventKind kind) => _events.Where(e => e.Kind == kind).ToList();
+        }
     }
 }

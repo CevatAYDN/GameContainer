@@ -404,13 +404,30 @@ namespace Nexus.Ads.Unity
         private static readonly PlayerPrefsPacingStore ReceiptStore = new PlayerPrefsPacingStore();
 
         /// <summary>The oldest unacknowledged reward. Grant/persist, acknowledge, then read again until empty.
-        /// Readable before ads start; decoding/storage errors propagate. Stop replay on failure.</summary>
+        /// Readable before ads start; decoding/storage errors propagate. Stop replay on failure. An unreadable row throws
+        /// <see cref="System.IO.InvalidDataException"/> and is preserved: call <see cref="QuarantineUnreadableRewards"/> (#415).</summary>
         public static RewardReceipt? PendingReward => RewardReceipts.Pending(ReceiptStore);
 
         /// <summary>This live callback's receipt, never the older queue head. Copy it synchronously.</summary>
         public static RewardReceipt? DeliveringReward => Controller?.DeliveringReward;
 
         public static void AcknowledgeReward(string receiptId) => RewardReceipts.Acknowledge(ReceiptStore, receiptId);
+
+        /// <summary>Moves an unreadable pending-reward row to a quarantine key and empties the queue (#415); like
+        /// <see cref="PendingReward"/> it needs no controller. Returns the key that holds the row's exact raw value, or null (nothing
+        /// written) when the row is empty or readable. A store failure propagates with the row untouched. The move is logged in
+        /// every build; an earned reward quarantines such a row by itself.</summary>
+        public static string QuarantineUnreadableRewards()
+        {
+            string key = RewardReceipts.QuarantineUnreadable(ReceiptStore);
+            if (key == null) return null;
+            var quarantined = RewardReceipts.QuarantineEvent(AdFormat.Rewarded, "", key);
+            // the running bootstrap's telemetry logs it in every build; with none, this is the only line, so it is written here
+            var telemetry = AdsBootstrap.Instance != null ? AdsBootstrap.Instance.Telemetry : null;
+            if (telemetry != null) telemetry.Record(quarantined);
+            else Debug.LogWarning("[Nexus Ads] " + quarantined);
+            return key;
+        }
 
         public static bool PrivacyOptionsRequired => Controller != null && Controller.PrivacyOptionsRequired;
 

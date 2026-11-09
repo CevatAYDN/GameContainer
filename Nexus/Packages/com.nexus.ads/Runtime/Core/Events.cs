@@ -49,23 +49,30 @@ namespace Nexus.Ads
     /// Unacknowledged rewards in one versioned <see cref="IPacingStore"/> row, readable before a controller exists.
     /// Appends preserve older receipts (#413); acknowledgements remove only the named id, including out of order.
     /// The legacy id|placement row is read without rewriting it until a successful mutation.
+    /// An unreadable row is never reset or silently overwritten: <see cref="Pending"/> and <see cref="Acknowledge"/> throw and
+    /// keep it, while a new earned reward moves it to a quarantine key and goes on with an empty queue (#415), so one corrupt
+    /// row cannot stop every later reward. <see cref="QuarantineUnreadable"/> does the same move on demand.
     /// All calls use the store's owning/main thread, like the controller. No in-memory queue is cached.
     /// </summary>
     public static class RewardReceipts
     {
         internal const string Key = "nexus.ads.reward.pending";
+        // an unreadable row's raw value is kept under Key + ".corrupt." + the first free number (0, 1, 2, ...), never overwritten
+        internal const string QuarantinePrefix = Key + ".corrupt.";
         private const string LegacyQueueHeader = "NXRQ2\n";
         private const string Header = "NXRQ3\n";
         private static readonly Encoding Utf8 = new UTF8Encoding(false, true);
 
-        /// <summary>The oldest unacknowledged reward, or null. Invalid data throws instead of being reset.</summary>
+        /// <summary>The oldest unacknowledged reward, or null. An unreadable row throws <see cref="InvalidDataException"/> and is
+        /// preserved, never reset and never written by this call; recover with <see cref="QuarantineUnreadable"/>.</summary>
         public static RewardReceipt? Pending(IPacingStore store)
         {
             var receipts = Read(store);
             return receipts.Count == 0 ? (RewardReceipt?)null : receipts[0];
         }
 
-        /// <summary>Removes only this id; unknown or repeated acknowledgements do not write the store.</summary>
+        /// <summary>Removes only this id; unknown or repeated acknowledgements do not write the store. An unreadable row throws
+        /// <see cref="InvalidDataException"/> and is preserved; recover with <see cref="QuarantineUnreadable"/>.</summary>
         public static void Acknowledge(IPacingStore store, string receiptId)
         {
             var receipts = Read(store);
@@ -75,27 +82,85 @@ namespace Nexus.Ads
             store.Set(Key, Encode(receipts));
         }
 
-        internal static void Write(IPacingStore store, RewardReceipt receipt)
+        /// <summary>
+        /// Moves an unreadable reward row out of the way so earned rewards can be written again (#415). Returns the quarantine key
+        /// that now holds the row's exact raw value (the main row is then emptied), or null when the row is empty or readable;
+        /// nothing is written in that case. The raw value is copied first and the main row cleared second, so a failing store
+        /// leaves the unreadable row where it was (the exception propagates). A quarantined row is never overwritten: the key is
+        /// <c>nexus.ads.reward.pending.corrupt.</c> plus the first free number. Rewards inside the row are not recovered
+        /// automatically; the game can read the key to decide.
+        /// </summary>
+        /// <exception cref="ArgumentNullException"><paramref name="store"/> is null.</exception>
+        public static string QuarantineUnreadable(IPacingStore store)
+        {
+            if (store == null) throw new ArgumentNullException(nameof(store));
+            string raw = store.Get(Key);
+            Decode(raw, out var failure);
+            if (failure == null) return null;
+            string quarantineKey = Quarantine(store, raw);
+            store.Set(Key, Encode(new List<RewardReceipt>()));
+            return quarantineKey;
+        }
+
+        /// <summary>Appends the receipt. Returns the quarantine key when the row was unreadable and was moved there first (#415),
+        /// else null. Only a row that does not decode quarantines: a conflicting id, an invalid receipt or a failing store throw
+        /// with the row untouched.</summary>
+        internal static string Write(IPacingStore store, RewardReceipt receipt)
         {
             if (store == null) throw new ArgumentNullException(nameof(store));
             if (string.IsNullOrEmpty(receipt.Id) || receipt.Placement == null)
                 throw new ArgumentException("A reward requires an id and a placement.", nameof(receipt));
-            var receipts = Read(store);
+            string raw = store.Get(Key);
+            var receipts = Decode(raw, out var failure);
+            string quarantineKey = null;
+            if (failure != null)
+            {
+                // the unreadable value is kept first: if this throws, the main row is untouched and nothing was lost
+                quarantineKey = Quarantine(store, raw);
+                receipts = new List<RewardReceipt>();
+            }
             foreach (var existing in receipts)
                 if (existing.Id == receipt.Id)
                 {
                     if (existing.Placement != receipt.Placement || existing.Context != receipt.Context)
                         throw new InvalidDataException("Reward id has conflicting placement/context.");
-                    return;
+                    return quarantineKey;
                 }
             receipts.Add(receipt);
             // One store write replaces the complete row. Never split head/tail across independent keys.
             store.Set(Key, Encode(receipts));
+            return quarantineKey;
+        }
+
+        /// <summary>The telemetry row for a quarantine, worded once for the controller and the static facade.</summary>
+        internal static AdEvent QuarantineEvent(AdFormat format, string placement, string quarantineKey)
+            => new AdEvent(AdEventKind.RewardQuarantined, format, placement ?? "",
+                "the unreadable reward row was kept unchanged under '" + quarantineKey + "' and the pending rewards restarted empty");
+
+        private static string Quarantine(IPacingStore store, string raw)
+        {
+            for (int n = 0; n >= 0; n++)
+            {
+                string key = QuarantinePrefix + n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (!string.IsNullOrEmpty(store.Get(key))) continue;
+                store.Set(key, raw);
+                return key;
+            }
+            throw new IOException("No free quarantine key for the unreadable reward row.");
         }
 
         private static List<RewardReceipt> Read(IPacingStore store)
         {
-            string raw = store?.Get(Key);
+            var receipts = Decode(store?.Get(Key), out var failure);
+            if (failure != null) throw failure;
+            return receipts;
+        }
+
+        // The one place that tells an unreadable row (failure set, receipts empty) from a readable or empty one, so that a caller
+        // quarantines on exactly that and never on a store failure or a conflicting id.
+        private static List<RewardReceipt> Decode(string raw, out InvalidDataException failure)
+        {
+            failure = null;
             var receipts = new List<RewardReceipt>();
             if (string.IsNullOrEmpty(raw)) return receipts;
             bool hasContext = raw.StartsWith(Header, StringComparison.Ordinal);
@@ -103,7 +168,10 @@ namespace Nexus.Ads
             {
                 int bar = raw.IndexOf('|');
                 if (bar <= 0 || raw.IndexOf('\n', 0, bar) >= 0)
-                    throw new InvalidDataException("Unreadable reward receipt; the stored row was preserved.");
+                {
+                    failure = new InvalidDataException("Unreadable reward receipt; the stored row was preserved.");
+                    return receipts;
+                }
                 receipts.Add(new RewardReceipt(raw.Substring(0, bar), raw.Substring(bar + 1)));
                 return receipts;
             }
@@ -122,7 +190,10 @@ namespace Nexus.Ads
                 }
             }
             catch (Exception error) when (error is FormatException || error is DecoderFallbackException)
-            { throw new InvalidDataException("Unreadable reward queue; the stored row was preserved.", error); }
+            {
+                failure = new InvalidDataException("Unreadable reward queue; the stored row was preserved.", error);
+                return new List<RewardReceipt>();
+            }
             return receipts;
         }
 
@@ -172,6 +243,10 @@ namespace Nexus.Ads
         /// <summary>Legacy replacement event (#178), retained for enum compatibility. Since #413 the built-in controller
         /// appends receipts and does not emit this event.</summary>
         RewardReplaced,
+        /// <summary>An unreadable reward row was moved to a quarantine key so earned rewards can be written again (#415); the
+        /// detail names the key, which holds the row's exact raw value. The queue went on empty: rewards that row held are not
+        /// pending any more, so the game decides from the quarantined value whether any needs its own recovery.</summary>
+        RewardQuarantined,
     }
 
     /// <summary>One telemetry row. The Unity layer forwards it to the game's analytics; every row carries the placement name.</summary>

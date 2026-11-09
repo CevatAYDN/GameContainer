@@ -216,7 +216,7 @@ namespace Nexus.Ads
             {
                 if (_disposed || !earned || rewardRecorded) return;
                 rewardRecorded = true;
-                Isolated(() => WriteReceipt(placement, context, out _), format, placement, "writing the reward receipt");
+                Isolated(() => WriteReceipt(format, placement, context, out _), format, placement, "writing the reward receipt");
                 Isolated(() => _telemetry.Record(new AdEvent(AdEventKind.Rewarded, format, placement,
                     "earned reward retained after the show ended without Rewarded: kept as the pending reward")),
                     format, placement, "the telemetry sink");
@@ -248,7 +248,7 @@ namespace Nexus.Ads
                 if (result == AdResult.Rewarded)
                 {
                     earned = rewardRecorded = true;
-                    Isolated(() => WriteReceipt(placement, context, out receipt), format, placement, "writing the reward receipt");
+                    Isolated(() => WriteReceipt(format, placement, context, out receipt), format, placement, "writing the reward receipt");
                 }
                 else KeepEarnedReward();
                 if (result == AdResult.Rewarded || result == AdResult.Closed) Isolated(() => _session.RecordShown(declared), format, placement, "recording the show");
@@ -359,7 +359,9 @@ namespace Nexus.Ads
         /// <summary>
         /// The oldest unacknowledged reward, written before its result is delivered. At startup, grant and
         /// persist this receipt idempotently, acknowledge its id, then read again until empty (#413).
-        /// Stop on any read/grant/save/ack failure. Null when nothing is pending.
+        /// Stop on any read/grant/save/ack failure. Null when nothing is pending. An unreadable row throws
+        /// <see cref="System.IO.InvalidDataException"/> and is preserved; call <see cref="QuarantineUnreadableRewards"/> to move it
+        /// aside (#415). An earned reward does that by itself, so the row never blocks a later payout.
         /// </summary>
         public RewardReceipt? PendingReward => RewardReceipts.Pending(_store);
 
@@ -372,18 +374,39 @@ namespace Nexus.Ads
         /// </summary>
         public RewardReceipt? DeliveringReward { get; private set; }
 
-        /// <summary>Removes only the named receipt from the queue, preserving other unacknowledged rewards.</summary>
+        /// <summary>Removes only the named receipt from the queue, preserving other unacknowledged rewards. An unreadable row
+        /// throws <see cref="System.IO.InvalidDataException"/> and is preserved; see <see cref="QuarantineUnreadableRewards"/>.</summary>
         public void AcknowledgeReward(string receiptId) => RewardReceipts.Acknowledge(_store, receiptId);
 
-        private void WriteReceipt(string placement, string context, out RewardReceipt? writtenReceipt)
+        /// <summary>
+        /// Moves an unreadable pending-reward row to a quarantine key and empties the queue (#415), for a game whose
+        /// <see cref="PendingReward"/> throws <see cref="System.IO.InvalidDataException"/> at start-up. Returns the key that holds
+        /// the row's exact raw value (<c>nexus.ads.reward.pending.corrupt.</c> plus the first free number; never overwritten) and
+        /// records a <see cref="AdEventKind.RewardQuarantined"/> row, or returns null and writes nothing when the row is empty or
+        /// readable. A store failure propagates with the row untouched. An earned reward quarantines such a row by itself, so this
+        /// call is for the replay that runs before one.
+        /// </summary>
+        public string QuarantineUnreadableRewards()
+        {
+            string key = RewardReceipts.QuarantineUnreadable(_store);
+            if (key != null)
+                Isolated(() => _telemetry.Record(RewardReceipts.QuarantineEvent(AdFormat.Rewarded, "", key)),
+                    AdFormat.Rewarded, "", "the telemetry sink");
+            return key;
+        }
+
+        private void WriteReceipt(AdFormat format, string placement, string context, out RewardReceipt? writtenReceipt)
         {
             writtenReceipt = null;
             _rewardSequence++;
             string id = _clock.UtcDay + "-" + _rewardSequence + "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
             var receipt = new RewardReceipt(id, placement, context);
-            RewardReceipts.Write(_store, receipt);
+            string quarantined = RewardReceipts.Write(_store, receipt);
             // Delivery identity is this show, not the queue head (which can belong to a late older show).
             writtenReceipt = receipt;
+            // the receipt is already durable and set for delivery: a throwing sink must not take DeliveringReward away from it
+            if (quarantined != null)
+                Isolated(() => _telemetry.Record(RewardReceipts.QuarantineEvent(format, placement, quarantined)), format, placement, "the telemetry sink");
         }
 
         public bool PrivacyOptionsRequired => _consent != null && _consent.PrivacyOptionsRequired;
