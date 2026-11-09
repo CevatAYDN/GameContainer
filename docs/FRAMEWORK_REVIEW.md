@@ -170,6 +170,15 @@ The framework tests do not close either game's phone, store or notification-tap 
 The issues were supplemented with the full-review callback/consent ownership,
 binder/build validation and, for ChipCrisis, actual offline-clock consumer paths.
 
+## Post-Commit Verification (`1fee270d`, pushed to `main`)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Host (pre-commit hook) | ALL BENCHMARKS / CODEGEN PASSED | commit hook output |
+| Full native EditMode | 994 passed / 0 failed / 1 skip; 0 CS diagnostics | `framework-closure-20261109/final-1fee270-editmode.*` |
+| Full native PlayMode | 319 passed / 0 failed / 2 skips; 0 CS diagnostics | `framework-closure-20261109/final-1fee270-playmode.*` |
+| #384 LevelPlay device probe | Player built against `1fee270d` and started `mode=Provider testMode=on`, but every load answered `509 Mediation No fill`; no ad could be shown, so the native callback-after-destroy boundary is still unobserved | `device-384-levelplay/` |
+
 ## Closure Status
 
 The full-review fixes #354-#409 are closed except #384:
