@@ -7,6 +7,7 @@ describe the code at their date. Current state lives in the package documentatio
 
 | File | Date | What it was | Superseded by |
 |---|---|---|---|
+| `REMEDIATION-2026-11-09.md` | 2026-11-09 | Evidence-backed working-tree remediation of #344-#352, red/green and independent-review corrections, Unity/host counts and consumer handoffs | Publication and consumer acceptance remain separate; full framework review is tracked in #353 |
 | `NEXUS_READY.md` | 2026-08-04 → 2026-08-13 | Production-readiness gates with the numbers of that time (86 runtime files, CI status) | `../RELEASE_GATES.md` |
 | `AUDIT_REPORT.md` | 2026-08-05 | Adversarial runtime audit (97 files at the time) | Fixes recorded in the package `CHANGELOG.md` ("Fixed (Adversarial Audit - 2026)") |
 | `AUDIT-2026-08-04.md` | 2026-08-04 | Audit of the 0.4.0 code with status banners added on 2026-08-06 | Package `CHANGELOG.md` |

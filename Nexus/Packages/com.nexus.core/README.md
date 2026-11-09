@@ -85,6 +85,12 @@ from such properties, which a mediator's `TrackObservable` disposes on unbind; `
 uGUI screens managed by `UIManager`, and UI Toolkit screens (`ToolkitScreen`) in a `ScreenStack` that
 also routes the back button, with `ToolkitPanelInput` for their `EventSystem` input ([SCREEN_STACK.md](docs/SCREEN_STACK.md)).
 
+Derived computations are versioned before the selector runs (#346): an older computation,
+including the initial one, cannot overwrite a newer successful result. Concurrent publication
+is serialized and may coalesce pending results; selectors and change handlers run outside the
+publication lock. Disposing rejects later computation results, clears pending results
+and detaches the sources; an already accepted publication may finish.
+
 **Lifecycle**: `IContextLifecycle` (`OnConfigure`, `OnInitializeAsync`, `OnStartAsync`,
 `OnDispose`), `IPostContextLifecycle`, `IStartable` / `IAsyncStartable` / `IStoppable` /
 `IAsyncStoppable`, `ITickable` / `IUnpausableTickable` / `IFixedTickable` / `ILateTickable`; `Root` scene anchor,
@@ -92,6 +98,12 @@ also routes the back button, with `ToolkitPanelInput` for their `EventSystem` in
 persistent global root; `ContextFactory.StartAsync` for scan-free code-first startup;
 `context.Instantiate(prefab, parent)` and `container.InjectGameObject(go)` inject a prefab clone
 (inactive children included) before Unity runs its Awake.
+If injection fails, the unreturned clone is destroyed without activation (#368).
+View registration cancelled from a bind callback does not attach a mediator or
+leave new subscriptions behind (#362). Lifecycle cleanup may follow partial or
+failed configuration; `OnDispose` must release only resources the lifecycle owns (#365).
+An unsuccessful transient/factory construction is cleaned by DI; a successfully
+returned transient remains the caller's cleanup responsibility (#371).
 
 **AOT and IL2CPP**: the editor generator (Nexus → Generate AOT Binder) and the Roslyn source
 generator (`SourceGenerator~/`) emit injectors, constructor factories and typed command
@@ -114,6 +126,14 @@ needs is installed below its asmdef's `versionDefines` expression (issue #143; t
 compile; TROUBLESHOOTING "Stale Generated Binder"), and a generated injector written for other `[Inject]`
 members than its type has now is dropped before its first run, with a warning, and the type falls back to reflection;
 so is a generated constructor factory written for other constructor parameters (issue #290).
+The editor's source-condition index removes comments/literals before reading directives (#354).
+Missing declarations, ambiguous short-name groups and members of differently conditional
+partial declarations are not guessed as unconditional: affected generated paths fall back
+to reflection with their preservation and a reason in the binder header. Regenerate after
+upgrading; the source index remains conservative, not a complete C# semantic analysis.
+Changing the editor binder's output path retires the old default file only after
+the new outputs succeed (#401). A file without the generated ownership tag is
+never deleted implicitly; a refused migration retains its prior script and meta.
 
 **Editor window** (menu **Nexus**, **Open Window** `Ctrl+Shift+N`): one window, 9 plugins, one tab each, in
 four sidebar sections. **Status**: one list of every problem the checks find, each with the action that fixes it (validation, code health, the binder, package versions, run-time errors and, in Play Mode, each context's bindings), the installed Nexus packages and the editor's state. **Setup**: Setup Wizard (starter scene, sample import, documents),
@@ -140,14 +160,63 @@ build. To run the package's own tests in a game, add `"testables": ["com.nexus.c
 `Packages/manifest.json`; the clean consumer gate (`tools/nexus-consumer`, `-ValidatePerformance`)
 runs seven of its suites that way.
 
+`InMemoryPlayerPrefsService` supports confirmed-save tests (#351): `Save()` or
+`TrySave()` commits a snapshot, `Reopen()` returns an independent store containing
+only that snapshot, and `FailNextSaves(count)` makes attempts commit nothing.
+`MarkUnreadable(key)` survives reopen; `Restore(key)` restores access without
+saving. Writes/deletes clear the live unreadable mark and need a successful save
+to persist that recovery. Typed values retain PlayerPrefs cross-type semantics.
+This single-threaded fake does not model partial multi-file commits or power loss;
+use `EncryptedStorageService` with real files for those persistence boundaries.
+The repository's `tools/nexus-code-audit.ps1` is text triage only (#355): comments
+and strings can match, untracked files are excluded, and zero matches are not a
+correctness verdict. Executable regressions and source review provide that evidence.
+
 **Not in the package** (so that no one looks for it): a UniTask or `Awaitable` adapter (none is needed: the entry
 points return `ValueTask` and await either inside them, [CANONICAL-PATTERNS.md](docs/CANONICAL-PATTERNS.md) "Canonical Async"); real advertising, store or analytics SDKs (adapter contracts only, and no simulated store or ad in a player, see
 [ADAPTERS.md](docs/ADAPTERS.md)); server authority for the economy and storage services.
 
 ## Services
 
+Network rollback (`NetworkSignalBus`, issue #348) replays external inputs and recomputes
+handler-derived signals from the restored state, including changed branches and future targets.
+External future inputs are scheduled at their recorded tick; due work runs before that tick's
+new external calls. Derived events use their corrected production tick/order, independently
+of event identity. Schedules produced before the rollback tick remain pending across a partial
+replay. Snapshots after the restored point are invalidated and rebuilt only for ticks replayed;
+capture a new tick with `SetTick` before rolling back to a previously abandoned future.
+Submit late external inputs before rollback and drain worker inputs before any owner fire.
+A replayed handler may emit only at the current tick or later. Use synchronous handlers and
+snapshot every participating model.
+The separate `NetworkSignalHistory<T>.ReplaySignals` API keeps an independent snapshot
+per active recursion depth, including when a callback clears or prunes history (#344);
+buffers are cleared/released on failure and reused after warmup. Its inspection and replay
+surfaces retain logical recording order after derived payloads are regenerated.
+
 Every service below lives in namespace `Nexus.Core.Services`, derives from `NexusService`, is
 bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispose` from its context.
+
+`ObjectPoolService.ClearPool` and `ClearAllPools` clean the pools/leases present when the
+operation begins (#345). A callback may spawn into a replacement pool; those new leases
+remain tracked and reusable, including across pools targeted by the same `ClearAllPools`.
+`Dispose` closes admission first, so acquiring or initializing after it starts throws
+`ObjectDisposedException`. An acquisition interrupted by activation or `OnSpawned` is
+rejected instead of returning a stale lease. A cleared prewarm is cancelled even on its final yield.
+Fresh clones are created inactive; prewarm does not run clone activation callbacks.
+Lease ownership precedes parenting/activation so a self-return cannot publish a
+doomed object (#360). Awake/OnEnable work therefore belongs to first activation.
+Last-owner UI canvases leave name-based discovery before deferred destruction,
+allowing a same-frame replacement manager to create its own live root (#358).
+
+Audio channel settings apply to already-playing effects as well as future requests
+(#366), retaining each play's original gain when volume/mute is restored. Services
+sharing a retained audio root own separate fade runners (#363). These source-state
+contracts are distinct from audible-output/device acceptance.
+
+Direct `IapService.Dispose()` performs the same cleanup as lifecycle disposal
+(#387). A disposed `AdService` rejects initialization and adapter replacement with
+`ObjectDisposedException`; an adapter rejected before acceptance remains owned by
+its caller (#392).
 
 | Service | Folder under `Runtime/Services` | Purpose |
 |---|---|---|
@@ -209,12 +278,30 @@ getters keep returning the default in both other cases; `HasKey` answers true fo
 The game holds dependent operations, recovers the data and explicitly retries; an unreadable
 canonical BigDouble key does not fall through to or delete its legacy long key. See the
 [economy migration notes](MIGRATION.md#unavailable-economy-balances-are-not-new-zero-balances).
+For view/load queries, use `IEconomyService.TryGetBalance(id, out balance)` or
+`TryGetBigBalance` (#352). False means unavailable, not an authoritative zero; a missing
+currency succeeds with zero. Query before `GetObservableBalance` in `OnBind`, keep the
+view bound in its unavailable state and retry after recovery before attaching its observer.
+The existing getters and mutations still throw on an unavailable first load.
 `Save()` keeps its void, best-effort contract. For a delivery that must not be acknowledged after
 a failed write, `TrySave()` confirms all pending encrypted writes/deletes; `SaveOrThrow()` throws
 on failed or unsupported confirmation (issue #338). Other `IPlayerPrefsService` implementations
 default to false until they implement real confirmation. This is not a multi-key transaction or
 a power-loss guarantee: keep reward state and receipt identity in one atomic blob. See
 [Confirmed Reward Saves](../com.nexus.ads.bridge.nexus/README.md#confirmed-reward-saves).
+For rewards paid into Nexus economy, `EarnOnce(id, amount, receiptId, reason)` and
+`EarnBigOnce` (#350) keep the balance and all applied receipt ids in one versioned
+`NT_EcoWallet_<id>` payload. They bypass save throttling and confirm the actual economy
+store before returning, even on a duplicate (`false`); failed/unconfirmed writes throw.
+Normal earnings, spending, setting a balance and promotion preserve this ledger.
+Legacy numeric keys are used only until a wallet payload exists; an unreadable wallet
+never falls back to those stale keys. This opt-in migration is one-way: do not downgrade
+after adopting it. Receipt ids are scoped per currency, retained for the save's lifetime,
+and must name the same logical reward on every retry. Ledger size grows with distinct ids.
+Invalid UTF-16 receipt strings are rejected before mutation. A custom store must not mutate
+or dispose the economy from its wallet setter; reentry is rejected before changing state.
+The API is a synchronous allocating persistence path, not a per-frame zero-GC operation,
+a transaction with a game blob/another currency, or backend/power-loss exactly-once proof.
 Every live store saves its unsaved keys when the app pauses, on the main thread before `OnApplicationPause` returns, with
 or without a `Root` (issue #203); it also saves on quit, and on focus loss on a worker thread.
 `SettingsStores` names, per service (audio, haptics, economy, progression), the
@@ -225,6 +312,25 @@ starting point, not a save system: a game keeps its own save format and decides 
 `SaveThrottler` (used by `EconomyService` and `ProgressionService`) limits how often a service writes;
 a write it holds back is made when the app loses focus or pauses (issue #167), and when its window ends also while a screen
 or an ad holds the `TickService` paused: the throttler is an `IUnpausableTickable` (issue #202).
+Its reusable Tick buffer releases save-owner references after each dispatch, including
+failure and nested Tick, without discarding the warmed capacity (#349).
+
+`ProgressionService` refuses unreadable or malformed saved levels during initialization
+(#402). It preserves both saved keys, rejects dependent mutations, and can retry initialization
+after recovery. Missing keys still mean a new progression. A retired service cannot persist
+through a delayed throttler callback or accept further level mutations (#404).
+Storage path-query failures are unreadable, not absent; a directory at the canonical save path
+does not authorize loading an older backup or overwriting it (#403). Negative read results
+cannot replace a newer confirmed delete (#406).
+`GameSaveManager` orders a request before its context hop and user capture callback, so a save
+or delete reentered from capture remains newer (#405). `OfflineTimeCalculator` grants no
+offline progress for an unreadable or malformed saved monotonic counter; a missing legacy
+counter retains the existing wall-clock-only fallback (#407).
+
+The optional Firebase services stop late initialization/fetch publication after
+disposal or cancellation (#385). Denied analytics properties are discarded
+(#393), and removed Remote Config keys raise change notifications (#395).
+See the Firebase package README for the controlled-SDK and live-device boundaries.
 
 Logging: `LoggerService`, and the fallback logger `NexusRuntime.Logger` returns while no `ILoggerService` is
 bound, drop `Log` and `LogWarning` in a release player (not the editor, not a development build); `LogError` and
@@ -292,9 +398,17 @@ frame budget or full `Context` startup, and no universal winner is claimed.
 | `SourceGenerator~` | Roslyn source generator project; built DLL ships in `SourceGenerators~` |
 | `Tests/Editor`, `Tests/Runtime` | EditMode and PlayMode tests |
 
+Both binder generators preserve escaped member names and distinct reflection-cache
+identities; the editor generator also preserves array ranks and keyword type names
+(#408). Binding-name literals escape Unicode line/paragraph separators. Regenerate
+the binder after adopting this change; the Roslyn analyzer ships rebuilt from the
+matching source. Generated-code compile/boot checks are separate from player/AOT proof.
+
 The state machine and the jobs-to-signals bridge are packages of their own since issue #112:
 [`com.nexus.fsm`](../com.nexus.fsm/README.md) (`GameStateMachine` and the window's State Machine tab) and
 [`com.nexus.dots`](../com.nexus.dots/README.md) (`NativeSignalQueue<T>`, `DOTSSignalBridge<T>`).
+FSM cleanup also covers an enter that fails after supersession/disposal: the entered
+state exits once before the next transition can enter (#347).
 
 ## Glossary
 

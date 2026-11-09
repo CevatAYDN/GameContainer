@@ -60,6 +60,10 @@ managed assembly or IL2CPP `GameAssembly.dll` and metadata), and a matching
 the commit sidecar must have been written after that stage started; copied
 engine templates may retain old timestamps. Build JSON records file hashes,
 sizes and timestamps. An existing directory or exit 0 alone is not proof.
+The modified-source annotation includes untracked, non-ignored files under
+`Packages` and `Assets` (#400). A failed Git status query is unknown identity,
+not evidence of a clean tree; the Unity build helper fails rather than writing
+a misleading sidecar.
 These are build checks, not proof that the player was launched or accepted on
 a device. The runner starts each stage on `Win64` to avoid stale Android defines.
 

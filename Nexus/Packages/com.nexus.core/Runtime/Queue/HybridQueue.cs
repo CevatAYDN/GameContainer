@@ -230,6 +230,7 @@ namespace Nexus.Core
         private QueuedSignalRingBuffer _nextFrameDrainQueue = new(256);
         private readonly object _threadSafeLock = new();
         private readonly object _nextFrameLock = new();
+        private int _threadSafeClearVersion; // guarded by _threadSafeLock
 
         // Editor introspection (G-2): live queue depth + cumulative throughput.
         private long _totalEnqueued;
@@ -307,9 +308,13 @@ namespace Nexus.Core
                 // Only what was queued before this drain runs now: a handler that fires thread-safe again (a poll that re-fires
                 // itself, two handlers bouncing a signal) or a producer arriving mid-drain waits for the next drain, as a
                 // re-entrant FireNextFrame does. Draining until empty never ended for a re-firing handler (issue #169).
-                int queued;
-                lock (_threadSafeLock) queued = _threadSafeQueue.Count;
-                Drain(_threadSafeQueue, _threadSafeLock, queued);
+                int queued, clearVersion;
+                lock (_threadSafeLock)
+                {
+                    queued = _threadSafeQueue.Count;
+                    clearVersion = _threadSafeClearVersion;
+                }
+                Drain(_threadSafeQueue, _threadSafeLock, queued, clearVersion);
             }
             finally { System.Threading.Interlocked.Exchange(ref _threadSafeDrainInProgress, 0); }
         }
@@ -340,7 +345,7 @@ namespace Nexus.Core
             finally { System.Threading.Interlocked.Exchange(ref _nextFrameDrainInProgress, 0); }
         }
 
-        private void Drain(QueuedSignalRingBuffer queue, object queueLock, int limit)
+        private void Drain(QueuedSignalRingBuffer queue, object queueLock, int limit, int? threadSafeClearVersion = null)
         {
             // Audit note 2.5 (intentional design, documented): the lock is RELEASED between
             // the dequeue and the dispatch so a concurrent EnqueueThreadSafe is never blocked
@@ -355,6 +360,8 @@ namespace Nexus.Core
                 IQueuedSignal queuedSignal = null;
                 lock (queueLock)
                 {
+                    // Clear ends this generation; replacements belong to the next drain (#378).
+                    if (threadSafeClearVersion.HasValue && threadSafeClearVersion.Value != _threadSafeClearVersion) break;
                     if (queue.Count > 0) queuedSignal = queue.Dequeue();
                 }
                 if (queuedSignal == null) break;
@@ -382,6 +389,7 @@ namespace Nexus.Core
         {
             lock (_threadSafeLock)
             {
+                _threadSafeClearVersion++;
                 _threadSafeQueue.Clear();
             }
             lock (_nextFrameLock)

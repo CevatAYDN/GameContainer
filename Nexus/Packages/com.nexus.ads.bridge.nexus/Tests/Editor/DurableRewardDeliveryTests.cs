@@ -145,6 +145,52 @@ namespace Nexus.Ads.Bridge.Tests
             }
         }
 
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void NexusEconomyReceipt_CallbackAndStartupFailures_NeverAcknowledgeAnUncommittedGrant()
+        {
+            foreach (bool outcome in new[] { false, true })
+                foreach (bool walletFault in new[] { false, true })
+                {
+                    using var files = new Files();
+                    var game = files.OpenGame();
+                    using var economy = new EconomyService { PlayerPrefsService = game };
+                    economy.SetBalance("coin", 100);
+                    using var rig = new Rig(files.OpenReceipts());
+                    if (walletFault)
+                    {
+                        files.Block(game, "NT_EcoWallet_coin");
+                        files.ExpectFailedDispose(game);
+                    }
+                    else rig.Receipts.FailAcknowledgement = true;
+                    ExpectIOException(() => rig.Deliver(outcome,
+                        () => economy.EarnOnce("coin", 40, rig.Controller.DeliveringReward.Value.Id, "reward")));
+                    string id = rig.Controller.PendingReward.Value.Id;
+                    economy.Dispose(); // keep a failed writer blocked through its final save
+                    files.Close(game);
+                    if (walletFault) files.Unblock(game, "NT_EcoWallet_coin");
+
+                    var reopenedGame = files.OpenGame();
+                    using var restartedEconomy = new EconomyService { PlayerPrefsService = reopenedGame };
+                    using var restarted = new Rig(files.OpenReceipts());
+                    Require(restarted.Controller.PendingReward.Value.Id == id && rig.Receipts.Acknowledgements == 0,
+                        "the adapter must retain the exact receipt when economy confirmation or acknowledgement fails");
+                    Require(restartedEconomy.GetBalance("coin") == (walletFault ? 100 : 140),
+                        "abrupt reopen must expose the old wallet or the complete grant, never a partial receipt");
+                    if (!walletFault) Require(restartedEconomy.Spend("coin", 30), "an unrelated spend may precede replay");
+                    Require(restartedEconomy.EarnOnce("coin", 40, restarted.Controller.PendingReward.Value.Id) == walletFault,
+                        "startup pays only a missing grant, regardless of the changed balance");
+                    restarted.Controller.AcknowledgeReward(id);
+                    restarted.Controller.AcknowledgeReward(id);
+                    using var finalEconomy = new EconomyService { PlayerPrefsService = files.OpenGame() };
+                    using var final = new Rig(files.OpenReceipts());
+                    Require(finalEconomy.GetBalance("coin") == (walletFault ? 140 : 110)
+                        && !final.Controller.PendingReward.HasValue && restarted.Receipts.Acknowledgements == 1,
+                        "both callback APIs must close only after one durable currency grant and one acknowledgement");
+                }
+        }
+
         private static void CommitBeforeAckFailure(bool outcome)
         {
             using var files = new Files();

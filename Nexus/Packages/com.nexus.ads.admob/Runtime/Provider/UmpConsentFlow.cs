@@ -16,7 +16,7 @@ namespace Nexus.Ads.AdMob
     /// that fails without a network in a first session is asked again when a network returns instead of answering, which
     /// would read as a refusal (issue #180).
     /// </summary>
-    public sealed class UmpConsentFlow : IConsentFlow
+    public sealed class UmpConsentFlow : IConsentFlow, IDisposable
     {
         private static readonly List<string> DebugDeviceIds = new List<string>();
         private static bool _eeaGeography;
@@ -43,7 +43,7 @@ namespace Nexus.Ads.AdMob
         private readonly bool _underAgeOfConsent;
         private readonly bool _debugAllowed;
         private readonly UnityMainThread _main = new UnityMainThread();
-        private bool _requested, _answered, _offlineLogged;
+        private bool _requested, _answered, _offlineLogged, _disposed;
         private Action _onAnswered;
         private IDisposable _networkWait;
 
@@ -82,24 +82,26 @@ namespace Nexus.Ads.AdMob
             return request;
         }
 
-        public bool Completed => _answered;
-        public bool CanRequestAds => ConsentInformation.CanRequestAds();
-        public bool PrivacyOptionsRequired => _answered && ConsentInformation.PrivacyOptionsRequirementStatus == PrivacyOptionsRequirementStatus.Required;
+        public bool Completed => !_disposed && _answered;
+        public bool CanRequestAds => !_disposed && ConsentInformation.CanRequestAds();
+        public bool PrivacyOptionsRequired => !_disposed && _answered && ConsentInformation.PrivacyOptionsRequirementStatus == PrivacyOptionsRequirementStatus.Required;
         public event Action Changed;
 
         public void Request(Action onCompleted)
         {
+            if (_disposed) return;
             if (_answered) { onCompleted?.Invoke(); return; }
             _onAnswered += onCompleted;
             if (_requested) return;
             _requested = true;
             UpdateConsent();
             // consent obtained in an earlier session: ads may load while this session's update runs
-            if (ConsentInformation.CanRequestAds()) Answer();
+            if (!_disposed && ConsentInformation.CanRequestAds()) Answer();
         }
 
         private void UpdateConsent()
         {
+            if (_disposed) return;
             ConsentInformation.Update(Parameters(_underAgeOfConsent, _debugAllowed), updateError => OnMain(() =>
             {
                 if (updateError != null)
@@ -136,11 +138,12 @@ namespace Nexus.Ads.AdMob
 
         private void AskAgainWhenReachable(IAdScheduler scheduler)
         {
+            if (_disposed) return;
             _networkWait?.Dispose();
             _networkWait = scheduler.Schedule(NetworkPollSeconds, () =>
             {
                 _networkWait = null;
-                if (_answered) return;
+                if (_disposed || _answered) return;
                 if (NetworkReachable) UpdateConsent();
                 else AskAgainWhenReachable(scheduler);
             });
@@ -148,6 +151,7 @@ namespace Nexus.Ads.AdMob
 
         public void ShowPrivacyOptions(Action onClosed)
         {
+            if (_disposed) return;
             ConsentForm.ShowPrivacyOptionsForm(error => OnMain(() =>
             {
                 if (error != null) Debug.LogWarning("[Nexus Ads] consent (Google UMP) privacy options: " + error.Message);
@@ -158,6 +162,7 @@ namespace Nexus.Ads.AdMob
 
         private void Answer()
         {
+            if (_disposed || _answered) return;
             _answered = true;
             var callback = _onAnswered;
             _onAnswered = null;
@@ -166,8 +171,19 @@ namespace Nexus.Ads.AdMob
 
         private void OnMain(Action action)
         {
-            if (_main.IsCurrent) action();
-            else _main.Post(action);
+            if (_main.IsCurrent) { if (!_disposed) action(); }
+            else _main.Post(() => { if (!_disposed) action(); });
+        }
+
+        void IDisposable.Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _onAnswered = null;
+            Changed = null;
+            var wait = _networkWait;
+            _networkWait = null;
+            wait?.Dispose();
         }
     }
 }

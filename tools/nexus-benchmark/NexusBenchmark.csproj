@@ -81,6 +81,7 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Models/ModelData.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Logging/LoggerService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Economy/EconomyService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Economy/EconomyWalletCodec.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Progression/ProgressionService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Pool/ObjectPoolService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Storage/**/*.cs" />
@@ -145,6 +146,19 @@
     <Compile Include="../../Nexus/Packages/com.nexus.ads.bridge.nexus/Tests/Editor/DurableRewardDeliveryTests.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Tests/Editor/EncryptedStorageCommitTests.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Tests/Editor/EconomyUnreadableBalanceTests.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Tests/Editor/InMemoryPersistenceTests.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Tests/Editor/EconomyReceiptTests.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Tests/Editor/EconomyReadQueryTests.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Tests/Editor/FullReview*.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.fsm/Tests/Editor/FullReview*.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.ads/Tests/Editor/FullReviewAdsPacingTests.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.ads/Tests/Editor/FullReviewAdsControllerTests.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.ads.bridge.nexus/Tests/Editor/FullReviewAdsAwaitContractTests.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Tests/Editor/NetcodeReplayRegressionTests.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Tests/Editor/ObjectPoolReentrancyTests.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Tests/Editor/DerivedPropertyConcurrencyTests.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.fsm/Tests/Editor/FSMFailureCleanupTests.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Tests/Editor/SaveThrottlerRetentionTests.cs" />
     <!-- UI-only file: NexusDebugHUD is an OnGUI debug surface backed by no-op stubs. -->
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Debug/NexusDebugHUD.cs" />
     <!-- AOT binder generator compile guard (editor-only file, stubbed UnityEditor APIs in GeneratorStubs.cs) -->
@@ -165,6 +179,9 @@
     </Reference>
     <Reference Include="Microsoft.CodeAnalysis.CSharp">
       <HintPath>$(MSBuildSDKsPath)\..\Roslyn\bincore\Microsoft.CodeAnalysis.CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="System.CodeDom">
+      <HintPath>$(MSBuildSDKsPath)\..\System.CodeDom.dll</HintPath>
     </Reference>
   </ItemGroup>
 

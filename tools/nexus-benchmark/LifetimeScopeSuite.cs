@@ -95,7 +95,7 @@ namespace NexusBench
         {
             public static BrokenPendingResource Last;
             public bool Disposed;
-            [Inject] public LateDependency Late;
+            [Inject] public LateDependency Late = null;
             [PostConstruct] private void Init() { Last = this; throw new InvalidOperationException("BrokenPendingResource.Init failed"); }
             public void Dispose() => Disposed = true;
         }

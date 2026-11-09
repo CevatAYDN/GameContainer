@@ -45,6 +45,8 @@ namespace Nexus.DOTS
 
         public bool IsCreated => _queue.IsCreated;
 
+        internal bool TryDequeue(out T signal) => _queue.TryDequeue(out signal);
+
         /// <summary>
         /// Enqueues from one exclusive writer. Use AsParallelWriter for concurrent jobs,
         /// and complete all producers before draining or disposing the queue.
@@ -180,11 +182,13 @@ namespace Nexus.DOTS
         public void Drain()
         {
             EnsureMainThread();
-            if (_isInitialized && _signalQueue.IsCreated && _signalBus != null)
+            while (_isInitialized && _signalQueue.IsCreated && _signalBus != null)
             {
+                // A dispatched handler can register another producer before the next dequeue.
                 _producers.Complete();
                 _producers = default;
-                _signalQueue.Drain(_signalBus);
+                if (!_signalQueue.TryDequeue(out T signal)) break;
+                _signalBus.Fire(signal);
             }
         }
 

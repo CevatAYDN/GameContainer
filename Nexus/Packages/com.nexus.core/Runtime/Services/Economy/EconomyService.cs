@@ -27,6 +27,18 @@ namespace Nexus.Core.Services
     {
         long GetBalance(string currencyId);
         /// <summary>
+        /// False when the saved balance is unavailable; the out value is not an authoritative zero on false.
+        /// Absent currencies return true with zero. Query before binding an observable, and retry after
+        /// recovery without unbinding the view. Legacy implementations use their existing read contract.
+        /// </summary>
+        bool TryGetBalance(string currencyId, out long balance)
+        {
+            balance = 0;
+            if (string.IsNullOrEmpty(currencyId)) return false;
+            try { balance = GetBalance(currencyId); return true; }
+            catch (IOException) { return false; }
+        }
+        /// <summary>
         /// The currency's observable balance, read-only: the balance changes through the service, which checks and saves each
         /// change (#231). Its change handlers run synchronously while the service holds its balance
         /// lock (the long view of a BigDouble balance depends on that), so a handler must not wait for another thread
@@ -38,10 +50,26 @@ namespace Nexus.Core.Services
         /// <summary>As <see cref="Spend(string,long,string)"/>; on false, <paramref name="refusal"/> says why.</summary>
         bool Spend(string currencyId, long amount, out EconomyRefusal refusal, string reason = "");
         void Earn(string currencyId, long amount, string reason = "");
+        /// <summary>
+        /// Applies a receipt once per currency and confirms its balance and receipt ids in one storage payload.
+        /// Bypasses save throttling; false means already applied, not a save failure. A failed/unconfirmed
+        /// save throws IOException and must leave the delivery unacknowledged. Custom implementations
+        /// must opt in; the default refuses rather than substituting a non-idempotent Earn.
+        /// </summary>
+        bool EarnOnce(string currencyId, long amount, string receiptId, string reason = "")
+            => throw new NotSupportedException("This economy does not support confirmed receipt-keyed earnings.");
         void SetBalance(string currencyId, long amount);
 
         // BigDouble API for idle, incremental, and large-scale numeric game genres
         BigDouble GetBigBalance(string currencyId);
+        /// <summary>The BigDouble counterpart of <see cref="TryGetBalance"/>.</summary>
+        bool TryGetBigBalance(string currencyId, out BigDouble balance)
+        {
+            balance = default;
+            if (string.IsNullOrEmpty(currencyId)) return false;
+            try { balance = GetBigBalance(currencyId); return true; }
+            catch (IOException) { return false; }
+        }
         IReadOnlyObservableProperty<BigDouble> GetObservableBigBalance(string currencyId);
         bool CanAffordBig(string currencyId, BigDouble amount);
         /// <summary>Throws <see cref="NotSupportedException"/> when the bound network validator is not an <see cref="INetworkBigEconomyValidator"/>, as <see cref="EarnBig"/> and <see cref="SetBigBalance"/> do.</summary>
@@ -49,6 +77,9 @@ namespace Nexus.Core.Services
         /// <summary>As <see cref="SpendBig(string,BigDouble,string)"/>; on false, <paramref name="refusal"/> says why.</summary>
         bool SpendBig(string currencyId, BigDouble amount, out EconomyRefusal refusal, string reason = "");
         void EarnBig(string currencyId, BigDouble amount, string reason = "");
+        /// <summary>The BigDouble counterpart of <see cref="EarnOnce"/>.</summary>
+        bool EarnBigOnce(string currencyId, BigDouble amount, string receiptId, string reason = "")
+            => throw new NotSupportedException("This economy does not support confirmed receipt-keyed earnings.");
         void SetBigBalance(string currencyId, BigDouble amount);
     }
 
@@ -138,6 +169,11 @@ namespace Nexus.Core.Services
         // collection itself). A promoted currency's long observable remains the same instance, projecting its
         // canonical BigDouble balance.
         private readonly object _balanceLock = new object();
+        // Only currencies that opt into receipt-keyed earnings migrate to the wallet blob.
+        // IDs are retained for the save's lifetime; pruning would permit old receipts to pay again.
+        private readonly Dictionary<string, HashSet<string>> _receiptIds = new(StringComparer.Ordinal);
+        private bool _stagingReceiptWallet; // under _balanceLock; a custom store may reenter on the same thread
+        private TaskCompletionSource<bool> _walletStagingDone;
         // Under _balanceLock: the BigDouble currencies whose legacy long key a flush has deleted (#300), and the long
         // currencies whose Earn reached long.MaxValue and was logged (R3-13, #314).
         private readonly HashSet<string> _legacyKeyDeleted = new();
@@ -156,6 +192,40 @@ namespace Nexus.Core.Services
         public long GetBalance(string currencyId)
         {
             return GetObservableBalance(currencyId)?.Value ?? 0L;
+        }
+
+        public bool TryGetBalance(string currencyId, out long balance)
+        {
+            balance = 0;
+            if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return false;
+            if (!_balances.TryGetValue(currencyId, out var property))
+            {
+                if (!TryPrefetchSaved(currencyId, out _)) return false;
+                lock (_balanceLock)
+                {
+                    if (_disposed || _disposing) return false;
+                    property = LazyLoadBalance(currencyId);
+                }
+            }
+            balance = property.Value;
+            return true;
+        }
+
+        public bool TryGetBigBalance(string currencyId, out BigDouble balance)
+        {
+            balance = default;
+            if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return false;
+            if (!_bigBalances.TryGetValue(currencyId, out var property))
+            {
+                if (!TryPrefetchSaved(currencyId, out _)) return false;
+                lock (_balanceLock)
+                {
+                    if (_disposed || _disposing) return false;
+                    property = LazyLoadBigBalance(currencyId);
+                }
+            }
+            balance = property.Value;
+            return true;
         }
 
         public bool CanAfford(string currencyId, long amount)
@@ -233,6 +303,7 @@ namespace Nexus.Core.Services
             lock (_balanceLock)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
+                RequireMutationAllowedLocked();
                 var prop = LazyLoadBalance(currencyId);
                 if (_bigBalances.TryGetValue(currencyId, out var big)) big.SetByService(new BigDouble(amount));
                 else prop.SetByService(amount);
@@ -240,11 +311,120 @@ namespace Nexus.Core.Services
             SchedulePersist();
         }
 
+        public bool EarnOnce(string currencyId, long amount, string receiptId, string reason = "")
+        {
+            RequirePositive(amount);
+            var store = RequireReceiptStore(currencyId, receiptId);
+            PrefetchSaved(currencyId);
+            bool applied;
+            lock (_balanceLock)
+            {
+                if (_disposed || _disposing) throw new ObjectDisposedException(nameof(EconomyService));
+                RequireMutationAllowedLocked();
+                LazyLoadBalance(currencyId);
+                applied = ReceiptIdsLocked(currencyId).Add(receiptId);
+                if (applied) AddBalanceLocked(currencyId, amount);
+            }
+            if (applied && NetworkValidator != null) _ = SafeValidateEarnAsync(currencyId, amount, reason);
+            ConfirmReceiptBalance(currencyId, store);
+            return applied;
+        }
+
+        public bool EarnBigOnce(string currencyId, BigDouble amount, string receiptId, string reason = "")
+        {
+            RequirePositive(amount);
+            var store = RequireReceiptStore(currencyId, receiptId);
+            var validator = RequireBigValidator();
+            amount = Normalize(amount);
+            PrefetchSaved(currencyId);
+            bool applied;
+            lock (_balanceLock)
+            {
+                if (_disposed || _disposing) throw new ObjectDisposedException(nameof(EconomyService));
+                RequireMutationAllowedLocked();
+                var balance = LazyLoadBigBalance(currencyId);
+                applied = ReceiptIdsLocked(currencyId).Add(receiptId);
+                if (applied) balance.SetByService(Normalize(balance.Value + amount));
+            }
+            if (applied && validator != null) _ = SafeValidateBigEarnAsync(validator, currencyId, amount, reason);
+            ConfirmReceiptBalance(currencyId, store);
+            return applied;
+        }
+
+        private IPlayerPrefsService RequireReceiptStore(string currencyId, string receiptId)
+        {
+            if (string.IsNullOrEmpty(currencyId)) throw new ArgumentException("A currency id is required.", nameof(currencyId));
+            if (string.IsNullOrWhiteSpace(receiptId)) throw new ArgumentException("A receipt id is required.", nameof(receiptId));
+            EconomyWalletCodec.ValidateReceiptId(receiptId);
+            if (_disposed || _disposing) throw new ObjectDisposedException(nameof(EconomyService));
+            return Store ?? throw new InvalidOperationException("Receipt-keyed earnings require a confirming economy store.");
+        }
+
+        private HashSet<string> ReceiptIdsLocked(string currencyId)
+        {
+            if (!_receiptIds.TryGetValue(currencyId, out var ids))
+                _receiptIds.Add(currencyId, ids = new HashSet<string>(StringComparer.Ordinal));
+            return ids;
+        }
+
+        private void ConfirmReceiptBalance(string currencyId, IPlayerPrefsService store)
+        {
+            lock (_balanceLock)
+            {
+                if (_disposed || _disposing) throw new ObjectDisposedException(nameof(EconomyService));
+                WriteReceiptBalanceLocked(currencyId, store, _receiptIds[currencyId]);
+            }
+            // Retry even for a duplicate: the previous call may have changed RAM but
+            // failed its commit. Never infer persistence from the in-memory receipt set.
+            store.SaveOrThrow();
+        }
+
+        private void WriteReceiptBalanceLocked(string currencyId, IPlayerPrefsService store, HashSet<string> receipts)
+        {
+            RequireMutationAllowedLocked();
+            _stagingReceiptWallet = true;
+            try
+            {
+                bool isBig = _bigBalances.TryGetValue(currencyId, out var big);
+                long balance = !isBig && _balances.TryGetValue(currencyId, out var value) ? value.Value : 0;
+                store.SetString(EconomyWalletCodec.Key(currencyId),
+                    EconomyWalletCodec.Encode(balance, isBig ? big.Value : default, isBig, receipts));
+            }
+            finally
+            {
+                _stagingReceiptWallet = false;
+                var completed = _walletStagingDone;
+                _walletStagingDone = null;
+                completed?.TrySetResult(true);
+            }
+        }
+
+        private void RequireMutationAllowedLocked()
+        {
+            if (_stagingReceiptWallet)
+                throw new InvalidOperationException("An economy store must not mutate or dispose the economy while writing its wallet payload.");
+        }
+
+        private Task WaitForWalletStagingAsync()
+        {
+            lock (_balanceLock)
+            {
+                if (!_stagingReceiptWallet) return Task.CompletedTask;
+                // A previously accepted spend can be rejected inline by a store callback.
+                // It must wait for the setter, not lose its refund to the mutation guard.
+                return (_walletStagingDone ??= new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+            }
+        }
+
         // Under the lock: the run-time reason a spend cannot start.
         private EconomyRefusal RefusalLocked(string currencyId)
-            => _disposed || _disposing ? EconomyRefusal.Disposed
+        {
+            RequireMutationAllowedLocked();
+            return _disposed || _disposing ? EconomyRefusal.Disposed
                 : string.IsNullOrEmpty(currencyId) ? EconomyRefusal.InvalidCurrencyId
                 : EconomyRefusal.None;
+        }
 
         // #196: an amount outside the method's range is a programming error, never a silent no-op.
         private static void RequirePositive(long amount)
@@ -294,7 +474,9 @@ namespace Nexus.Core.Services
             public readonly BigDouble Big;
             public readonly bool HasLong;
             public readonly long Long;
-            public SavedBalance(bool hasBig, BigDouble big, bool hasLong, long value) { HasBig = hasBig; Big = big; HasLong = hasLong; Long = value; }
+            public readonly HashSet<string> ReceiptIds;
+            public SavedBalance(bool hasBig, BigDouble big, bool hasLong, long value, HashSet<string> receiptIds = null)
+            { HasBig = hasBig; Big = big; HasLong = hasLong; Long = value; ReceiptIds = receiptIds; }
         }
 
         // Outside the lock, before every path that may create a currency. A loaded currency costs one
@@ -302,38 +484,73 @@ namespace Nexus.Core.Services
         // creating the other view, so it must not read storage again.
         private void PrefetchSaved(string currencyId)
         {
+            if (!TryPrefetchSaved(currencyId, out var unavailableKey)) throw UnavailableBalance(unavailableKey);
+        }
+
+        private bool TryPrefetchSaved(string currencyId, out string unavailableKey)
+        {
+            unavailableKey = null;
             if (_disposed || _disposing || string.IsNullOrEmpty(currencyId) || _balances.ContainsKey(currencyId)
-                || _bigBalances.ContainsKey(currencyId) || _prefetched.ContainsKey(currencyId)) return;
-            _prefetched[currencyId] = ReadSaved(currencyId);
+                || _bigBalances.ContainsKey(currencyId) || _prefetched.ContainsKey(currencyId)) return true;
+            if (!TryReadSaved(currencyId, out var saved, out unavailableKey)) return false;
+            _prefetched[currencyId] = saved;
+            return true;
         }
 
         private SavedBalance ReadSaved(string currencyId)
         {
-            var store = Store;
-            if (store == null) return default;
-            string bigKey = $"NT_EcoBig_{currencyId}";
-            if (HasReadableSavedValue(store, bigKey))
-            {
-                var big = store.GetBigDouble(bigKey, new BigDouble { Mantissa = double.NaN });
-                if (double.IsNaN(big.Mantissa) || double.IsInfinity(big.Mantissa)) throw UnavailableBalance(bigKey);
-                return new SavedBalance(true, big, false, 0L);
-            }
-            string longKey = $"NT_Eco_{currencyId}";
-            if (!HasReadableSavedValue(store, longKey)) return default;
-            long value = store.GetLong(longKey, long.MinValue);
-            // Typed stores own their decoding (including legacy locales). Two distinct
-            // fallbacks distinguish a decode failure from a valid stored long.MinValue.
-            if (value == long.MinValue && store.GetLong(longKey, long.MaxValue) != long.MinValue)
-                throw UnavailableBalance(longKey);
-            return new SavedBalance(false, BigDouble.Zero, true, value);
+            if (TryReadSaved(currencyId, out var saved, out var unavailableKey)) return saved;
+            throw UnavailableBalance(unavailableKey);
         }
 
-        private static bool HasReadableSavedValue(IPlayerPrefsService store, string key)
+        private bool TryReadSaved(string currencyId, out SavedBalance saved, out string unavailableKey)
+        {
+            saved = default;
+            unavailableKey = EconomyWalletCodec.Key(currencyId);
+            var store = Store;
+            if (store == null) return true;
+            try
+            {
+                var walletStatus = store.TryGetString(unavailableKey, out var wallet);
+                if (walletStatus == StorageReadStatus.Unreadable) return false;
+                if (walletStatus == StorageReadStatus.Present || store.HasKey(unavailableKey))
+                {
+                    if (!EconomyWalletCodec.TryDecode(wallet, out var amount, out var bigAmount, out bool isBig, out var receipts))
+                        return false;
+                    saved = new SavedBalance(isBig, bigAmount, !isBig, amount, receipts);
+                    return true;
+                }
+                unavailableKey = $"NT_EcoBig_{currencyId}";
+                if (!TryHasSavedValue(store, unavailableKey, out bool present)) return false;
+                if (present)
+                {
+                    var big = store.GetBigDouble(unavailableKey, new BigDouble { Mantissa = double.NaN });
+                    if (double.IsNaN(big.Mantissa) || double.IsInfinity(big.Mantissa)) return false;
+                    saved = new SavedBalance(true, big, false, 0L);
+                    return true;
+                }
+                unavailableKey = $"NT_Eco_{currencyId}";
+                if (!TryHasSavedValue(store, unavailableKey, out present)) return false;
+                if (!present) return true;
+                long value = store.GetLong(unavailableKey, long.MinValue);
+                // Native typed stores own their decoding, including legacy locales.
+                if (value == long.MinValue && store.GetLong(unavailableKey, long.MaxValue) != long.MinValue) return false;
+                saved = new SavedBalance(false, BigDouble.Zero, true, value);
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                // Custom stores may still throw; built-in stores report their read status.
+                return false;
+            }
+        }
+
+        private static bool TryHasSavedValue(IPlayerPrefsService store, string key, out bool present)
         {
             var status = store.TryGetString(key, out _);
-            if (status == StorageReadStatus.Unreadable) throw UnavailableBalance(key);
             // Custom typed stores may have a native numeric key without a string projection.
-            return status == StorageReadStatus.Present || store.HasKey(key);
+            present = status == StorageReadStatus.Present || (status == StorageReadStatus.Absent && store.HasKey(key));
+            return status != StorageReadStatus.Unreadable;
         }
 
         private static IOException UnavailableBalance(string key)
@@ -350,6 +567,7 @@ namespace Nexus.Core.Services
         private SecureObservableLong CreateBalanceLocked(string currencyId)
         {
             var saved = _bigBalances.ContainsKey(currencyId) ? default : TakeSaved(currencyId);
+            if (saved.ReceiptIds != null) _receiptIds[currencyId] = saved.ReceiptIds;
             // A persisted promotion remains canonical after restart, including for old
             // callers which only use the long API.
             if (!_bigBalances.ContainsKey(currencyId) && saved.HasBig)
@@ -415,6 +633,7 @@ namespace Nexus.Core.Services
             lock (_balanceLock)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
+                RequireMutationAllowedLocked();
                 var prop = LazyLoadBigBalance(currencyId);
                 prop.SetByService(Normalize(prop.Value + amount));
             }
@@ -432,6 +651,7 @@ namespace Nexus.Core.Services
             lock (_balanceLock)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
+                RequireMutationAllowedLocked();
                 LazyLoadBigBalance(currencyId).SetByService(amount);
             }
             SchedulePersist();
@@ -460,6 +680,7 @@ namespace Nexus.Core.Services
         // parameter's closure on method entry, so in one method every big Earn/Spend paid for it.
         private SecureObservableBigDouble CreateBigBalanceLocked(string currencyId, SavedBalance saved)
         {
+            if (saved.ReceiptIds != null) _receiptIds[currencyId] = saved.ReceiptIds;
             BigDouble savedAmount = BigDouble.Zero;
             if (_balances.TryGetValue(currencyId, out var existingLong))
             {
@@ -519,6 +740,7 @@ namespace Nexus.Core.Services
 
         private void AddBalanceLocked(string currencyId, long amount)
         {
+            RequireMutationAllowedLocked();
             var prop = LazyLoadBalance(currencyId);
             if (_bigBalances.TryGetValue(currencyId, out var big)) big.SetByService(Normalize(big.Value + new BigDouble(amount)));
             else if (amount > long.MaxValue - prop.Value)
@@ -560,13 +782,23 @@ namespace Nexus.Core.Services
             lock (_balanceLock)
             {
                 if (_disposed) return;
+                RequireMutationAllowedLocked();
                 foreach (var kvp in _balances)
                 {
                     if (!_bigBalances.ContainsKey(kvp.Key))
-                        store.SetLong($"NT_Eco_{kvp.Key}", kvp.Value.Value);
+                    {
+                        if (_receiptIds.TryGetValue(kvp.Key, out var receipts))
+                            WriteReceiptBalanceLocked(kvp.Key, store, receipts);
+                        else store.SetLong($"NT_Eco_{kvp.Key}", kvp.Value.Value);
+                    }
                 }
                 foreach (var kvp in _bigBalances)
                 {
+                    if (_receiptIds.TryGetValue(kvp.Key, out var receipts))
+                    {
+                        WriteReceiptBalanceLocked(kvp.Key, store, receipts);
+                        continue;
+                    }
                     store.SetBigDouble($"NT_EcoBig_{kvp.Key}", kvp.Value.Value);
                     // The legacy long key goes once, after the first write of the big one (#300): each flush deleted it
                     // again, with the store's disk checks under this lock.
@@ -588,6 +820,7 @@ namespace Nexus.Core.Services
             {
                 bool approved = await NetworkValidator.ValidateSpendAsync(currencyId, amount, reason);
                 if (approved) return;
+                await WaitForWalletStagingAsync();
                 PrefetchSaved(currencyId);
                 lock (_balanceLock)
                 {
@@ -628,10 +861,12 @@ namespace Nexus.Core.Services
             try
             {
                 if (await validator.ValidateSpendBigAsync(currencyId, amount, reason)) return;
+                await WaitForWalletStagingAsync();
                 PrefetchSaved(currencyId);
                 lock (_balanceLock)
                 {
                     if (_disposed || _disposing) return;
+                    RequireMutationAllowedLocked();
                     var prop = LazyLoadBigBalance(currencyId);
                     prop.SetByService(Normalize(prop.Value + amount));
                 }
@@ -655,6 +890,7 @@ namespace Nexus.Core.Services
             lock (_balanceLock)
             {
                 if (_disposed || _disposing) return;
+                RequireMutationAllowedLocked();
                 _disposing = true;
             }
             try
@@ -674,6 +910,7 @@ namespace Nexus.Core.Services
                     foreach (var kvp in _bigBalances) kvp.Value.ClearOnChanged();
                     _bigBalances.Clear();
                     _prefetched.Clear();
+                    _receiptIds.Clear();
                 }
             }
         }

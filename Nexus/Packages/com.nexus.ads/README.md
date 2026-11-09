@@ -176,24 +176,32 @@ build's debug panel out (issue #132; `AdsCoreSuite` SM11–SM14, PlayMode
 3. Generate the `AdPlacements` constants (**Nexus > Ads > Generate Placements**, path on the
    settings) and show ads through the facade:
 
+`Wallet.GrantAndConfirm` below is game-owned code, not an ads API: it applies a
+stable receipt id idempotently and confirms the stored reward before returning.
+It must use the persisted offer/placement, not guess a restarted reward's amount.
+Nexus economy games use the concrete `EarnOnce` pattern in the
+[bridge guide](../com.nexus.ads.bridge.nexus/README.md#rewards-paid-into-nexus-economy).
+
 ```csharp
+using System.IO;
 using Nexus.Ads;
 using Nexus.Ads.Unity;
 
-if (Ads.IsReady(AdPlacements.ShopRefill))
-    Ads.Show(AdPlacements.ShopRefill, result =>
+var controller = AdsBootstrap.Instance != null ? AdsBootstrap.Instance.Controller : null;
+if (controller != null && Ads.IsReady(AdPlacements.ShopRefill))
+    controller.Show(AdPlacements.ShopRefill, result =>
     {
         if (result != AdResult.Rewarded) return;
-        Wallet.Add(50);
-        var paid = Ads.PendingReward;   // this show's receipt: paid, so acknowledged
-        if (paid.HasValue) Ads.AcknowledgeReward(paid.Value.Id);
+        var paid = controller.DeliveringReward ?? throw new IOException("No delivery receipt.");
+        Wallet.GrantAndConfirm(paid); // throws on failed/unconfirmed persistence
+        controller.AcknowledgeReward(paid.Id);
     });
 
 Ads.Show(AdPlacements.LevelEnd); // interstitial: NaturalBreak placement, paced by the guard
 
 // at start-up, before or after the ads start: a reward the previous run was killed in the middle of
 var receipt = Ads.PendingReward;
-if (receipt.HasValue) { Wallet.Add(50); Ads.AcknowledgeReward(receipt.Value.Id); }
+if (receipt.HasValue) { Wallet.GrantAndConfirm(receipt.Value); Ads.AcknowledgeReward(receipt.Value.Id); }
 ```
 
 Or drop `AdRewardedButton` on a uGUI Button with a `CanvasGroup`: it hides itself while nothing can
@@ -207,7 +215,8 @@ the UTC day change, issue #95; the wait after a touch that `IsReady` or `Show` m
 which on Android is a JNI call that allocates.
 
 Full-screen ads pause `AudioListener` and set `Time.timeScale` to 0 until they close (switches on
-the bootstrap). Ad events reach `AdsBootstrap.Instance.Telemetry.AddSink(...)`. With the bootstrap's
+the bootstrap). Destroying the bootstrap also restores its owned pause state (#386).
+Ad events reach `AdsBootstrap.Instance.Telemetry.AddSink(...)`. With the bootstrap's
 **Log Events** (on by default) the editor and development builds log every event; otherwise, and
 always in a release player, each ad failure is logged as a `[Nexus Ads]` warning once per cause
 (issue #164): a load that failed or found no fill (once per format and reason), a refused consent, a
@@ -227,6 +236,10 @@ it (`PendingReward`, read from `PlayerPrefs` and so available before the ads sta
 acknowledges it after its listeners ran, the bridge's `IAdService` once the game's callback returned,
 and a game that saves asynchronously acknowledges it itself. One receipt is kept: a reward written
 over an unacknowledged one is logged in every build (`RewardReplaced`, issue #178).
+Inside a live callback, capture `DeliveringReward` before invoking game listeners;
+`PendingReward` is for startup/replay and can already hold a newer delivery (#380).
+The bridge's outcome-only `RequestRewardAsync` can complete after callback-return
+acknowledgement; it is not the confirmed-grant boundary (#382).
 
 A show the provider never answers is ended as `Failed` after `AdController.ShowAnswerSeconds` (10 s)
 with the app visible, with a `ShowFailed` line that names the placement (issue #180). The time counts
@@ -289,7 +302,11 @@ pre-build hook remain.
 page, the wizard, the CLI and the pre-build hook call it and own no rule of their own. The pre-build
 hook (`AdsBuildGuard`) runs on Android and iOS builds only, validates the Test tab for a development
 build and the Release tab otherwise, writes its report to `Library/NexusAds/ads-validation.json`, and
-stops the build on a fail. With `com.nexus.core` installed, the Nexus window's Status tab lists the same
+stops the build on a fail. The scene-processing hook also validates each serialized `AdsBootstrap`
+override in the actual build scenes, including scenes selected by custom `BuildPlayerOptions`
+instead of `EditorBuildSettings` (#388). Inactive bootstraps are included; null scene settings use
+the Resources fallback. Code-created runtime settings must be validated by the game. With
+`com.nexus.core` installed, the Nexus window's Status tab lists the Resources-settings
 check for the active build target and the development flag, each warn and fail with its fix. An ad-free release (the Release
 tab with Ad-free release on) starts no SDK, so the checks of a running mediation pass and say so
 (`consent.form`, `provider.compiled`, `mediation.status`, `keys.release.missing`, `android.edm`, and

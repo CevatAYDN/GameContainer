@@ -12,6 +12,7 @@ using Nexus.Firebase.Sdk;
 #endif
 
 [assembly: InternalsVisibleTo("com.nexus.firebase.tests")]
+[assembly: InternalsVisibleTo("com.nexus.firebase.fullreview.tests")]
 
 namespace Nexus.Firebase
 {

@@ -13,7 +13,8 @@ namespace Nexus.Ads
     public sealed class SessionTracker
     {
         private const string DayKeyPrefix = "nexus.ads.day.";
-        private const string DayTotalKey = "nexus.ads.day.interstitials";
+        private const string DayTotalKey = "nexus.ads.interstitials.day";
+        private const string LegacyDayTotalKey = "nexus.ads.day.interstitials";
         private const string LastInterstitialKey = "nexus.ads.last.interstitial";
         private const string LastRewardedKey = "nexus.ads.last.rewarded";
         private const string LastPlacementPrefix = "nexus.ads.last.placement.";
@@ -43,6 +44,10 @@ namespace Nexus.Ads
         {
             _clock = clock ?? throw new ArgumentNullException(nameof(clock));
             _store = store ?? throw new ArgumentNullException(nameof(store));
+            // Separate the global row from placement names. Even zero marks the migration complete,
+            // so a later "interstitials" placement cannot be imported as a global count on restart.
+            if (_store.Get(DayTotalKey) == null)
+                _store.Set(DayTotalKey, _store.Get(LegacyDayTotalKey) ?? _clock.UtcDay.ToString(CultureInfo.InvariantCulture) + ":0");
             StartSession();
             LastInterstitialAt = ReadLastShown(LastInterstitialKey);
             LastRewardedAt = ReadLastShown(LastRewardedKey);
@@ -75,13 +80,13 @@ namespace Nexus.Ads
             _sessionCounts[placement.Name] = SessionCount(placement.Name) + 1;
             _lastShownAt[placement.Name] = now;
             _store.Set(LastPlacementPrefix + placement.Name, utc);
-            WriteDay(DayKeyPrefix + placement.Name, DayCount(placement.Name) + 1);
+            IncrementDay(DayKeyPrefix + placement.Name);
             if (placement.Format == AdFormat.Interstitial)
             {
                 InterstitialsThisSession++;
                 LastInterstitialAt = now;
                 _store.Set(LastInterstitialKey, utc);
-                WriteDay(DayTotalKey, InterstitialsToday + 1);
+                IncrementDay(DayTotalKey);
             }
             else if (placement.Format == AdFormat.Rewarded)
             {
@@ -125,18 +130,25 @@ namespace Nexus.Ads
         // Day counters are stored as "<day>:<count>"; a row from an earlier day counts as zero. A row from a later day than the clock's
         // (the device clock was set back) keeps counting, or setting the clock back lifted every day cap (issue #195); a clock set
         // forward cannot be told from a real day change without a server's time, which the package does not read.
-        private int ReadDay(string key)
+        private int ReadDay(string key) => ReadDay(key, out _);
+
+        private int ReadDay(string key, out long day)
         {
+            day = _clock.UtcDay;
             string raw = _store.Get(key);
             if (string.IsNullOrEmpty(raw)) return 0;
             int colon = raw.IndexOf(':');
             if (colon <= 0) return 0;
-            if (!long.TryParse(raw.Substring(0, colon), NumberStyles.Integer, CultureInfo.InvariantCulture, out long day)) return 0;
-            if (day < _clock.UtcDay) return 0;
+            if (!long.TryParse(raw.Substring(0, colon), NumberStyles.Integer, CultureInfo.InvariantCulture, out long storedDay)) return 0;
+            if (storedDay < day) return 0;
+            day = storedDay;
             return int.TryParse(raw.Substring(colon + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int count) ? count : 0;
         }
 
-        private void WriteDay(string key, int count)
-            => _store.Set(key, _clock.UtcDay.ToString(CultureInfo.InvariantCulture) + ":" + count.ToString(CultureInfo.InvariantCulture));
+        private void IncrementDay(string key)
+        {
+            int count = ReadDay(key, out long day);
+            _store.Set(key, day.ToString(CultureInfo.InvariantCulture) + ":" + (count + 1).ToString(CultureInfo.InvariantCulture));
+        }
     }
 }

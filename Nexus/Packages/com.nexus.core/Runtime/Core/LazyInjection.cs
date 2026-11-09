@@ -61,7 +61,7 @@ namespace Nexus.Core
                 {
                     // Also outside the lock — the container's deferred-init bookkeeping is
                     // user-visible code and must not run under _lock.
-                    _container.NotifyLazyServiceResolved(typeof(T), _value);
+                    _container.NotifyLazyServiceResolved(typeof(T), _value, _name);
                 }
                 return _value;
             }

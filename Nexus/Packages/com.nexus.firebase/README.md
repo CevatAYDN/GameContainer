@@ -38,6 +38,18 @@ The adapters were written against Firebase Unity SDK **14.0.0** (`expression` 14
 
 ## Binding
 
+The SDK services do not resume initialization or accept new work after disposal
+(#385). Cancellation is checked before SDK dependency work and after async
+boundaries; a cancelled/disposed Remote Config fetch does not activate or publish
+later results. This stops the service's continuation, not Firebase's process-wide
+dependency operation.
+
+Analytics user properties follow the same Hold/Send/Discard decision as events
+(#393): a property set while denied is discarded, not saved for a later grant.
+Remote Config removal raises `Changed(key)` and removes its remembered value
+(#395); a re-added key is a new change even when it has its former value. Reads
+while the key is absent use the game's fallback.
+
 ```csharp
 public void OnConfigure(IContextBuilder builder)
 {
@@ -79,3 +91,10 @@ public void OnConfigure(IContextBuilder builder)
 ## Tests
 
 `Tests/Editor` (namespace `Nexus.Firebase.Tests`) runs in the EditMode of the Nexus development project, with no SDK installed, and in the proof project `Nexus/artifacts/firebase-20261031/FirebaseConsumer`, with the SDK packages, where the tests that need `NEXUS_FIREBASE_REMOTE_CONFIG` run too. Results are read from the result file.
+
+`FullReviewPlatformFirebaseTests` is opt-in with `NEXUS_FULL_REVIEW_FIREBASE_141`
+and registered Firebase 14.1.0 SDK packages. It runs the real services through
+their binding/initialization pipeline with instance-local SDK I/O delegates.
+It verifies continuation lifetime, consent decisions, conversion, buffering and
+key changes without sending analytics or crash reports. It is not live-project
+or device proof.

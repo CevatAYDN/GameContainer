@@ -120,6 +120,9 @@ namespace Nexus.Core
         // keys keep registration and cleanup exact. (F6 audit fix.)
         private readonly Dictionary<IView, IMediator> _activeMediators = new(NexusDI.ReferenceComparer<IView>.Instance);
         private readonly HashSet<IMediator> _activeMediatorSet = new(NexusDI.ReferenceComparer<IMediator>.Instance);
+        // Keep cancelled entries until their Bind stack unwinds, blocking nested acquisition.
+        private readonly Dictionary<IView, bool> _registeringViews = new(NexusDI.ReferenceComparer<IView>.Instance);
+        private bool _disposed;
         // Views without a mediator still own a context binding and must be unbound
         // during unregister/dispose. Keep this as a list and compare by reference:
         // view implementations are user code and may override Equals.
@@ -171,16 +174,23 @@ namespace Nexus.Core
         /// <param name="view">The view to register.</param>
         public void RegisterView(IView view)
         {
-            if (view == null) return;
+            if (view == null || _disposed) return;
             if (_activeMediators.ContainsKey(view)) return;
             if (ContainsBoundOnly(view)) return;
+            if (!_registeringViews.TryAdd(view, true)) return;
+            try { RegisterViewCore(view); }
+            finally { _registeringViews.Remove(view); }
+        }
 
+        private void RegisterViewCore(IView view)
+        {
             if (_context == null)
             {
                 var logger = NexusRuntime.Logger;
                 logger?.LogError($"[Nexus] RegisterView failed for '{view.GetType().Name}': context is null.");
                 return;
             }
+            if (!CanCompleteRegistration(view)) return;
 
             var mediatorAttr = MediatorAttributeOf(view);
             if (mediatorAttr == null)
@@ -189,8 +199,10 @@ namespace Nexus.Core
                 try
                 {
                     _container.Inject(view);
+                    if (!CanCompleteRegistration(view)) return;
                     view.Bind(_context);
-                    _boundOnlyViews.Add(view);
+                    if (CanCompleteRegistration(view)) _boundOnlyViews.Add(view);
+                    else view.Unbind();
                 }
                 catch (Exception ex)
                 {
@@ -209,6 +221,7 @@ namespace Nexus.Core
                 // are available when OnBind() runs. TickableView.OnBind() needs TickService
                 // to register for tick callbacks — if injected after Bind, it's null.
                 _container.Inject(view);
+                if (!CanCompleteRegistration(view)) return;
                 mediator = GetMediator(mediatorType, abstractionType);
             }
             catch (Exception ex)
@@ -225,28 +238,31 @@ namespace Nexus.Core
                     $"View '{view.GetType().Name}' will not have a mediator attached.");
                 return;
             }
+            if (!CanCompleteRegistration(view))
+            {
+                CancelRegistration(view, mediator, PoolKey(mediatorAttr), mediatorStarted: false);
+                return;
+            }
             try
             {
                 view.Bind(_context);
             }
             catch (Exception ex)
             {
-                try { view.Unbind(); } catch (Exception unbindEx) { NexusRuntime.Logger?.LogException(unbindEx); }
-                _activeMediators.Remove(view);
-                _activeMediatorSet.Remove(mediator);
-                ReturnMediator(mediator, PoolKey(mediatorAttr));
+                CancelRegistration(view, mediator, PoolKey(mediatorAttr), mediatorStarted: false);
                 NexusRuntime.Logger?.LogException(ex);
                 return;
             }
 
-            _activeMediators[view] = mediator;
-            _activeMediatorSet.Add(mediator);
+            if (!CanCompleteRegistration(view))
+            {
+                CancelRegistration(view, mediator, PoolKey(mediatorAttr), mediatorStarted: false);
+                return;
+            }
 
             // Mediator attaches after the view is already bound to the context.
-            // Exception safety: a throwing Bind (bad view cast, OnBind failure) must not
-            // leave a half-attached mediator tracked in the active maps — the old code
-            // propagated the exception and the mediator stayed registered, so a later
-            // UnregisterView/dispose would double-unbind a never-bound mediator.
+            // Publish only after its callback returns: cancellation must clean the entire callback,
+            // including subscriptions it adds after a reentrant UnregisterView.
             try
             {
                 mediator.Bind(view, _context.SignalBus);
@@ -254,22 +270,35 @@ namespace Nexus.Core
             catch (Exception ex)
             {
                 NexusRuntime.Logger?.LogException(ex);
-                try
-                {
-                    view.Unbind();
-                }
-                catch (Exception unbindEx)
-                {
-                    NexusRuntime.Logger?.LogException(unbindEx);
-                }
-                _activeMediators.Remove(view);
-                _activeMediatorSet.Remove(mediator);
-                ReturnMediator(mediator, PoolKey(mediatorAttr));
+                CancelRegistration(view, mediator, PoolKey(mediatorAttr), mediatorStarted: true);
                 NexusRuntime.Logger?.LogError(
                     $"[Nexus] RegisterView failed for '{view.GetType().Name}': mediator {mediatorType?.Name} could not bind. " +
                     $"{ex.Message}");
                 return;
             }
+            if (!CanCompleteRegistration(view))
+            {
+                CancelRegistration(view, mediator, PoolKey(mediatorAttr), mediatorStarted: true);
+                return;
+            }
+            _activeMediators[view] = mediator;
+            _activeMediatorSet.Add(mediator);
+        }
+
+        private bool CanCompleteRegistration(IView view) =>
+            !_disposed && ContextAvailability.IsAlive(_context) &&
+            _registeringViews.TryGetValue(view, out bool active) && active;
+
+        private void CancelRegistration(IView view, IMediator mediator, Type poolKey, bool mediatorStarted)
+        {
+            if (mediatorStarted)
+            {
+                try { mediator.Unbind(); }
+                catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
+            }
+            try { view.Unbind(); }
+            catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
+            ReturnMediator(mediator, poolKey);
         }
 
         /// <summary>Unregisters a view, unbinds its mediator, and returns the mediator to the pool.</summary>
@@ -277,6 +306,7 @@ namespace Nexus.Core
         public void UnregisterView(IView view)
         {
             if (view == null) return;
+            if (_registeringViews.ContainsKey(view)) _registeringViews[view] = false;
             try
             {
                 if (_activeMediators.Remove(view, out var mediator))
@@ -359,12 +389,6 @@ namespace Nexus.Core
         /// <param name="poolKey">The DI key the mediator was taken with, <see cref="PoolKey"/>.</param>
         private void ReturnMediator(IMediator mediator, Type poolKey)
         {
-            if (!_mediatorPools.TryGetValue(poolKey, out var pool))
-            {
-                pool = new Stack<IMediator>();
-                _mediatorPools[poolKey] = pool;
-            }
-
             _poolReturnCount++;
 
             // Leak signal: a mediator still tracked in _activeMediators at return time means
@@ -379,6 +403,12 @@ namespace Nexus.Core
             }
 
             CleanupMediator(mediator);
+            if (_disposed) return;
+            if (!_mediatorPools.TryGetValue(poolKey, out var pool))
+            {
+                pool = new Stack<IMediator>();
+                _mediatorPools[poolKey] = pool;
+            }
             if (pool.Count < _maxMediatorPoolSize)
             {
                 pool.Push(mediator);
@@ -419,6 +449,9 @@ namespace Nexus.Core
         /// <summary>Disposes all active mediators and unbinds all views, then clears all pools.</summary>
         public void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
+            _registeringViews.Clear();
             // Snapshot and clear first: a view's Unbind can unregister views (a View that disables itself in OnUnbind
             // reaches UnregisterView through OnDisable), which modified the collections under the loop (#293).
             var mediated = new KeyValuePair<IView, IMediator>[_activeMediators.Count];

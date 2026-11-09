@@ -240,6 +240,7 @@ namespace Nexus.Core.Services
             }
             finally
             {
+                due.Clear(); // retain capacity, not the last owners and their save closures (#349)
                 s_tickDepth--;
             }
         }

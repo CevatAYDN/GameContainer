@@ -1,4 +1,5 @@
 #if NEXUS_FIREBASE_ANALYTICS
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,6 +24,13 @@ namespace Nexus.Firebase.Sdk
         private readonly Dictionary<string, string> _heldProperties = new Dictionary<string, string>();
         private readonly AnalyticsRefusals _refusals = new AnalyticsRefusals();
         private bool _ready;
+        private bool _disposed;
+
+        // Lazy, instance-local SDK calls: construction does not start Firebase.
+        internal Func<Task<FirebaseDependencyStatus>> CheckDependenciesAsync = () => FirebaseAppSdk.CheckAndFixDependenciesAsync();
+        internal Action<bool> CollectionEnabledSink = enabled => FirebaseAnalyticsSdk.SetAnalyticsCollectionEnabled(enabled);
+        internal Action<string, string> PropertySink = (key, value) => FirebaseAnalyticsSdk.SetUserProperty(key, value);
+        internal Action<string, FirebaseParameter[]> EventSink = (name, parameters) => FirebaseAnalyticsSdk.LogEvent(name, parameters);
 
         [Inject] public IAnalyticsConsent Consent { get; set; }
 
@@ -32,7 +40,11 @@ namespace Nexus.Firebase.Sdk
 
         public override async ValueTask InitializeAsync(CancellationToken ct)
         {
-            FirebaseDependencyStatus status = await FirebaseAppSdk.CheckAndFixDependenciesAsync();
+            if (_disposed) return;
+            ct.ThrowIfCancellationRequested();
+            FirebaseDependencyStatus status = await CheckDependenciesAsync();
+            if (_disposed) return;
+            ct.ThrowIfCancellationRequested();
             if (status != FirebaseDependencyStatus.Available)
             {
                 NexusLog.WarnAlways("[Firebase] Analytics is off: the SDK's dependencies are " + status);
@@ -41,7 +53,7 @@ namespace Nexus.Firebase.Sdk
                 return;
             }
 
-            FirebaseAnalyticsSdk.SetAnalyticsCollectionEnabled(false);
+            CollectionEnabledSink(false);
             _ready = true;
             Consent.Changed += Apply;
             Apply();
@@ -54,6 +66,7 @@ namespace Nexus.Firebase.Sdk
 
         public void LogEvent(string eventName, Dictionary<string, object> parameters)
         {
+            if (_disposed) return;
             if (_refusals.AcceptEvent(eventName))
             {
                 _gate.Log(State, Choice, eventName, parameters, Send);
@@ -62,39 +75,47 @@ namespace Nexus.Firebase.Sdk
 
         public void SetUserProperty(string key, string value)
         {
+            if (_disposed) return;
             if (!_refusals.AcceptUserProperty(key, value))
             {
                 return;
             }
 
-            if (AnalyticsCollectionPolicy.Decide(State, Choice) == AnalyticsDecision.Send)
+            AnalyticsDecision decision = AnalyticsCollectionPolicy.Decide(State, Choice);
+            if (decision == AnalyticsDecision.Send)
             {
-                FirebaseAnalyticsSdk.SetUserProperty(key, value);
+                PropertySink(key, value);
                 return;
             }
 
-            _heldProperties[key] = value;
+            if (decision == AnalyticsDecision.Hold) _heldProperties[key] = value;
         }
 
         public override void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
             if (_ready)
             {
                 Consent.Changed -= Apply;
             }
+            _ready = false;
+            _gate.Close();
+            _heldProperties.Clear();
         }
 
         private void Apply()
         {
+            if (_disposed) return;
             AnalyticsDecision decision = AnalyticsCollectionPolicy.Decide(Consent.State, Consent.Choice);
-            FirebaseAnalyticsSdk.SetAnalyticsCollectionEnabled(decision == AnalyticsDecision.Send);
+            CollectionEnabledSink(decision == AnalyticsDecision.Send);
             _gate.Resolve(Consent.State, Consent.Choice, Send);
 
             if (decision == AnalyticsDecision.Send)
             {
                 foreach (KeyValuePair<string, string> property in _heldProperties)
                 {
-                    FirebaseAnalyticsSdk.SetUserProperty(property.Key, property.Value);
+                    PropertySink(property.Key, property.Value);
                 }
             }
 
@@ -106,6 +127,7 @@ namespace Nexus.Firebase.Sdk
 
         private void Send(AnalyticsEvent analyticsEvent)
         {
+            if (_disposed) return;
             var parameters = new List<FirebaseParameter>();
             if (analyticsEvent.Parameters != null)
             {
@@ -118,7 +140,7 @@ namespace Nexus.Firebase.Sdk
                 }
             }
 
-            FirebaseAnalyticsSdk.LogEvent(analyticsEvent.Name, parameters.ToArray());
+            EventSink(analyticsEvent.Name, parameters.ToArray());
         }
 
         private static bool TryConvert(string name, object value, out FirebaseParameter converted)

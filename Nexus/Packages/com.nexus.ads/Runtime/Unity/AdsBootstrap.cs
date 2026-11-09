@@ -40,6 +40,7 @@ namespace Nexus.Ads.Unity
         [SerializeField] private bool _debugPanel = true;
 
         private UnityAdTelemetry _telemetry;
+        private IConsentFlow _ownedConsent;
         private float _timeScaleBeforeAd = 1f;
         private bool _audioWasPaused;
         // what OnAdOpened changed for the show that is open: a show that never opened (a display failure) restores nothing (issue #174)
@@ -143,6 +144,8 @@ namespace Nexus.Ads.Unity
         /// <see cref="ConsentSource.GoogleUmp"/> before the first scene (issue #63); a game registers its own flow as
         /// <see cref="ConsentSource.GameFlow"/> before <see cref="StartAds"/>. Each source has its own slot, so the order of the
         /// registrations does not matter, and only the flow the settings name runs (issue #181). A null factory clears that source.
+        /// A separate flow returned by the factory belongs to this bootstrap lifetime and is disposed when the bootstrap ends
+        /// if it implements <see cref="IDisposable"/>. Directly supplied <see cref="AdController"/> ports remain caller-owned.
         /// </summary>
         public static void RegisterSharedConsentFlow(ConsentSource source, Func<ProviderConfig, IConsentFlow> factory)
         {
@@ -243,6 +246,7 @@ namespace Nexus.Ads.Unity
                 }
             }
 
+            if (!ReferenceEquals(consent, Provider)) _ownedConsent = consent;
             Controller = new AdController(config, Provider, new UnityAdClock(), visibility, mainThread, scheduler, new PlayerPrefsPacingStore(), _telemetry, consent, touch: touch);
             Controller.ReadyChanged += Ads.RaiseReadyChanged; // before Start, so the first fill reaches subscriptions made before this bootstrap existed (issue #195)
             if (!UnityTouchInput.ReadsPointer) Controller.ReadyChanged += WarnTouchWaitUnread; // remote values arrive with a ReadyChanged
@@ -278,18 +282,39 @@ namespace Nexus.Ads.Unity
 
         private void OnAdClosed(AdFormat format, AdResult result)
         {
+            RestorePauseState();
+            if (_overlay != null) _overlay.enabled = false; // its OnGUI runs only while a show is open (issue #83)
+        }
+
+        private void RestorePauseState()
+        {
             if (_restoreAudio) { AudioListener.pause = _audioWasPaused; _restoreAudio = false; }
             if (_restoreTime) { Time.timeScale = _timeScaleBeforeAd; _restoreTime = false; }
-            if (_overlay != null) _overlay.enabled = false; // its OnGUI runs only while a show is open (issue #83)
         }
 
         private void OnDestroy()
         {
             if (Instance != this) return;
-            Controller?.Dispose();
-            (Provider as IDisposable)?.Dispose(); // the bootstrap created it; LevelPlay's leaves its static init events (issue #194)
-            Simulator?.Cancel();
-            Instance = null;
+            var consent = _ownedConsent;
+            _ownedConsent = null;
+            try
+            {
+                try { Controller?.Dispose(); }
+                finally
+                {
+                    try { (consent as IDisposable)?.Dispose(); }
+                    finally
+                    {
+                        try { (Provider as IDisposable)?.Dispose(); }
+                        finally { Simulator?.Cancel(); }
+                    }
+                }
+            }
+            finally
+            {
+                RestorePauseState();
+                Instance = null;
+            }
         }
     }
 

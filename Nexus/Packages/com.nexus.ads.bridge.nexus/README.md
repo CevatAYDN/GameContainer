@@ -98,6 +98,12 @@ exceptions: a swallowed save failure makes the outer callback return normally an
 The confirmation failure must escape the callback boundary itself. Dispatch secondary reward
 notifications only after the confirmed grant.
 
+`RequestRewardAsync` is an outcome-only convenience API (#382). Its continuation
+runs outside the SDK callback, so the adapter can already have acknowledged before
+an awaited game grant/save runs. It is not a deferred-acknowledgement API. For
+durable currency rewards, use the synchronous callback pattern below; cancellation
+of an outcome wait does not cancel an ad or establish persistence.
+
 **This is not a transaction across arbitrary keys.** For exactly-once application across restart,
 the game state and applied receipt id must be in **one atomically replaced blob**. Separate balance
 and receipt keys can partially commit. The example below uses one JSON wallet and the controller's
@@ -109,6 +115,41 @@ can trigger another show. `PendingReward` can already refer to a newer reward at
 failed receipt write, and restored after a nested callback even if that callback throws.
 The example reconciles the single pending receipt before accepting another reward. A last-receipt field is
 not a general historical receipt ledger, and the ads store keeps only one pending receipt.
+
+### Rewards Paid Into Nexus Economy
+
+For a currency owned by `IEconomyService`, use `EarnOnce(currencyId, amount, receiptId, reason)`
+or `EarnBigOnce` (core issue #350); do not introduce a second game-owned wallet. The methods
+store the balance and applied ids together and confirm the economy's actual store, bypassing
+save throttling. A duplicate returns false only after confirmation too. Any exception must
+escape the live callback or prevent startup acknowledgement.
+
+```csharp
+// Live RequestReward callback, after checking outcome == AdOutcome.Rewarded:
+var receipt = controller.DeliveringReward
+    ?? throw new IOException("Reward receipt is unavailable.");
+bool applied = economy.EarnOnce(currencyId, savedOfferAmount, receipt.Id, receipt.Placement);
+// The return confirms the currency, including a retry of an already-applied receipt.
+// Send secondary notifications only after this call; they do not prove persistence.
+
+// Startup: resolve the persisted offer data for this pending receipt first.
+var pending = controller.PendingReward;
+if (pending.HasValue)
+{
+    economy.EarnOnce(currencyId, savedOfferAmount, pending.Value.Id, pending.Value.Placement);
+    controller.AcknowledgeReward(pending.Value.Id);
+}
+```
+
+Keep the offer amount/context durable before asking for the ad, and retain enough of it to
+retry until the receipt is acknowledged. Do not clear the amount and then try to replay a
+positive-amount API with zero. This API makes only the currency grant idempotent, not unrelated
+mission flags or model changes in another blob. An interrupted earlier two-file workaround
+with an ambiguous payment needs an explicit game migration decision; Nexus cannot infer
+whether that historical reward was paid. See the core migration guide before adopting the
+one-way wallet format. Custom economy implementations must explicitly support this API.
+
+### Game-Owned Wallet Example
 
 ```csharp
 using System;

@@ -2,12 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
-using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
 using Nexus.Ads.Unity;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 [assembly: InternalsVisibleTo("com.nexus.ads.editor.tests")]
 
@@ -81,8 +83,6 @@ namespace Nexus.Ads.Editor
     public static class AdsValidator
     {
         public enum Tab { Test, Release }
-
-        private static readonly Regex Identifier = new Regex("^[A-Za-z_][A-Za-z0-9_]*$");
 
         private const string ConsentFix = "install com.google.ads.mobile and com.nexus.ads.admob and set Consent to GoogleUmp, or wrap your own consent platform in an IConsentFlow "
             + "(which forwards the answer with LevelPlayProvider.SetGdprConsent), register it with AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, ...) before StartAds() and set Consent to GameFlow.";
@@ -218,13 +218,29 @@ namespace Nexus.Ads.Editor
                 report.Add(new AdsCheck("android.adid", CheckResult.Pass, target >= 33 ? "AD_ID: no custom manifest without the permission (the merged manifest is checked by the SDKs on build)" : "target API below 33"));
         }
 
-        // A <uses-permission> element that names the permission and carries tools:node="remove", in either attribute order.
+        // Only a real manifest child with the Android/tools namespaces can remove a permission.
         internal static bool RemovesPermission(string manifest, string permission)
         {
             if (manifest == null) return false;
-            foreach (Match element in Regex.Matches(manifest, "<uses-permission\\b[^>]*>", RegexOptions.IgnoreCase))
-                if (element.Value.Contains("android:name=\"" + permission + "\"") && Regex.IsMatch(element.Value, "tools:node\\s*=\\s*\"remove\"")) return true;
-            return false;
+            try
+            {
+                using var reader = XmlReader.Create(new StringReader(manifest),
+                    new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null });
+                var root = XDocument.Load(reader).Root;
+                if (root == null || root.Name != "manifest") return false;
+                XNamespace android = "http://schemas.android.com/apk/res/android";
+                XNamespace tools = "http://schemas.android.com/tools";
+                bool removed = false;
+                foreach (var element in root.Elements("uses-permission"))
+                {
+                    if ((string)element.Attribute(android + "name") != permission) continue;
+                    if ((string)element.Attribute(tools + "node") != "remove" || element.Attribute(tools + "selector") != null)
+                        return false;
+                    removed = true;
+                }
+                return removed;
+            }
+            catch (XmlException) { return false; }
         }
 
         private static void CheckKeys(AdsSettings settings, AdProviderKind kind, AdPlatform platform, bool release, PlatformCatalog catalog, AdsValidationReport report)
@@ -339,7 +355,7 @@ namespace Nexus.Ads.Editor
             {
                 var plan = AndroidSetup.Plan(settings, release ? Tab.Release : Tab.Test, probe, catalog);
                 AddPlanCheck(report, plan, "android.nativesdk", new[] { "native.sdk", "resolve" }, "the Gradle build fails without the native SDK (LevelPlay: cannot find symbol IronSourceError)");
-                AddPlanCheck(report, plan, "android.gradle", new[] { "gradle.template", "gradle.lines" }, "the Gradle build fails without them (LevelPlay on Unity 6000.5: duplicate Kotlin classes)");
+                AddPlanCheck(report, plan, "android.gradle", new[] { "gradle.template", "gradle.properties", "gradle.lines" }, "the Gradle build fails without them (LevelPlay on Unity 6000.5: duplicate Kotlin classes)");
                 AddPlanCheck(report, plan, "android.adapter", new[] { "native.adapter" }, "the build succeeds but every ad request ends in 509 Mediation No fill (LevelPlay without the Unity Ads adapter, device run 2026-10-24)");
             }
 
@@ -375,11 +391,11 @@ namespace Nexus.Ads.Editor
             foreach (var p in settings.Placements)
             {
                 string name = p.Name ?? "";
-                if (!Identifier.IsMatch(name)) bad.Add("'" + name + "' is not a C# identifier");
-                else if (!seen.Add(name)) bad.Add("'" + name + "' is declared twice");
+                string error = AdPlacementsGenerator.NameError(name, seen, out _);
+                if (error != null) bad.Add(error);
                 if (p.Format == AdFormat.Interstitial && !p.NaturalBreak) bad.Add("'" + name + "' is an interstitial without NaturalBreak; it can never show");
             }
-            if (bad.Count > 0) report.Add(new AdsCheck("placements.names", CheckResult.Fail, string.Join("; ", bad) + ".", "placement names are C# identifiers (shop_refill, not shop-refill) and unique; interstitial placements are marked NaturalBreak."));
+            if (bad.Count > 0) report.Add(new AdsCheck("placements.names", CheckResult.Fail, string.Join("; ", bad) + ".", "placement names must generate valid, unique PascalCase constants other than AdPlacements; interstitial placements are marked NaturalBreak."));
             else report.Add(settings.Placements.Count == 0
                 ? new AdsCheck("placements.names", CheckResult.Warn, "no placement is declared; nothing can show.", "add placements in the settings asset (Nexus > Ads > Settings).")
                 : new AdsCheck("placements.names", CheckResult.Pass, settings.Placements.Count + " placement(s)"));
@@ -496,9 +512,10 @@ namespace Nexus.Ads.Editor
 
     /// <summary>
     /// Runs the validator on every player build: the Test tab for a development build, the Release tab
-    /// otherwise. A fail stops the build; a project without the settings asset is left alone.
+    /// otherwise. Checks the Resources default and serialized overrides in each processed build scene.
+    /// A fail stops the build; code-created runtime settings remain the game's validation responsibility.
     /// </summary>
-    public sealed class AdsBuildGuard : IPreprocessBuildWithReport
+    public sealed class AdsBuildGuard : IPreprocessBuildWithReport, IProcessSceneWithReport
     {
         public int callbackOrder => -900;
 
@@ -508,6 +525,27 @@ namespace Nexus.Ads.Editor
             var settings = AdsSettings.Load();
             if (settings == null) return;
             Check(report.summary.platform, report.summary.options, settings, new UnityProjectProbe(), PlatformCatalog.Load());
+        }
+
+        public void OnProcessScene(Scene scene, BuildReport report)
+        {
+            if (report == null || (report.summary.platform != BuildTarget.Android && report.summary.platform != BuildTarget.iOS)) return;
+            var fallback = AdsSettings.Load();
+            var checkedSettings = new HashSet<AdsSettings>();
+            var probe = new UnityProjectProbe();
+            var catalog = PlatformCatalog.Load();
+            foreach (var root in scene.GetRootGameObjects())
+            foreach (var bootstrap in root.GetComponentsInChildren<AdsBootstrap>(true))
+            {
+                var settings = bootstrap.Settings;
+                if (settings == null) settings = fallback;
+                if (settings == null || !checkedSettings.Add(settings)) continue;
+                try { Check(report.summary.platform, report.summary.options, settings, probe, catalog); }
+                catch (BuildFailedException error)
+                {
+                    throw new BuildFailedException($"[Nexus Ads] Scene '{scene.path}' uses invalid settings '{settings.name}': {error.Message}");
+                }
+            }
         }
 
         /// <summary>The guard's check of one phone build: the tab its options call for, the report written, a fail thrown as <see cref="BuildFailedException"/>.</summary>

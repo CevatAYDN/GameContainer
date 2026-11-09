@@ -20,6 +20,28 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 
 On `main`, not yet released. The [changelog](CHANGELOG.md)'s `[Unreleased]` section lists every change since 0.6.0.
 
+#### Replay and cleanup corrections
+
+Issues #344-#349 keep the public method signatures but correct behavior:
+
+- Network rollback recomputes handler-derived events. Future external inputs retain
+  their recording tick, and already-due work runs before that tick's new external calls.
+  Supply a rollback tick that includes the corrected inputs. Abandoned future snapshots
+  are invalidated; call `SetTick` to capture a new one or resimulate through that tick
+  before using it as another rollback start. Drain worker inputs before every owner
+  `Fire`/`FireAtTick`, including a future schedule. A handler cannot emit into the past.
+- Direct typed-history replay keeps independent nested snapshots and logical recording
+  order after regeneration.
+- Pool clear callbacks may create replacement pools whose new leases remain owned.
+  `Dispose` closes acquisition first; creating a lease or initializing after disposal
+  throws `ObjectDisposedException`. Acquisition interrupted by activation/OnSpawned
+  callbacks throws `InvalidOperationException` instead of returning a stale lease.
+  A prewarm of a cleared pool is cancelled, including during its final yield.
+- Derived computations cannot overwrite a newer successful result. Concurrent pending
+  publication can coalesce; selectors and observers are invoked outside the commit lock.
+- A superseded FSM enter that fails late still exits once before the next transition.
+  SaveThrottler's completed tick buffers no longer retain disposed save owners.
+
 #### Unavailable economy balances are not new zero balances
 
 Issue #339 changes Nexus's `EconomyService` first-load failure behavior. A saved
@@ -29,11 +51,17 @@ The failed load creates no balance and schedules no persistence. Disposal and
 another currency's flush therefore preserve the original key and, for an
 unreadable canonical big balance, its legacy long recovery key.
 
-Catch this failure at the game's load/UI boundary, hold dependent spending and
-earning, and present the game's recovery state. Do not catch it and call
+Use `TryGetBalance(id, out value)` / `TryGetBigBalance` at load/UI boundaries
+(#352). False means unavailable, not a usable zero. Keep the mediator bound,
+show the game's recovery state, and retry after data recovery before attaching
+`GetObservableBalance` / `GetObservableBigBalance`. These getters still throw
+on unavailable first load; they do not return a synthetic observable that could
+later be saved as zero. Hold dependent spending and earning. Do not call
 `SetBalance(..., 0)`, delete the keys, or treat the session as a new save.
-There is no new interface member for custom `IEconomyService` implementations;
-their own persisted-read behavior remains their responsibility.
+The new interface queries have compatibility defaults over existing getters
+(catching `IOException`); Nexus's implementation reads status directly without
+exception control flow. A custom economy can override them for its own status
+and disposal semantics.
 
 For a transient read failure, restore access and explicitly call the same read
 again on the same service; no fallback zero was cached. `EncryptedStorageService`
@@ -45,14 +73,69 @@ unreadable state. Normal absent currencies still start at zero, and existing
 healthy cached balances remain usable; this is not a continuous disk-health
 monitor or a transaction across currencies.
 
+#### Unavailable progression and offline counters
+
+Issue #402 extends fail-closed loading to `ProgressionService`. Unreadable or
+malformed current/max levels throw `IOException` during initialization; neither
+key is replaced and mutations remain blocked. A missing key still gets its
+normal new-game default. After restoring access/data, retry initialization on
+the same live service, or restart the failed context with a new service when
+context cleanup has already disposed the original. Do not recover by resetting
+levels or deleting their keys.
+
+Issue #404 makes post-disposal level mutations and initialization throw
+`ObjectDisposedException`; delayed saves from the retired owner do nothing.
+Issue #407 grants zero offline progress when the saved monotonic counter is
+unreadable or malformed. Absence of a legacy counter still uses the capped
+wall-clock path. Keep unavailable data distinct from first launch in game
+loading/recovery UI and test restored-data retries.
+
+#### Receipt-keyed economy rewards
+
+Issue #350 adds `EarnOnce(currencyId, amount, receiptId, reason)` and `EarnBigOnce`
+to `IEconomyService`. They synchronously persist and confirm through
+`SettingsStores.Economy` (or the default store), bypassing `SaveThrottler`.
+`true` means newly applied in this session; `false` means already applied.
+Both returns confirm persistence. A failure throws: do not swallow it at the
+delivery boundary. Live state can already include the reward after a failed
+commit; retry with the same id, never a new one. Custom economies retain source
+compatibility but must implement this guarantee before use (the default throws
+`NotSupportedException`).
+
+The first receipt-keyed operation adopts a versioned `NT_EcoWallet_<id>` payload
+holding the balance and all applied ids. It reads legacy `NT_Eco_<id>` /
+`NT_EcoBig_<id>` first when no wallet exists. Normal mutations and promotion then
+use the wallet payload. Legacy keys remain recovery evidence but are not the
+current balance after adoption. An unreadable/invalid wallet fails closed rather
+than falling back. This is a one-way save migration; do not re-pin to an older
+framework after writing wallet payloads.
+
+Ids are ordinal, scoped per currency and retained for the save's lifetime.
+They must contain valid UTF-16; unpaired surrogates throw before changing any balance.
+A custom store must not reenter economy mutations or disposal while its wallet setter
+runs; such reentry throws before mutation so an older staged payload cannot overwrite
+a nested confirmed grant. Balance-observer reentry outside storage staging remains supported.
+A previously accepted spend's network rejection waits asynchronously until staging ends
+before refunding; custom storage callbacks must not synchronously wait for that refund.
+Distinct ids grow the payload; this persistence path allocates. Use stable ids,
+serialize deliveries and settle pending rewards before another ad. The local
+ledger does not make backend validation idempotent, join a separate game blob
+into the transaction, or guarantee sudden-power-loss durability. Persist the
+offer's amount/context before requesting the ad and retain it until confirmed
+delivery; a variable reward must not be reconstructed from a later balance.
+The bridge's confirmed-reward section shows live and startup receipt selection.
+
 #### Confirm reward persistence before acknowledging delivery
 
 Issue #338 adds `IPlayerPrefsService.TrySave()` and `SaveOrThrow()`. Existing
 implementations still compile: the default `TrySave()` returns false, not an
 inferred success from void `Save()`. `EncryptedStorageService` implements
 confirmation for all pending writes/deletes; custom stores must implement
-their own real confirmation before using this path. In-memory test stores and
-`UnityPlayerPrefsService` do not claim durable confirmation.
+their own real confirmation before using this path. `UnityPlayerPrefsService`
+does not claim durable confirmation. The shipped `InMemoryPlayerPrefsService`
+supports confirmation of its simulated durable snapshot (#351), not a disk write.
+Use `Reopen()` for abrupt-stop tests instead of reusing the live instance, and
+`FailNextSaves(count)` / `MarkUnreadable(key)` / `Restore(key)` for fault/recovery.
 
 Existing reward callbacks still acknowledge on normal return. A callback that
 only called void `Save()` can therefore still consume a receipt after a failed
@@ -67,7 +150,10 @@ replace it before an older callback runs.
 Keep the reward state and applied receipt id in one atomically replaced blob,
 and reconcile a pending receipt before accepting another reward. Separate
 economy/pending-id keys are not a transaction, even if `TrySave()` reports
-success after a later retry. The bridge's
+success after a later retry. For a Nexus currency, use `EarnOnce`/`EarnBigOnce`
+instead of normal `Earn` plus a separately saved receipt id. These methods already
+confirm the economy store; other game-state writes still need their own confirmation.
+The bridge's
 [Confirmed Reward Saves](../com.nexus.ads.bridge.nexus/README.md#confirmed-reward-saves)
 section gives both callback forms, startup replay and the guarantee boundaries.
 

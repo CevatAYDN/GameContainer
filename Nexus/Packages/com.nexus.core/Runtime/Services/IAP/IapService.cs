@@ -287,7 +287,7 @@ namespace Nexus.Core.Services
             }
         }
 
-        public override void OnDispose()
+        public override void Dispose()
         {
             // Release the platform adapter so its native handles (billing connections) are
             // torn down deterministically instead of leaking until process exit. Swap under

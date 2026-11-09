@@ -23,7 +23,7 @@ namespace Nexus.Ads.AdMob
     /// ids for those builds only. The plugin reads the App ID from its own settings asset; the validator
     /// keeps that asset equal to the settings tab.
     /// </summary>
-    public sealed class AdMobProvider : IAdProvider, IConsentFlow
+    public sealed class AdMobProvider : IAdProvider, IConsentFlow, IRewardedShowProvider, IDisposable
     {
         public const string ProviderName = "admob";
 
@@ -41,18 +41,47 @@ namespace Nexus.Ads.AdMob
         private readonly UnityMainThread _main = new UnityMainThread();
         private RewardedAd _rewarded;
         private InterstitialAd _interstitial;
+        private AdState _rewardedState, _interstitialState;
         private BannerView _banner;
         private string _bannerPlacement = "";
         private readonly UmpConsentFlow _consent;
-        private bool _sdkStarted, _loadingRewarded, _loadingInterstitial;
+        private bool _sdkStarted, _loadingRewarded, _loadingInterstitial, _disposed;
+        private int _loadGeneration;
         private ShowState _show;
+
+        private sealed class AdState
+        {
+            public readonly AdFormat Format;
+            public ShowState Show;
+            private Action _destroy;
+            public bool Released { get; private set; }
+
+            public AdState(AdFormat format, Action destroy) { Format = format; _destroy = destroy; }
+            public void Release()
+            {
+                if (Released) return;
+                Released = true;
+                var destroy = _destroy;
+                _destroy = null;
+                destroy?.Invoke();
+            }
+        }
 
         private sealed class ShowState
         {
-            public AdFormat Format;
-            public string Placement;
-            public Action<AdResult> OnResult;
+            public readonly AdState Ad;
+            public readonly string Placement;
+            public readonly Action<AdResult> OnResult;
+            public readonly Action OnRewardEarned;
             public bool Rewarded, Done;
+
+            public ShowState(AdState ad, string placement, Action<AdResult> result, Action earned)
+            {
+                Ad = ad;
+                Placement = placement ?? "";
+                OnResult = result;
+                OnRewardEarned = earned;
+            }
         }
 
         /// <summary>Create on the Unity main thread: the SDK's callbacks are continued there.</summary>
@@ -60,10 +89,11 @@ namespace Nexus.Ads.AdMob
         {
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _consent = new UmpConsentFlow(config.UnderAgeOfConsent, debugAllowed: UmpConsentFlow.DebugAllowedFor(config));
-            _consent.Changed += () => Changed?.Invoke();
+            _consent.Changed += OnConsentChanged;
         }
 
         private bool TestDevicesApply => _consent.DebugApplies;
+        private void OnConsentChanged() { if (!_disposed) Changed?.Invoke(); }
 
         private void OnMain(Action action)
         {
@@ -73,24 +103,59 @@ namespace Nexus.Ads.AdMob
 
         // ----- IConsentFlow
 
-        public bool Completed => _consent.Completed;
-        public bool CanRequestAds => _consent.CanRequestAds;
-        public bool PrivacyOptionsRequired => _consent.PrivacyOptionsRequired;
+        public bool Completed => !_disposed && _consent.Completed;
+        public bool CanRequestAds => !_disposed && _consent.CanRequestAds;
+        public bool PrivacyOptionsRequired => !_disposed && _consent.PrivacyOptionsRequired;
         public event Action Changed;
 
-        public void Request(Action onCompleted) => _consent.Request(onCompleted);
+        public void Request(Action onCompleted) { if (!_disposed) _consent.Request(onCompleted); }
 
-        public void ShowPrivacyOptions(Action onClosed) => _consent.ShowPrivacyOptions(() =>
+        public void ShowPrivacyOptions(Action onClosed)
         {
-            if (!ConsentInformation.CanRequestAds()) DropLoadedAds();
-            onClosed?.Invoke();
-        });
+            if (_disposed) return;
+            _consent.ShowPrivacyOptions(() =>
+            {
+                if (_disposed) return;
+                if (!ConsentInformation.CanRequestAds()) DropLoadedAds();
+                onClosed?.Invoke();
+            });
+        }
 
         private void DropLoadedAds()
         {
-            _rewarded?.Destroy(); _rewarded = null;
-            _interstitial?.Destroy(); _interstitial = null;
-            _banner?.Destroy(); _banner = null;
+            _loadGeneration++;
+            _loadingRewarded = _loadingInterstitial = false;
+            try { Release(_rewardedState); }
+            finally
+            {
+                try { Release(_interstitialState); }
+                finally
+                {
+                    var banner = _banner;
+                    _banner = null;
+                    banner?.Destroy();
+                }
+            }
+        }
+
+        private void Release(AdState ad)
+        {
+            if (ad == null) return;
+            if (ReferenceEquals(_rewardedState, ad)) { _rewardedState = null; _rewarded = null; }
+            if (ReferenceEquals(_interstitialState, ad)) { _interstitialState = null; _interstitial = null; }
+            // No old-ad collection: release the handle, retaining only identity in callbacks already queued.
+            // This does not guarantee that a native SDK delivers further callbacks after destruction.
+            ad.Release();
+        }
+
+        private void Retire(AdState ad)
+        {
+            if (ad?.Show != null)
+            {
+                ad.Show.Done = true;
+                if (ReferenceEquals(_show, ad.Show)) _show = null;
+            }
+            Release(ad);
         }
 
         // ----- IAdProvider
@@ -105,6 +170,7 @@ namespace Nexus.Ads.AdMob
         public void Initialize(ProviderConfig config, Action<bool> onReady)
         {
             if (config == null) throw new ArgumentNullException(nameof(config));
+            if (_disposed) throw new ObjectDisposedException(nameof(AdMobProvider));
             if (_sdkStarted) { onReady?.Invoke(true); return; }
             MobileAds.SetRequestConfiguration(new RequestConfiguration
             {
@@ -114,6 +180,7 @@ namespace Nexus.Ads.AdMob
             });
             MobileAds.Initialize(_ => OnMain(() =>
             {
+                if (_disposed) return;
                 _sdkStarted = true;
                 onReady?.Invoke(true); // the plugin reports adapter states, never a failed start
             }));
@@ -121,41 +188,59 @@ namespace Nexus.Ads.AdMob
 
         public void Load(AdFormat format)
         {
+            if (_disposed) return;
             string unit = _config.AdUnitId(format);
             if (!_sdkStarted) { LoadFailed?.Invoke(format, "SDK not initialized"); return; }
             if (!ConsentInformation.CanRequestAds()) { LoadFailed?.Invoke(format, "consent does not allow ad requests"); return; }
             if (string.IsNullOrEmpty(unit)) { LoadFailed?.Invoke(format, "no ad unit id for " + format); return; }
+            int generation = _loadGeneration;
             switch (format)
             {
                 case AdFormat.Rewarded:
                     if (_loadingRewarded) return;
                     _loadingRewarded = true;
+                    Retire(_rewardedState);
+                    if (_disposed || generation != _loadGeneration) return;
                     RewardedAd.Load(unit, new AdRequest(), (ad, error) => OnMain(() =>
                     {
+                        if (_disposed || generation != _loadGeneration) { ad?.Destroy(); return; }
                         _loadingRewarded = false;
-                        if (error != null || ad == null) { LoadFailed?.Invoke(format, error?.GetMessage() ?? "no ad"); return; }
-                        _rewarded?.Destroy();
+                        if (!ConsentInformation.CanRequestAds()) { ad?.Destroy(); return; }
+                        if (error != null || ad == null) { ad?.Destroy(); LoadFailed?.Invoke(format, error?.GetMessage() ?? "no ad"); return; }
+                        var state = new AdState(format, ad.Destroy);
+                        _rewardedState = state;
                         _rewarded = ad;
-                        ad.OnAdFullScreenContentOpened += () => OnMain(() => Opened?.Invoke(format));
-                        ad.OnAdFullScreenContentClosed += () => OnMain(() => Finish(format, null));
-                        ad.OnAdFullScreenContentFailed += e => OnMain(() => Finish(format, AdResult.Failed, e?.GetMessage()));
-                        ad.OnAdPaid += value => OnMain(() => Paid(value, format, _show?.Placement ?? "", ad.GetResponseInfo()));
+                        ad.OnAdFullScreenContentOpened += () => OnMain(() => OnOpened(state));
+                        ad.OnAdFullScreenContentClosed += () => OnMain(() => Finish(state.Show, null));
+                        ad.OnAdFullScreenContentFailed += e => OnMain(() => Finish(state.Show, AdResult.Failed, e?.GetMessage()));
+                        ad.OnAdPaid += value => OnMain(() =>
+                        {
+                            if (!_disposed) Paid(value, format, state.Show?.Placement ?? "", ad.GetResponseInfo());
+                        });
                         Loaded?.Invoke(format);
                     }));
                     return;
                 case AdFormat.Interstitial:
                     if (_loadingInterstitial) return;
                     _loadingInterstitial = true;
+                    Retire(_interstitialState);
+                    if (_disposed || generation != _loadGeneration) return;
                     InterstitialAd.Load(unit, new AdRequest(), (ad, error) => OnMain(() =>
                     {
+                        if (_disposed || generation != _loadGeneration) { ad?.Destroy(); return; }
                         _loadingInterstitial = false;
-                        if (error != null || ad == null) { LoadFailed?.Invoke(format, error?.GetMessage() ?? "no ad"); return; }
-                        _interstitial?.Destroy();
+                        if (!ConsentInformation.CanRequestAds()) { ad?.Destroy(); return; }
+                        if (error != null || ad == null) { ad?.Destroy(); LoadFailed?.Invoke(format, error?.GetMessage() ?? "no ad"); return; }
+                        var state = new AdState(format, ad.Destroy);
+                        _interstitialState = state;
                         _interstitial = ad;
-                        ad.OnAdFullScreenContentOpened += () => OnMain(() => Opened?.Invoke(format));
-                        ad.OnAdFullScreenContentClosed += () => OnMain(() => Finish(format, null));
-                        ad.OnAdFullScreenContentFailed += e => OnMain(() => Finish(format, AdResult.Failed, e?.GetMessage()));
-                        ad.OnAdPaid += value => OnMain(() => Paid(value, format, _show?.Placement ?? "", ad.GetResponseInfo()));
+                        ad.OnAdFullScreenContentOpened += () => OnMain(() => OnOpened(state));
+                        ad.OnAdFullScreenContentClosed += () => OnMain(() => Finish(state.Show, null));
+                        ad.OnAdFullScreenContentFailed += e => OnMain(() => Finish(state.Show, AdResult.Failed, e?.GetMessage()));
+                        ad.OnAdPaid += value => OnMain(() =>
+                        {
+                            if (!_disposed) Paid(value, format, state.Show?.Placement ?? "", ad.GetResponseInfo());
+                        });
                         Loaded?.Invoke(format);
                     }));
                     return;
@@ -167,70 +252,119 @@ namespace Nexus.Ads.AdMob
 
         public bool IsReady(AdFormat format)
         {
-            if (!_sdkStarted || !ConsentInformation.CanRequestAds()) return false;
+            if (_disposed || !_sdkStarted || !ConsentInformation.CanRequestAds()) return false;
             switch (format)
             {
-                case AdFormat.Rewarded: return _rewarded != null && _rewarded.CanShowAd();
-                case AdFormat.Interstitial: return _interstitial != null && _interstitial.CanShowAd();
+                case AdFormat.Rewarded: return _rewarded != null && _rewardedState.Show == null && _rewarded.CanShowAd();
+                case AdFormat.Interstitial: return _interstitial != null && _interstitialState.Show == null && _interstitial.CanShowAd();
                 default: return false;
             }
         }
 
         public void Show(AdFormat format, string placement, Action<AdResult> onResult)
+            => Show(format, placement, onResult, null);
+
+        void IRewardedShowProvider.ShowRewarded(string placement, Action<AdResult> onResult, Action onRewardEarned)
+            => Show(AdFormat.Rewarded, placement, onResult, onRewardEarned);
+
+        private void Show(AdFormat format, string placement, Action<AdResult> onResult, Action onRewardEarned)
         {
             if (onResult == null) throw new ArgumentNullException(nameof(onResult));
             if (!IsReady(format)) { onResult(AdResult.NotReady); return; }
-            // The controller asks for a show only after it answered the last one, so a show still open here is one the SDK never
-            // answered and the controller's watchdog ended (#180): a ready ad replaces it. The latch answered NotReady to every
-            // later show (#233); with nothing ready it stays, so a reward the SDK still pays reaches the controller's receipt.
-            // shortcut: a close of the replaced ad, if its object still lives (the reload destroys it), counts for a new show of
-            // its format.
-            if (_show != null && !_show.Done) _show.Done = true;
-            var show = _show = new ShowState { Format = format, Placement = placement ?? "", OnResult = onResult };
+            if (_show != null && !_show.Done) Retire(_show.Ad);
+            var ad = format == AdFormat.Rewarded ? _rewardedState : _interstitialState;
+            var show = _show = new ShowState(ad, placement, onResult, onRewardEarned);
+            ad.Show = show;
             try
             {
-                if (format == AdFormat.Rewarded) _rewarded.Show(_ => OnMain(() => show.Rewarded = true)); // Google pays before the close
+                if (format == AdFormat.Rewarded) _rewarded.Show(_ => OnMain(() => OnRewarded(show)));
                 else _interstitial.Show();
             }
-            catch { if (_show == show) _show = null; throw; } // an open show would answer NotReady to every later one (#151)
+            catch { Retire(ad); throw; }
+        }
+
+        private void OnOpened(AdState ad)
+        {
+            if (!_disposed && !ad.Released && ad.Show != null && !ad.Show.Done && ReferenceEquals(_show, ad.Show))
+                Opened?.Invoke(ad.Format);
+        }
+
+        private void OnRewarded(ShowState show)
+        {
+            if (_disposed || show.Rewarded) return;
+            show.Rewarded = true;
+            show.OnRewardEarned?.Invoke();
         }
 
         /// <summary>Ends the show once; a null result is a close, paid when the reward arrived.</summary>
-        private void Finish(AdFormat format, AdResult? result, string reason = null)
+        private void Finish(ShowState show, AdResult? result, string reason = null)
         {
-            var show = _show;
-            if (show == null || show.Done || show.Format != format) return;
+            if (_disposed || show == null || show.Done) return;
             show.Done = true;
-            _show = null;
-            if (reason != null) Debug.LogWarning("[Nexus Ads] AdMob " + format + " failed to show: " + reason);
-            if (format == AdFormat.Rewarded) { _rewarded?.Destroy(); _rewarded = null; }
-            else { _interstitial?.Destroy(); _interstitial = null; }
-            show.OnResult(result ?? (show.Rewarded ? AdResult.Rewarded : AdResult.Closed));
+            if (ReferenceEquals(_show, show)) _show = null;
+            if (reason != null) Debug.LogWarning("[Nexus Ads] AdMob " + show.Ad.Format + " failed to show: " + reason);
+            try { Release(show.Ad); }
+            finally { show.OnResult(result ?? (show.Rewarded ? AdResult.Rewarded : AdResult.Closed)); }
         }
 
         public void ShowBanner(string placement, BannerPosition position)
         {
             string unit = _config.AdUnitId(AdFormat.Banner);
-            if (!_sdkStarted || !ConsentInformation.CanRequestAds() || string.IsNullOrEmpty(unit)) return;
+            if (_disposed || !_sdkStarted || !ConsentInformation.CanRequestAds() || string.IsNullOrEmpty(unit)) return;
             _bannerPlacement = placement ?? "";
             var anchor = position == BannerPosition.Top ? AdPosition.Top : AdPosition.Bottom;
             if (_banner == null)
             {
                 var banner = _banner = new BannerView(unit, AdSize.GetCurrentOrientationAnchoredAdaptiveBannerAdSizeWithWidth(AdSize.FullWidth), anchor);
-                banner.OnBannerAdLoadFailed += error => OnMain(() => Debug.LogWarning("[Nexus Ads] AdMob banner did not load: " + error?.GetMessage()));
-                banner.OnAdPaid += value => OnMain(() => Paid(value, AdFormat.Banner, _bannerPlacement, banner.GetResponseInfo()));
+                banner.OnBannerAdLoadFailed += error => OnMain(() =>
+                {
+                    if (!_disposed && ReferenceEquals(_banner, banner))
+                        Debug.LogWarning("[Nexus Ads] AdMob banner did not load: " + error?.GetMessage());
+                });
+                banner.OnAdPaid += value => OnMain(() =>
+                {
+                    if (!_disposed && ReferenceEquals(_banner, banner))
+                        Paid(value, AdFormat.Banner, _bannerPlacement, banner.GetResponseInfo());
+                });
                 banner.LoadAd(new AdRequest());
             }
             else _banner.SetPosition(anchor);
-            _banner.Show();
+            if (!_disposed) _banner?.Show();
         }
 
         public void HideBanner() => _banner?.Hide();
 
-        public void OpenTestSuite() => MobileAds.OpenAdInspector(error =>
+        public void OpenTestSuite()
         {
-            if (error != null) Debug.LogWarning("[Nexus Ads] AdMob ad inspector: " + error.GetMessage()); // it opens on test devices only
-        });
+            if (_disposed) return;
+            MobileAds.OpenAdInspector(error =>
+            {
+                if (!_disposed && error != null) Debug.LogWarning("[Nexus Ads] AdMob ad inspector: " + error.GetMessage());
+            });
+        }
+
+        void IDisposable.Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _sdkStarted = false;
+            if (_show != null) _show.Done = true;
+            _show = null;
+            _consent.Changed -= OnConsentChanged;
+            try { ((IDisposable)_consent).Dispose(); }
+            finally
+            {
+                try { DropLoadedAds(); }
+                finally
+                {
+                    Changed = null;
+                    Loaded = null;
+                    LoadFailed = null;
+                    Opened = null;
+                    Revenue = null;
+                }
+            }
+        }
 
         private void Paid(AdValue value, AdFormat format, string placement, ResponseInfo info)
         {

@@ -289,6 +289,8 @@ namespace Nexus.Core.FSM
                 }
                 catch (Exception ex)
                 {
+                    // A failed enter can already own resources, even without supersession (#372).
+                    await ExitSupersededAsync(nextState);
                     // If a newer transition superseded us while we were inside OnEnterAsync, it owns the machine
                     // now: a stale error-state fallback here would run in its place.
                     if (mySequence != Volatile.Read(ref _transitionSequence))
@@ -325,6 +327,7 @@ namespace Nexus.Core.FSM
                         }
                         catch (Exception innerEx)
                         {
+                            await ExitSupersededAsync(errorState);
                             NexusRuntime.Logger?.LogException(innerEx);
                         }
                     }

@@ -28,6 +28,13 @@ the strategy-game pattern in [Game patterns](../com.nexus.core/docs/GAME_PATTERN
 neither Burst-compiles nor Burst-tests the queue (#109). The package's `link.xml` preserves the whole
 assembly when it is compiled.
 
+The bridge completes registered producer dependencies before every dequeue, not just
+at drain entry (#383). A signal handler may schedule another job and register its handle;
+the next dequeue waits for that job too. Scheduling without registering the producer
+remains a caller error.
+
 ## Tests
 
 `Tests/DotsOwnershipRegressionTests` (3), compiled only with `com.unity.collections`.
+`Tests/FullReviewPlatformDotsTests` covers a producer registered during signal dispatch
+using an actual Unity job/native queue.

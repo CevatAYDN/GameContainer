@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.ExceptionServices;
 using UnityEngine.Scripting;
 
 namespace Nexus.Core
@@ -21,7 +22,7 @@ namespace Nexus.Core
             if (source == null) throw new ArgumentNullException(nameof(source));
             if (selector == null) throw new ArgumentNullException(nameof(selector));
             var derived = new DerivedProperty<TResult>();
-            Action<T, T> onSource = (_, value) => derived.Set(selector(value));
+            Action<T, T> onSource = Observe(derived, selector);
             derived.Start(
                 subscribe: () => source.OnChanged(onSource),
                 detach: () => source.RemoveOnChanged(onSource),
@@ -38,8 +39,8 @@ namespace Nexus.Core
             if (combiner == null) throw new ArgumentNullException(nameof(combiner));
             var derived = new DerivedProperty<TResult>();
             // the changed source's own value comes from its notification, the other's from its current value
-            Action<T1, T1> onFirst = (_, value) => derived.Set(combiner(value, second.Value));
-            Action<T2, T2> onSecond = (_, value) => derived.Set(combiner(first.Value, value));
+            Action<T1, T1> onFirst = Observe<T1, TResult>(derived, value => combiner(value, second.Value));
+            Action<T2, T2> onSecond = Observe<T2, TResult>(derived, value => combiner(first.Value, value));
             derived.Start(
                 subscribe: () => { first.OnChanged(onFirst); second.OnChanged(onSecond); },
                 detach: () => { first.RemoveOnChanged(onFirst); second.RemoveOnChanged(onSecond); },
@@ -56,15 +57,22 @@ namespace Nexus.Core
             if (third == null) throw new ArgumentNullException(nameof(third));
             if (combiner == null) throw new ArgumentNullException(nameof(combiner));
             var derived = new DerivedProperty<TResult>();
-            Action<T1, T1> onFirst = (_, value) => derived.Set(combiner(value, second.Value, third.Value));
-            Action<T2, T2> onSecond = (_, value) => derived.Set(combiner(first.Value, value, third.Value));
-            Action<T3, T3> onThird = (_, value) => derived.Set(combiner(first.Value, second.Value, value));
+            Action<T1, T1> onFirst = Observe<T1, TResult>(derived, value => combiner(value, second.Value, third.Value));
+            Action<T2, T2> onSecond = Observe<T2, TResult>(derived, value => combiner(first.Value, value, third.Value));
+            Action<T3, T3> onThird = Observe<T3, TResult>(derived, value => combiner(first.Value, second.Value, value));
             derived.Start(
                 subscribe: () => { first.OnChanged(onFirst); second.OnChanged(onSecond); third.OnChanged(onThird); },
                 detach: () => { first.RemoveOnChanged(onFirst); second.RemoveOnChanged(onSecond); third.RemoveOnChanged(onThird); },
                 compute: () => combiner(first.Value, second.Value, third.Value));
             return derived;
         }
+
+        private static Action<T, T> Observe<T, TResult>(DerivedProperty<TResult> derived, Func<T, TResult> compute)
+            => (_, value) =>
+            {
+                long version = derived.BeginUpdate();
+                if (version != 0) derived.Set(version, compute(value));
+            };
     }
 
     /// <summary>
@@ -80,6 +88,9 @@ namespace Nexus.Core
         private readonly object _lifetimeLock = new();
         private Action _detach; // guarded by _lifetimeLock
         private volatile bool _disposed;
+        private long _nextVersion, _acceptedVersion;
+        private bool _initialized, _publishing, _hasPending;
+        private T _pending;
 
         internal DerivedProperty() { }
 
@@ -98,12 +109,20 @@ namespace Nexus.Core
         internal void Start(Action subscribe, Action detach, Func<T> compute)
         {
             _detach = detach;
-            // computed after subscribing, so a change in between is not missed; a selector that throws here leaves no
-            // handler on the sources
             try
             {
                 subscribe();
-                _value.SetWithoutNotify(compute());
+                long version = BeginUpdate();
+                T initial = compute();
+                lock (_lifetimeLock)
+                {
+                    if (!_disposed && version > _acceptedVersion)
+                    {
+                        _acceptedVersion = version;
+                        _value.SetWithoutNotify(initial);
+                    }
+                    _initialized = true;
+                }
             }
             catch
             {
@@ -112,10 +131,60 @@ namespace Nexus.Core
             }
         }
 
-        // a source's notification can still reach a handler removed during its dispatch: a disposed property ignores it
-        internal void Set(T value)
+        // Versions are taken before user computation, so a slow older selector cannot
+        // overwrite a newer successful result. Neither selectors nor observers run under this lock (#346).
+        internal long BeginUpdate()
         {
-            if (!_disposed) _value.Value = value;
+            lock (_lifetimeLock) return _disposed ? 0 : ++_nextVersion;
+        }
+
+        internal void Set(long version, T value)
+        {
+            lock (_lifetimeLock)
+            {
+                if (_disposed || version <= _acceptedVersion) return;
+                _acceptedVersion = version;
+                if (!_initialized)
+                {
+                    // The derived object is not published yet and has no observers.
+                    _value.SetWithoutNotify(value);
+                    return;
+                }
+                _pending = value;
+                _hasPending = true;
+                if (_publishing) return;
+                _publishing = true;
+            }
+
+            Exception failure = null;
+            bool released = false;
+            try
+            {
+                while (true)
+                {
+                    T next;
+                    lock (_lifetimeLock)
+                    {
+                        if (_disposed || !_hasPending)
+                        {
+                            _publishing = false;
+                            released = true;
+                            break;
+                        }
+                        next = _pending;
+                        _pending = default;
+                        _hasPending = false;
+                    }
+                    try { _value.Value = next; }
+                    catch (Exception ex) { failure ??= ex; }
+                }
+            }
+            finally
+            {
+                if (!released)
+                    lock (_lifetimeLock) _publishing = false;
+            }
+            if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
         }
 
         /// <summary>Stops following the sources and drops this property's handlers. Calling it again does nothing.</summary>
@@ -128,9 +197,11 @@ namespace Nexus.Core
                 _disposed = true;
                 detach = _detach;
                 _detach = null;
+                _pending = default;
+                _hasPending = false;
             }
-            detach?.Invoke();
-            _value.ClearOnChanged();
+            try { detach?.Invoke(); }
+            finally { _value.ClearOnChanged(); }
         }
 
         /// <summary>Returns the current value as text.</summary>

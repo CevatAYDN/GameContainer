@@ -90,7 +90,7 @@ namespace Nexus.Core
         /// <summary>
         /// Deactivates the prefab while cloning so Unity does not run the clone's Awake/OnEnable before
         /// injection, then restores both the prefab's and the clone's active state. If injection throws,
-        /// the clone is still activated and the exception propagates; the caller decides what to do with it.
+        /// the unreturned clone is destroyed without activation and the exception propagates.
         /// In the editor, toggling a prefab asset marks it dirty; the dirty flag is cleared when this call set it.
         /// </summary>
         private static GameObject InstantiateCore(NexusDI container, GameObject prefab, Func<GameObject> clone)
@@ -100,11 +100,18 @@ namespace Nexus.Core
             bool wasDirty = UnityEditor.EditorUtility.IsDirty(prefab);
 #endif
             GameObject instance = null;
+            bool injected = false;
             try
             {
                 if (wasActive) prefab.SetActive(false);
                 instance = clone();
                 container.InjectGameObject(instance);
+                injected = true;
+            }
+            catch
+            {
+                SafeDestroyUtility.SafeDestroy(instance);
+                throw;
             }
             finally
             {
@@ -112,7 +119,7 @@ namespace Nexus.Core
 #if UNITY_EDITOR
                 if (wasActive && !wasDirty) UnityEditor.EditorUtility.ClearDirty(prefab);
 #endif
-                if (instance != null && wasActive) instance.SetActive(true);
+                if (injected && instance != null && wasActive) instance.SetActive(true);
             }
             return instance;
         }

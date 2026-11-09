@@ -63,6 +63,7 @@ namespace Nexus.Core.Services
         /// Calculates offline duration in seconds since last recorded quit timestamp.
         /// Returns 0 if time manipulation is detected (current wall time is earlier than
         /// quit time, or the hardware monotonic tick contradicts the wall-clock claim).
+        /// Unreadable or invalid saved counters grant 0; a missing legacy counter retains wall-clock validation.
         /// </summary>
         /// <param name="maxOfflineSeconds">The most seconds granted. A negative cap is a configuration error: it is logged in
         /// every build and grants 0 (issue #120).</param>
@@ -91,8 +92,18 @@ namespace Nexus.Core.Services
             // Hardware monotonic validation. On the same boot session, the true elapsed
             // time cannot exceed what the hardware monotonic clock measured, so a clock pushed
             // forward (wall diff inflated) is clamped back to real elapsed time.
-            long lastMonotonic = storage.GetLong(MonotonicKeyFor(key), 0L);
-            if (lastMonotonic > 0)
+            string monotonicKey = MonotonicKeyFor(key);
+            var monotonicStatus = storage.TryGetString(monotonicKey, out _);
+            // Typed custom stores may have a native counter without a string projection.
+            bool hasMonotonic = monotonicStatus == StorageReadStatus.Present
+                || (monotonicStatus == StorageReadStatus.Absent && storage.HasKey(monotonicKey));
+            long lastMonotonic = hasMonotonic ? storage.GetLong(monotonicKey, -1L) : 0L;
+            if (monotonicStatus == StorageReadStatus.Unreadable || lastMonotonic < 0)
+            {
+                NexusLog.WarnAlways($"[OfflineTimeCalculator] Saved counter '{monotonicKey}' is unreadable or invalid: no offline progress is granted.");
+                return 0L;
+            }
+            if (hasMonotonic)
             {
                 long monoDiffMs = GetMonotonicMs() - lastMonotonic;
                 if (monoDiffMs >= 0)

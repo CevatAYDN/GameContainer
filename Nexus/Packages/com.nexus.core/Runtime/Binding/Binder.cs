@@ -289,8 +289,9 @@ namespace Nexus.Core
 
             public IBinderBindingBuilder<TKey, TValue> ToFactory(Func<TValue> factory)
             {
+                if (factory == null) throw new ArgumentNullException(nameof(factory));
                 _entry.Kind = EntryKind.Factory;
-                _entry.Factory = factory ?? throw new ArgumentNullException(nameof(factory));
+                _entry.Factory = factory;
                 Commit();
                 return this;
             }
@@ -313,7 +314,6 @@ namespace Nexus.Core
                 if (_committed)
                 {
                     if (_replacedDefault != null) _owner.CommitEntry(_key, null, _replacedDefault);
-                    _entry = _entry.Copy();
                     Commit();
                 }
                 return this;
@@ -321,7 +321,8 @@ namespace Nexus.Core
 
             private void Commit()
             {
-                var replaced = _owner.CommitEntry(_key, _name, _entry);
+                // Published entries are snapshots; subsequent chain changes stay private until commit.
+                var replaced = _owner.CommitEntry(_key, _name, _entry.Copy());
                 if (_name == null && !_wroteDefault)
                 {
                     _wroteDefault = true;

@@ -279,15 +279,16 @@ namespace Nexus.Core
             if (s_lastFrameMetricFrame >= 0 && Time.frameCount - s_lastFrameMetricFrame < 6) return;
             s_lastFrameMetricFrame = Time.frameCount;
 
-            var deltaTime = Time.deltaTime;
-            // DeltaTime can be 0 on the first frame or during a freeze;
+            // Frame cost is wall time, independent of the game's pause or speed (#369).
+            var deltaTime = Time.unscaledDeltaTime;
+            // The frame interval can be 0 on the first frame;
             // dividing by zero produces Infinity which corrupts average / max calculations.
             var fps = deltaTime > 0f ? 1f / deltaTime : 0f;
             var frameTimeMs = deltaTime * 1000f;
 
             RecordMetric("FPS", fps, "fps", "Frame");
             RecordMetric("FrameTime", frameTimeMs, "ms", "Frame");
-            RecordMetric("DeltaTime", deltaTime, "s", "Frame");
+            RecordMetric("DeltaTime", Time.deltaTime, "s", "Frame");
         }
 
         public static void UpdateMemoryMetrics()

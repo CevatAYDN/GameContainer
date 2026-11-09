@@ -33,6 +33,12 @@ A newer transition cancels the one in progress and waits for it to finish; a sup
 exits the state it entered, so every entered state is exited exactly once. Between a state's exit and
 the next state's enter `CurrentState` is null and `Tick` ticks nothing. `SetErrorState` throws for a
 state that is not registered yet, so register the error state first.
+The superseded state is also exited when its pending enter finishes with an ordinary
+exception, including after `Dispose` (#347). That exit is awaited before the next
+transition can enter; a stale failure never starts the configured error state.
+An ordinary enter failure also exits its partially entered state before fallback
+(#372), and a failing error-state enter is cleaned too. Exit implementations must
+tolerate resources that were only partly acquired.
 
 `GameStateMachine` is an `ITickable`: after `tickService.RegisterTickable(fsm)` the current state's
 `OnTick` runs every frame. The package's `link.xml` preserves the whole assembly at every stripping level.
@@ -40,4 +46,4 @@ state that is not registered yet, so register the error state first.
 ## Tests
 
 EditMode, under `Tests/Editor`: `FSMHardeningTests`, `FSMTransitionHistoryTests` and
-`GameStateMachineTests`.
+`GameStateMachineTests` and `FSMFailureCleanupTests`.

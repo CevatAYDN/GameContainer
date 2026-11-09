@@ -114,6 +114,78 @@ namespace Nexus.Tests.Runtime
                 $"the largest frame created {largestFrame} instances");
         }
 
+        [UnityTest]
+        public IEnumerator PrewarmAsync_ClearedPool_CancelsWithoutRecreatingItsRoot()
+        {
+            var task = _pool.PrewarmAsync(_prefab, 8, instancesPerFrame: 1);
+            var root = FindPoolRoot();
+            Assert.IsTrue(root != null, "the prewarm root must exist before the pool is cleared");
+            _pool.ClearPool(_prefab);
+            float deadline = Time.realtimeSinceStartup + 3f;
+            while (!task.IsCompleted && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.IsTrue(task.IsCanceled, $"cleared prewarm status: {task.Status}");
+            yield return null;
+            Assert.AreEqual(0, PooledInstances(), "the old coroutine created instances after its pool was cleared");
+            Assert.IsTrue(root == null, "the captured prewarm root must be destroyed");
+            Assert.IsNull(FindPoolRoot(), "the cleared prewarm must not recreate an inactive root");
+        }
+
+        [UnityTest]
+        public IEnumerator PrewarmAsync_ClearedDuringFinalYield_IsCancelled()
+        {
+            var task = _pool.PrewarmAsync(_prefab, 1, instancesPerFrame: 1);
+            Assert.IsFalse(task.IsCompleted, "the coroutine must be at its final frame boundary");
+            _pool.ClearPool(_prefab);
+            float deadline = Time.realtimeSinceStartup + 3f;
+            while (!task.IsCompleted && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.IsTrue(task.IsCanceled, $"final-yield clear must cancel, got {task.Status}");
+            yield return null;
+            Assert.AreEqual(0, PooledInstances());
+        }
+
+        [UnityTest]
+        public IEnumerator Spawn_OnEnableDisposesPool_RejectsAndDestroysTheInterruptedAcquisition()
+            => ActivationReentry(dispose: true);
+
+        [UnityTest]
+        public IEnumerator Spawn_OnEnableClearsPool_RejectsAndDestroysTheInterruptedAcquisition()
+            => ActivationReentry(dispose: false);
+
+        private IEnumerator ActivationReentry(bool dispose)
+        {
+            var lease = _pool.Spawn(_prefab);
+            var probe = lease.AddComponent<PoolActivationReentryProbe>();
+            _pool.Despawn(lease);
+            probe.Activated = () =>
+            {
+                if (dispose) _pool.Dispose();
+                else _pool.ClearPool(_prefab);
+            };
+            System.Exception failure = null;
+            try
+            {
+                try { _pool.Spawn(_prefab); }
+                catch (System.Exception ex) { failure = ex; }
+                yield return null;
+                Assert.That(failure, Is.InstanceOf<System.InvalidOperationException>(),
+                    "a cancelled acquisition must not be published as a live lease");
+                Assert.IsTrue(lease == null, "activation reentry must not leave an unowned active GameObject");
+            }
+            finally
+            {
+                if (probe != null) probe.Activated = null;
+                if (lease != null) Object.DestroyImmediate(lease);
+            }
+        }
+
+        private GameObject FindPoolRoot()
+        {
+            string rootName = "Pool_" + _prefab.name;
+            foreach (var root in Object.FindObjectsByType<GameObject>(FindObjectsInactive.Include))
+                if (root.name == rootName) return root;
+            return null;
+        }
+
         // The pool names its instances after the prefab and keeps them under its own root.
         private int PooledInstances()
         {

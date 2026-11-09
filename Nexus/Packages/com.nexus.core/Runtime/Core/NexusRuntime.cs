@@ -272,9 +272,12 @@ namespace Nexus.Core
 
             // The context owns this runtime-created ContextData and destroys it on dispose
             // (audit 3.9: previously every pure context leaked one ScriptableObject).
-            var context = new Context(null, data).OwnsContextData();
+            Context context = null;
             try
             {
+                context = new Context(null, data, null, null, ownsContextData: true);
+                if (context.IsDisposed)
+                    throw new ObjectDisposedException(nameof(Context), "Context was disposed by a registration observer.");
                 context.Configure();
 
                 // Pure contexts run the SAME lifecycle sequence as Root-based
@@ -289,7 +292,12 @@ namespace Nexus.Core
                 // A failed boot must not leak the ScriptableObject: the happy path destroys
                 // it via Context.Dispose, so the failure path disposes the context (which
                 // tears down the owned data) before rethrowing the original exception.
-                context.Dispose();
+                try
+                {
+                    if (context != null) context.Dispose();
+                    else SafeDestroyUtility.SafeDestroy(data);
+                }
+                catch (Exception cleanupError) { Logger?.LogException(cleanupError); }
                 throw;
             }
 

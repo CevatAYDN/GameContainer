@@ -24,38 +24,62 @@ namespace Nexus.Firebase.Sdk
         private readonly CrashContext _context = new CrashContext();
         private ISignalSubscription _commandFailures;
         private bool _ready;
+        private volatile bool _disposed;
+
+        // Lazy, instance-local SDK calls: construction does not start Firebase.
+        internal Func<Task<FirebaseDependencyStatus>> CheckDependenciesAsync = () => FirebaseAppSdk.CheckAndFixDependenciesAsync();
+        internal Action<bool> CollectionEnabledSink = enabled => FirebaseCrashlyticsSdk.IsCrashlyticsCollectionEnabled = enabled;
+        internal Action<string, string> CustomKeySink = (key, value) => FirebaseCrashlyticsSdk.SetCustomKey(key, value);
+        internal Action<string> LogSink = message => FirebaseCrashlyticsSdk.Log(message);
+        internal Action<Exception> ExceptionSink = exception => FirebaseCrashlyticsSdk.LogException(exception);
 
         [Inject] public IAnalyticsConsent Consent { get; set; }
 
         public override async ValueTask InitializeAsync(CancellationToken ct)
         {
+            if (_disposed) return;
+            ct.ThrowIfCancellationRequested();
             // Listening before the SDK starts: an error logged meanwhile is the likeliest configuration failure, and the context
             // holds it until the SDK is ready (issue #171).
             Application.logMessageReceivedThreaded += OnLog;
             _commandFailures = SignalBus.Subscribe<CommandFailedSignal>(failed => RecordNonFatal(failed.Exception));
 
-            FirebaseDependencyStatus status = await FirebaseAppSdk.CheckAndFixDependenciesAsync();
-            if (status != FirebaseDependencyStatus.Available)
+            try
             {
-                NexusLog.WarnAlways("[Firebase] Crashlytics is off: the SDK's dependencies are " + status);
-                Application.logMessageReceivedThreaded -= OnLog;
-                _commandFailures.Dispose();
-                _commandFailures = null;
-                _context.Close();
-                return;
-            }
+                FirebaseDependencyStatus status = await CheckDependenciesAsync();
+                if (_disposed) return;
+                ct.ThrowIfCancellationRequested();
+                if (status != FirebaseDependencyStatus.Available)
+                {
+                    NexusLog.WarnAlways("[Firebase] Crashlytics is off: the SDK's dependencies are " + status);
+                    _context.Close();
+                    return;
+                }
 
-            _ready = true;
-            Consent.Changed += Apply;
-            Apply();
-            _context.Open(FirebaseCrashlyticsSdk.SetCustomKey, FirebaseCrashlyticsSdk.Log, Report);
+                _ready = true;
+                Consent.Changed += Apply;
+                Apply();
+                _context.Open(CustomKeySink, LogSink, Report);
+            }
+            finally
+            {
+                if (!_ready)
+                {
+                    Application.logMessageReceivedThreaded -= OnLog;
+                    _commandFailures?.Dispose();
+                    _commandFailures = null;
+                }
+            }
         }
 
-        public void RecordNonFatal(Exception exception) => _context.RecordNonFatal(exception);
-
-        private static void Report(Exception exception)
+        public void RecordNonFatal(Exception exception)
         {
-            if (_reporting)
+            if (!_disposed) _context.RecordNonFatal(exception);
+        }
+
+        private void Report(Exception exception)
+        {
+            if (_disposed || _reporting)
             {
                 return;
             }
@@ -64,7 +88,7 @@ namespace Nexus.Firebase.Sdk
             _reporting = true;
             try
             {
-                FirebaseCrashlyticsSdk.LogException(exception);
+                ExceptionSink(exception);
             }
             finally
             {
@@ -72,24 +96,36 @@ namespace Nexus.Firebase.Sdk
             }
         }
 
-        public void SetCustomKey(string key, string value) => _context.SetCustomKey(key, value);
+        public void SetCustomKey(string key, string value)
+        {
+            if (!_disposed) _context.SetCustomKey(key, value);
+        }
 
-        public void Log(string message) => _context.Log(message);
+        public void Log(string message)
+        {
+            if (!_disposed) _context.Log(message);
+        }
 
         public override void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
             Application.logMessageReceivedThreaded -= OnLog;
             _commandFailures?.Dispose();
+            _commandFailures = null;
             if (_ready)
             {
                 Consent.Changed -= Apply;
             }
+            _ready = false;
+            _context.Close();
         }
 
         private void Apply()
         {
-            FirebaseCrashlyticsSdk.IsCrashlyticsCollectionEnabled =
-                AnalyticsCollectionPolicy.Decide(Consent.State, Consent.Choice) == AnalyticsDecision.Send;
+            if (_disposed) return;
+            CollectionEnabledSink(
+                AnalyticsCollectionPolicy.Decide(Consent.State, Consent.Choice) == AnalyticsDecision.Send);
         }
 
         private void OnLog(string condition, string stackTrace, LogType type)

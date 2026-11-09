@@ -1,4 +1,9 @@
 using System;
+using System.Runtime.CompilerServices;
+
+[assembly: InternalsVisibleTo("Nexus.Ads.AdMob")]
+[assembly: InternalsVisibleTo("Nexus.Ads.LevelPlay")]
+[assembly: InternalsVisibleTo("com.nexus.ads.editor.tests")]
 
 namespace Nexus.Ads
 {
@@ -123,5 +128,12 @@ namespace Nexus.Ads
         /// <summary>Full-screen content took the screen; the host pauses audio and time until the show result.</summary>
         event Action<AdFormat> Opened;
         event Action<AdRevenue> Revenue;
+    }
+
+    // Built-in providers report earning separately from the once-only public show completion.
+    // The notification belongs to this show even when it arrives after close or a watchdog.
+    internal interface IRewardedShowProvider
+    {
+        void ShowRewarded(string placement, Action<AdResult> onResult, Action onRewardEarned);
     }
 }

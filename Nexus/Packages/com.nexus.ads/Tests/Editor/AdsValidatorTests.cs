@@ -455,7 +455,7 @@ namespace Nexus.Ads.Tests
         {
             _probe.AndroidManifest = "<manifest/>";
             Assert.AreEqual(CheckResult.Warn, Check(Run(AdsValidator.Tab.Release), "android.adid").Result);
-            _probe.AndroidManifest = "<manifest><uses-permission android:name=\"com.google.android.gms.permission.AD_ID\"/></manifest>";
+            _probe.AndroidManifest = "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\"><uses-permission android:name=\"com.google.android.gms.permission.AD_ID\"/></manifest>";
             Assert.AreEqual(CheckResult.Pass, Check(Run(AdsValidator.Tab.Release), "android.adid").Result);
         }
 
@@ -490,7 +490,7 @@ namespace Nexus.Ads.Tests
             Assert.AreEqual(CheckResult.Fail, Check(Run(AdsValidator.Tab.Release), "android.adid").Result, "no custom manifest");
             _probe.AndroidManifest = "<manifest><uses-permission android:name=\"com.google.android.gms.permission.AD_ID\"/></manifest>";
             Assert.AreEqual(CheckResult.Fail, Check(Run(AdsValidator.Tab.Test), "android.adid").Result, "declared, not removed");
-            _probe.AndroidManifest = "<manifest xmlns:tools=\"http://schemas.android.com/tools\"><uses-permission tools:node=\"remove\" android:name=\"com.google.android.gms.permission.AD_ID\"/></manifest>";
+            _probe.AndroidManifest = "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" xmlns:tools=\"http://schemas.android.com/tools\"><uses-permission tools:node=\"remove\" android:name=\"com.google.android.gms.permission.AD_ID\"/></manifest>";
             Assert.AreEqual(CheckResult.Pass, Check(Run(AdsValidator.Tab.Release), "android.adid").Result);
         }
 

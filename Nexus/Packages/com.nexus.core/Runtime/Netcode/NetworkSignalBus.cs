@@ -25,10 +25,15 @@ namespace Nexus.Netcode
         void Prune(int confirmedTick);
     }
 
+    internal interface INetworkSnapshotHistory : INetworkModelSnapshotHandler
+    {
+        void InvalidateAfter(int tick);
+    }
+
     /// <summary>
     /// Generic implementation wrapper for snapshot handlers.
     /// </summary>
-    public class NetworkModelSnapshotHandler<TState> : INetworkModelSnapshotHandler where TState : struct
+    public class NetworkModelSnapshotHandler<TState> : INetworkSnapshotHistory where TState : struct
     {
         private readonly ISnapshotableModel<TState> _model;
         private readonly Dictionary<int, TState> _snapshots = new();
@@ -55,12 +60,16 @@ namespace Nexus.Netcode
             _model.RestoreSnapshot(state);
         }
 
-        public void Prune(int confirmedTick)
+        public void Prune(int confirmedTick) => RemoveSnapshots(confirmedTick, newer: false);
+
+        void INetworkSnapshotHistory.InvalidateAfter(int tick) => RemoveSnapshots(tick, newer: true);
+
+        private void RemoveSnapshots(int tick, bool newer)
         {
             _keysToPrune.Clear();
             foreach (var kvp in _snapshots)
             {
-                if (kvp.Key <= confirmedTick) _keysToPrune.Add(kvp.Key);
+                if (newer ? kvp.Key > tick : kvp.Key <= tick) _keysToPrune.Add(kvp.Key);
             }
             for (int i = 0; i < _keysToPrune.Count; i++)
             {
@@ -82,15 +91,28 @@ namespace Nexus.Netcode
         public int Tick;
         public T Signal;
         internal long Sequence;
+        internal bool IsDerived;
+        internal int RecordedTick;
+        internal long Order;
     }
 
     public class NetworkSignalHistory<T> : INetworkSignalHistory, IOrderedSignalHistory where T : struct, INetworkSignal
     {
         private readonly List<BufferedNetworkSignal<T>> _signals;
         private readonly object _signalsLock = new();
-        private BufferedNetworkSignal<T>[] _replayBuffer;
+        private readonly List<List<BufferedNetworkSignal<T>>> _replayBuffers = new();
         private readonly object _replayLock = new();
+        private int _replayDepth;
         private long _nextSequence;
+        private static readonly Comparison<BufferedNetworkSignal<T>> s_recordOrder = CompareRecordOrder;
+
+        private static int CompareRecordOrder(BufferedNetworkSignal<T> first, BufferedNetworkSignal<T> second)
+        {
+            int result = first.RecordedTick.CompareTo(second.RecordedTick);
+            if (result != 0) return result;
+            result = first.Order.CompareTo(second.Order);
+            return result != 0 ? result : first.Sequence.CompareTo(second.Sequence);
+        }
 
         // Return a stable snapshot for readers.  Add/rollback/prune are synchronized below;
         // exposing List<T>.AsReadOnly() directly would still let an external enumerator race
@@ -101,8 +123,9 @@ namespace Nexus.Netcode
             {
                 lock (_signalsLock)
                 {
-                    return new System.Collections.ObjectModel.ReadOnlyCollection<BufferedNetworkSignal<T>>(
-                        _signals.ToArray());
+                    var snapshot = _signals.ToArray();
+                    Array.Sort(snapshot, s_recordOrder);
+                    return new System.Collections.ObjectModel.ReadOnlyCollection<BufferedNetworkSignal<T>>(snapshot);
                 }
             }
         }
@@ -111,18 +134,22 @@ namespace Nexus.Netcode
         {
             int capacity = Math.Max(1, initialCapacity);
             _signals = new List<BufferedNetworkSignal<T>>(capacity);
-            _replayBuffer = new BufferedNetworkSignal<T>[capacity];
+            _replayBuffers.Add(new List<BufferedNetworkSignal<T>>(capacity));
         }
 
         public void Add(int tick, T signal)
             => AddTracked(tick, signal);
 
-        internal long AddTracked(int tick, T signal)
+        internal long AddTracked(int tick, T signal, bool isDerived = false, int recordedTick = 0, long order = 0)
         {
             lock (_signalsLock)
             {
                 long sequence = ++_nextSequence;
-                _signals.Add(new BufferedNetworkSignal<T> { Tick = tick, Signal = signal, Sequence = sequence });
+                _signals.Add(new BufferedNetworkSignal<T>
+                {
+                    Tick = tick, Signal = signal, Sequence = sequence, IsDerived = isDerived,
+                    RecordedTick = recordedTick, Order = order == 0 ? sequence : order
+                });
                 return sequence;
             }
         }
@@ -132,26 +159,55 @@ namespace Nexus.Netcode
             if (TryReadSignal(sequence, out var signal)) DispatchReplay(signal, bus);
         }
 
+        void IOrderedSignalHistory.PrepareRollback(int rollbackTick, int targetTick)
+        {
+            lock (_signalsLock)
+            {
+                int write = 0;
+                for (int read = 0; read < _signals.Count; read++)
+                    if (_signals[read].IsDerived
+                        ? _signals[read].RecordedTick < rollbackTick
+                        : _signals[read].Tick <= targetTick)
+                        _signals[write++] = _signals[read];
+                _signals.RemoveRange(write, _signals.Count - write);
+            }
+        }
+
+        void IOrderedSignalHistory.SetRecordOrder(long sequence, int recordedTick, long order)
+        {
+            lock (_signalsLock)
+            {
+                int index = FindSequenceLocked(sequence);
+                if (index < 0) return;
+                var entry = _signals[index];
+                entry.RecordedTick = recordedTick;
+                entry.Order = order;
+                _signals[index] = entry;
+            }
+        }
+
         private bool TryReadSignal(long sequence, out T signal)
         {
             lock (_signalsLock)
             {
-                int low = 0, high = _signals.Count - 1;
-                while (low <= high)
-                {
-                    int mid = low + ((high - low) >> 1);
-                    long candidate = _signals[mid].Sequence;
-                    if (candidate < sequence) low = mid + 1;
-                    else if (candidate > sequence) high = mid - 1;
-                    else
-                    {
-                        signal = _signals[mid].Signal;
-                        return true;
-                    }
-                }
-                signal = default;
-                return false; // pruned while a replay snapshot was in flight
+                int index = FindSequenceLocked(sequence);
+                signal = index >= 0 ? _signals[index].Signal : default;
+                return index >= 0;
             }
+        }
+
+        private int FindSequenceLocked(long sequence)
+        {
+            int low = 0, high = _signals.Count - 1;
+            while (low <= high)
+            {
+                int mid = low + ((high - low) >> 1);
+                long candidate = _signals[mid].Sequence;
+                if (candidate < sequence) low = mid + 1;
+                else if (candidate > sequence) high = mid - 1;
+                else return mid;
+            }
+            return -1;
         }
 
         private static void DispatchReplay(T signal, ISignalBus bus)
@@ -174,50 +230,30 @@ namespace Nexus.Netcode
         /// </summary>
         public void ReplaySignals(int tick, ISignalBus localSignalBus)
         {
-            // Reuse a private replay buffer so a replay stays at 0 B (Netcode_Rollback_And_Replay_ZeroGC) after the
-            // history's initial capacity is reached.  The replay lock serializes concurrent
-            // rollback callers; user handlers run after the history lock is released and may
-            // safely append a new signal for a later tick.
+            // The monitor serializes threads, not recursive calls. Each active depth owns
+            // its snapshot until finally, including when a callback clears/prunes history (#344).
             lock (_replayLock)
             {
-                int signalCount;
-                lock (_signalsLock)
+                int depth = _replayDepth++;
+                List<BufferedNetworkSignal<T>> buffer = null;
+                try
                 {
-                    signalCount = _signals.Count;
-                    if (_replayBuffer.Length < signalCount)
+                    lock (_signalsLock)
                     {
-                        Array.Resize(ref _replayBuffer, Math.Max(signalCount, _replayBuffer.Length * 2));
+                        if (_replayBuffers.Count == depth)
+                            _replayBuffers.Add(new List<BufferedNetworkSignal<T>>(_signals.Capacity));
+                        buffer = _replayBuffers[depth];
+                        for (int i = 0; i < _signals.Count; i++)
+                            if (_signals[i].Tick == tick) buffer.Add(_signals[i]);
                     }
-                    _signals.CopyTo(_replayBuffer, 0);
-                }
 
-                // The `is SignalBus` pattern check ran PER SIGNAL inside the loop
-                // (O(N) cast checks per replay). Hoisted out — one cast per replay call.
-                var concreteBus = localSignalBus as SignalBus;
-                for (int i = 0; i < signalCount; i++)
+                    buffer.Sort(s_recordOrder);
+                    for (int i = 0; i < buffer.Count; i++) DispatchReplay(buffer[i].Signal, localSignalBus);
+                }
+                finally
                 {
-                    if (_replayBuffer[i].Tick == tick)
-                    {
-                        try
-                        {
-                            // Synchronous inline dispatch: rollback resimulation captures a
-                            // model snapshot per tick, so this tick's signals must be fully
-                            // applied before the loop advances.
-                            localSignalBus.Fire(_replayBuffer[i].Signal);
-                        }
-                        catch (NexusSyncAsyncMismatchException)
-                        {
-                            NexusRuntime.Logger?.LogError(
-                                $"[NetworkSignalBus] Signal '{typeof(T).FullName}' has async handlers — synchronous deterministic replay is impossible. " +
-                                "Rollback snapshots captured for this tick will not include this signal's effects. " +
-                                "Use sync-only handlers for networked signals that participate in rollback.");
-                            // Best-effort delivery so the signal is not silently dropped.
-                            if (concreteBus != null)
-                            {
-                                concreteBus.FireQueued(_replayBuffer[i].Signal);
-                            }
-                        }
-                    }
+                    buffer?.Clear();
+                    _replayDepth--;
                 }
             }
         }
@@ -286,27 +322,25 @@ namespace Nexus.Netcode
         // can never corrupt the history map. The old plain Dictionary's
         // TryGetValue + indexer write was a torn-read/write race under concurrent access.
         private readonly ConcurrentDictionary<Type, INetworkSignalHistory> _histories = new();
-        private readonly List<INetworkSignalHistory> _historyList = new(); // owned by _tickLock
+        private readonly List<IOrderedSignalHistory> _historyList = new(); // owned by _tickLock
         private System.Collections.ObjectModel.ReadOnlyDictionary<Type, INetworkSignalHistory> _historiesReadOnly;
-        private readonly List<INetworkModelSnapshotHandler> _modelHandlers = new();
+        private readonly List<INetworkSnapshotHistory> _modelHandlers = new();
         // _modelHandlers is registered from setup code but iterated from tick/rollback paths;
         // guarded by a lock to match the concurrent design of _histories.
         private readonly object _modelHandlersLock = new();
         private volatile int _currentTick;
 
-        // Replay consumes the original journal, including inline nested dispatches.
+        // Replay retains external inputs and regenerates handler-derived events.
         private volatile bool _isResimulating;
         private readonly int _ownerThreadId;
         private readonly object _tickLock = new();
         private readonly NetworkSignalJournal _journal = new();
-        private NetworkSignalJournal.Entry[] _orderedReplayBuffer;
-        private int _replayCursor, _replayCount, _replayDispatchDepth;
+        private NetworkSignalJournal.Entry[] _replayActions;
+        private int _replayDispatchDepth;
         private long _currentEventId;
         private int _queueEpoch;
         private NetworkInputBatch _pendingInputs = new();
-        private readonly Dictionary<long, int> _nestedReplayHeads = new();
-        private int[] _nextNestedReplay;
-        private bool _generatingReplay;
+        private long _recordOrder;
         private int _replayTarget, _generatedCursor;
         private readonly List<NetworkSignalJournal.Entry> _generatedInputs = new();
 
@@ -338,9 +372,10 @@ namespace Nexus.Netcode
         /// </summary>
         public void RegisterModel<TState>(ISnapshotableModel<TState> model) where TState : struct
         {
-            lock (_modelHandlersLock)
+            lock (_tickLock)
             {
-                _modelHandlers.Add(new NetworkModelSnapshotHandler<TState>(model));
+                if (_isResimulating) throw new InvalidOperationException("Cannot register a model during rollback.");
+                lock (_modelHandlersLock) _modelHandlers.Add(new NetworkModelSnapshotHandler<TState>(model));
             }
         }
 
@@ -374,7 +409,6 @@ namespace Nexus.Netcode
         /// </summary>
         public void Fire<T>(T signal) where T : struct, INetworkSignal
         {
-            NetworkSignalJournal.Entry nested = default;
             NetworkSignalJournal.Entry recorded = default;
             bool owner = Thread.CurrentThread.ManagedThreadId == _ownerThreadId;
             int epoch = 0;
@@ -382,31 +416,20 @@ namespace Nexus.Netcode
             {
                 if (_isResimulating && !owner)
                     throw new InvalidOperationException("Submit incoming network signals before rollback or after it completes.");
-                if (_isResimulating && !_generatingReplay)
+                if (_isResimulating && _replayDispatchDepth == 0) return; // snapshot callback, not a replayed handler
+                if (!owner && !(_localSignalBus is SignalBus))
+                    throw new NotSupportedException("Worker network inputs require Nexus SignalBus. Use the owner thread with a custom signal bus.");
+                if (owner && _currentEventId == 0 && Volatile.Read(ref _pendingInputs.Count) != 0)
+                    throw new InvalidOperationException("Drain incoming signals before an owner-thread fire.");
+                recorded = Record(signal, _currentTick, owner ? _currentEventId : 0);
+                if (!owner)
                 {
-                    if (Thread.CurrentThread.ManagedThreadId != _ownerThreadId)
-                        throw new InvalidOperationException("Submit incoming network signals before rollback or after it completes.");
-                    if (_replayDispatchDepth == 0) return; // snapshot restoration, not a replayed handler
-                    nested = ConsumeNestedReplay<T>(_currentTick);
-                }
-                else
-                {
-                    if (!owner && !(_localSignalBus is SignalBus))
-                        throw new NotSupportedException("Worker network inputs require Nexus SignalBus. Use the owner thread with a custom signal bus.");
-                    if (owner && _currentEventId == 0 && Volatile.Read(ref _pendingInputs.Count) != 0)
-                        throw new InvalidOperationException("Drain incoming signals before an owner-thread fire.");
-                    var history = GetOrCreateHistory<T>();
-                    recorded = _journal.Add(_currentTick, history.AddTracked(_currentTick, signal), history, owner ? _currentEventId : 0);
-                    if (!owner)
-                    {
-                        epoch = _queueEpoch;
-                        Interlocked.Increment(ref _pendingInputs.Count);
-                        // Record and enqueue share one ordering boundary across producers.
-                        ((SignalBus)_localSignalBus).EnqueueDispatch(QueuedNetworkInput<T>.Rent(this, signal, recorded.Id, epoch, _pendingInputs));
-                    }
+                    epoch = _queueEpoch;
+                    Interlocked.Increment(ref _pendingInputs.Count);
+                    // Record and enqueue share one ordering boundary across producers.
+                    ((SignalBus)_localSignalBus).EnqueueDispatch(QueuedNetworkInput<T>.Rent(this, signal, recorded.Id, epoch, _pendingInputs));
                 }
             }
-            if (nested.History != null) { ReplayEntry(nested); return; }
 
             if (!owner)
             {
@@ -423,7 +446,6 @@ namespace Nexus.Netcode
         {
             long previous = _currentEventId;
             _currentEventId = eventId;
-            lock (_tickLock) _journal.MarkApplied(eventId);
             try
             {
                 // Preserve the inline owner-thread fast path.  Async handlers still use
@@ -446,13 +468,10 @@ namespace Nexus.Netcode
 
         /// <summary>
         /// Fires a signal queued specifically at a target tick.
-        /// The synchronous local fire only happens when the target tick equals the
-        /// current tick AND the bus is NOT mid-resimulation. During RollbackAndResimulate
-        /// the tick pointer moves as signals replay, so firing here would double-apply a
-        /// signal to the models (once from replay, once from this call). Inside a
-        /// resimulation current-tick nested emissions consume their original journal entry
-        /// inline, preserving the outer handler's continuation order. Future-tick emissions
-        /// are already in the journal and wait for that tick.
+        /// A current-tick input dispatches synchronously; a non-current input is recorded.
+        /// During resimulation nested emissions are recomputed and dispatched once inline,
+        /// preserving the outer handler's continuation order. Future emissions wait for
+        /// their target tick. A handler cannot emit into an earlier tick.
         /// Submit corrected inputs before beginning rollback. Concurrent external producers must
         /// wait until rollback completes; their calls are rejected rather than silently discarded.
         /// Unlike <see cref="Fire{T}(T)"/>, the current-tick path intentionally dispatches
@@ -464,96 +483,56 @@ namespace Nexus.Netcode
             if (Thread.CurrentThread.ManagedThreadId != _ownerThreadId)
                 throw new InvalidOperationException("FireAtTick must run on the network bus owning thread.");
             bool dispatch;
-            NetworkSignalJournal.Entry nested = default;
             NetworkSignalJournal.Entry recorded = default;
-            long eventId = 0;
             lock (_tickLock)
             {
-                if (_isResimulating && !_generatingReplay)
-                {
-                    if (_replayDispatchDepth == 0) return;
-                    if (tick != _currentTick)
-                    {
-                        // Entries beyond the target were invalidated before replay. Restore
-                        // scheduling there so a partial rollback does not lose future work.
-                        if (tick > _replayTarget)
-                        {
-                            var future = GetOrCreateHistory<T>();
-                            _journal.Add(tick, future.AddTracked(tick, signal), future);
-                        }
-                        return;
-                    }
-                    nested = ConsumeNestedReplay<T>(tick);
-                    dispatch = false;
-                }
-                else
-                {
-                    var history = GetOrCreateHistory<T>();
-                    dispatch = tick == _currentTick;
-                    if (dispatch && _currentEventId == 0 && Volatile.Read(ref _pendingInputs.Count) != 0)
-                        throw new InvalidOperationException("Drain incoming signals before an owner-thread fire.");
-                    recorded = _journal.Add(tick, history.AddTracked(tick, signal), history, dispatch ? _currentEventId : 0);
-                    eventId = recorded.Id;
-                    if (_isResimulating && !dispatch && tick > _currentTick && tick <= _replayTarget)
-                        AddGeneratedInput(recorded);
-                }
+                if (_isResimulating && _replayDispatchDepth == 0) return;
+                if (_currentEventId != 0 && tick < _currentTick)
+                    throw new InvalidOperationException("A network handler cannot emit into an earlier tick. Submit late external inputs before rollback.");
+                dispatch = tick == _currentTick;
+                if (_currentEventId == 0 && Volatile.Read(ref _pendingInputs.Count) != 0)
+                    throw new InvalidOperationException("Drain incoming signals before an owner-thread fire.");
+                recorded = Record(signal, tick, _currentEventId);
             }
-            if (nested.History != null) { ReplayEntry(nested); return; }
 
             if (dispatch)
             {
                 if (_isResimulating) ReplayEntry(recorded);
-                else DispatchLive(signal, eventId);
+                else DispatchLive(signal, recorded.Id);
             }
         }
 
-        private NetworkSignalJournal.Entry ConsumeNestedReplay<T>(int tick) where T : struct, INetworkSignal
+        // Identity is never an execution-order key. Replay records the corrected tick
+        // and within-tick production order, including for newly created future children.
+        private NetworkSignalJournal.Entry Record<T>(T signal, int tick, long parentId) where T : struct, INetworkSignal
         {
-            // Indexed by original parent identity, so interleaved external inputs of the
-            // same type cannot be mistaken for this handler's nested emission.
-            if (_nestedReplayHeads.TryGetValue(_currentEventId, out int i) && i >= 0)
-            {
-                var entry = _orderedReplayBuffer[i];
-                if (entry.Tick == tick && entry.History is NetworkSignalHistory<T>)
-                {
-                    _nestedReplayHeads[_currentEventId] = _nextNestedReplay[i];
-                    _orderedReplayBuffer[i] = default;
-                    return entry;
-                }
-            }
-            throw new InvalidOperationException($"Replay emitted unrecorded nested signal '{typeof(T).FullName}' at tick {tick}.");
+            long id = _journal.NextId();
+            long order = _isResimulating ? ++_recordOrder : id;
+            var history = GetOrCreateHistory<T>();
+            var recorded = _journal.Add(tick, history.AddTracked(tick, signal, parentId != 0, _currentTick, order),
+                history, id, parentId, _currentTick, order);
+            if (_isResimulating && tick > _currentTick && tick <= _replayTarget)
+                AddGeneratedInput(recorded);
+            return recorded;
         }
 
         private void ReplayEntry(NetworkSignalJournal.Entry entry)
         {
+            _recordOrder++;
             _replayDispatchDepth++;
             long previous = _currentEventId;
-            bool wasGenerating = _generatingReplay;
-            lock (_tickLock)
-            {
-                _generatingReplay = !_journal.WasApplied(entry.Id);
-                _journal.MarkApplied(entry.Id);
-            }
             _currentEventId = entry.Id;
             try { entry.History.ReplaySignal(entry.Sequence, _localSignalBus); }
-            finally { _currentEventId = previous; _generatingReplay = wasGenerating; _replayDispatchDepth--; }
+            finally { _currentEventId = previous; _replayDispatchDepth--; }
         }
 
         private void AddGeneratedInput(NetworkSignalJournal.Entry entry)
-        {
-            int low = _generatedCursor, high = _generatedInputs.Count;
-            while (low < high)
-            {
-                int mid = low + ((high - low) >> 1);
-                if (_generatedInputs[mid].Tick <= entry.Tick) low = mid + 1;
-                else high = mid;
-            }
-            _generatedInputs.Insert(low, entry);
-        }
+            => NetworkSignalJournal.InsertScheduled(_generatedInputs, _generatedCursor, entry);
 
         /// <summary>
         /// Re-simulates all buffered network signals starting from a specific rollback tick up to the target tick.
-        /// Clears invalid future signals during rollback.
+        /// Clears future external predictions and regenerates events produced by replayed
+        /// handlers. Pending schedules from before the rollback tick remain intact.
         ///
         /// Snapshot convention (A2): snapshot[tick] is the model state BEFORE that tick's
         /// signals are applied — the same convention SetTick uses (capture, then fire).
@@ -567,41 +546,28 @@ namespace Nexus.Netcode
             if (Thread.CurrentThread.ManagedThreadId != _ownerThreadId)
                 throw new InvalidOperationException("Rollback must run on the network bus owning thread.");
             if (rollbackTick > targetTick) throw new ArgumentOutOfRangeException(nameof(targetTick));
-            // Every model must be able to return to the tick before anything changes: a model without its snapshot kept its
-            // current state while the journal replayed the inputs it had already applied (#170).
-            lock (_modelHandlersLock)
-            {
-                for (int i = 0; i < _modelHandlers.Count; i++)
-                {
-                    if (!_modelHandlers[i].HasSnapshot(rollbackTick))
-                        throw new InvalidOperationException(
-                            $"Cannot roll back to tick {rollbackTick}: a registered model has no snapshot of it (the tick was pruned, or the model was registered after it). Nothing was changed.");
-                }
-            }
             int replayCount;
             lock (_tickLock)
             {
                 if (_isResimulating) throw new InvalidOperationException("A rollback is already in progress.");
                 if (_currentEventId != 0) throw new InvalidOperationException("Cannot start rollback inside a signal handler.");
                 if (Volatile.Read(ref _pendingInputs.Count) != 0) throw new InvalidOperationException("Drain incoming network signals on the owner thread before rollback.");
-                for (int i = 0; i < _historyList.Count; i++) _historyList[i].RemoveSignalsAfter(targetTick);
-                _journal.RemoveAfter(targetTick);
-                replayCount = _journal.CopyRange(rollbackTick, targetTick, ref _orderedReplayBuffer);
-                _replayCursor = 0;
-                _replayCount = replayCount;
+                lock (_modelHandlersLock)
+                {
+                    for (int i = 0; i < _modelHandlers.Count; i++)
+                        if (!_modelHandlers[i].HasSnapshot(rollbackTick))
+                            throw new InvalidOperationException(
+                                $"Cannot roll back to tick {rollbackTick}: a registered model has no valid snapshot of it. Nothing was changed.");
+                    // Snapshots beyond the restored point belong to the abandoned timeline,
+                    // including those beyond a partial replay's target. Rebuild only what runs.
+                    for (int i = 0; i < _modelHandlers.Count; i++) _modelHandlers[i].InvalidateAfter(rollbackTick);
+                }
+                for (int i = 0; i < _historyList.Count; i++)
+                    _historyList[i].PrepareRollback(rollbackTick, targetTick);
+                _journal.PrepareRollback(rollbackTick, targetTick);
+                replayCount = _journal.CopyReplayInputs(rollbackTick, targetTick, ref _replayActions, _generatedInputs);
                 _replayTarget = targetTick;
                 _generatedCursor = 0;
-                _generatedInputs.Clear();
-                if (_nextNestedReplay == null || _nextNestedReplay.Length < replayCount)
-                    _nextNestedReplay = new int[Math.Max(256, replayCount * 2)];
-                _nestedReplayHeads.Clear();
-                for (int i = replayCount - 1; i >= 0; i--)
-                {
-                    long parentId = _orderedReplayBuffer[i].ParentId;
-                    if (parentId == 0) continue;
-                    _nextNestedReplay[i] = _nestedReplayHeads.TryGetValue(parentId, out int head) ? head : -1;
-                    _nestedReplayHeads[parentId] = i;
-                }
                 _isResimulating = true;
             }
             try
@@ -616,11 +582,13 @@ namespace Nexus.Netcode
                 }
 
                 _currentTick = rollbackTick;
+                int replayCursor = 0;
 
                 // Replay all signals starting from the rollback point up to the new target tick.
                 // Order matters: Capture BEFORE Replay keeps the pre-tick snapshot contract.
                 while (_currentTick <= targetTick)
                 {
+                    _recordOrder = 0;
                     lock (_modelHandlersLock)
                     {
                         for (int i = 0; i < _modelHandlers.Count; i++)
@@ -629,27 +597,26 @@ namespace Nexus.Netcode
                         }
                     }
 
-                    while (_replayCursor < replayCount)
-                    {
-                        var entry = _orderedReplayBuffer[_replayCursor];
-                        if (entry.History == null) { _replayCursor++; continue; }
-                        if (entry.Tick != _currentTick) break;
-                        if (entry.ParentId != 0)
-                            throw new InvalidOperationException("Replay handler did not emit its recorded nested signal.");
-                        _orderedReplayBuffer[_replayCursor++] = default;
-                        ReplayEntry(entry);
-                    }
+                    // Previously scheduled work is due before this tick's external calls.
                     while (_generatedCursor < _generatedInputs.Count && _generatedInputs[_generatedCursor].Tick == _currentTick)
                         ReplayEntry(_generatedInputs[_generatedCursor++]);
+
+                    while (replayCursor < replayCount && _replayActions[replayCursor].ActionTick == _currentTick)
+                    {
+                        var entry = _replayActions[replayCursor++];
+                        lock (_tickLock) entry = _journal.SetRecordOrder(entry, _currentTick, ++_recordOrder);
+                        if (entry.Tick == _currentTick) ReplayEntry(entry);
+                        else AddGeneratedInput(entry);
+                    }
                     if (_currentTick == int.MaxValue) break;
                     _currentTick++;
                 }
             }
             finally
             {
-                Array.Clear(_orderedReplayBuffer, 0, replayCount);
+                Array.Clear(_replayActions, 0, replayCount);
                 _generatedInputs.Clear();
-                lock (_tickLock) { _isResimulating = false; _replayCount = _replayCursor = 0; _nestedReplayHeads.Clear(); }
+                lock (_tickLock) _isResimulating = false;
             }
         }
 
@@ -665,12 +632,9 @@ namespace Nexus.Netcode
                 if (_isResimulating) throw new InvalidOperationException("Cannot prune history during rollback.");
                 _journal.Prune(confirmedTick);
                 for (int i = 0; i < _historyList.Count; i++) _historyList[i].Prune(confirmedTick);
-            }
-            lock (_modelHandlersLock)
-            {
-                for (int i = 0; i < _modelHandlers.Count; i++)
+                lock (_modelHandlersLock)
                 {
-                    _modelHandlers[i].Prune(confirmedTick);
+                    for (int i = 0; i < _modelHandlers.Count; i++) _modelHandlers[i].Prune(confirmedTick);
                 }
             }
         }
@@ -688,10 +652,7 @@ namespace Nexus.Netcode
                 _journal.Clear();
                 _queueEpoch++;
                 _pendingInputs = new NetworkInputBatch();
-            }
-            lock (_modelHandlersLock)
-            {
-                _modelHandlers.Clear();
+                lock (_modelHandlersLock) _modelHandlers.Clear();
             }
         }
     }

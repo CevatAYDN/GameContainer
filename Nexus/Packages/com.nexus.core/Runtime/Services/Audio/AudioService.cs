@@ -104,6 +104,8 @@ namespace Nexus.Core.Services
         private AudioSource _bgmSourceActive;
         private AudioSource _bgmSourceFade;
         private readonly List<AudioSource> _sfxPool = new();
+        // Keep per-play gain separate so a channel can go through zero and restore the same effect (#366).
+        private readonly Dictionary<AudioSource, float> _sfxBaseVolumes = new();
 
         // Coroutine host for BGM fades: the audio root is a plain GameObject, so a tiny
         // runner component is added on demand (same pattern as ObjectPoolService's
@@ -169,6 +171,7 @@ namespace Nexus.Core.Services
         // Master × user preference × state multiplier, zero when the music is muted.
         private float EffectiveBgmVolume => _isMuted || _isMusicMuted ? 0f : _masterVolume * _bgmVolume * _bgmStateMultiplier;
         private bool SfxMuted => _isMuted || _isSfxMuted;
+        private float EffectiveSfxVolume => SfxMuted ? 0f : _masterVolume * _sfxVolume;
 
         public float MasterVolume
         {
@@ -213,7 +216,7 @@ namespace Nexus.Core.Services
             {
                 _sfxVolume = Mathf.Clamp01(value);
                 Store?.SetFloat(KeySfxVol, _sfxVolume);
-                UpdateVolumes();
+                UpdateSfxVolumes();
             }
         }
 
@@ -246,6 +249,7 @@ namespace Nexus.Core.Services
             {
                 _isSfxMuted = value;
                 Store?.SetBool(KeySfxMuted, _isSfxMuted);
+                UpdateSfxVolumes();
             }
         }
 
@@ -296,6 +300,21 @@ namespace Nexus.Core.Services
             float effectiveBgm = EffectiveBgmVolume;
             if (_bgmSourceActive != null) _bgmSourceActive.volume = effectiveBgm;
             if (_bgmSourceFade != null) _bgmSourceFade.volume = effectiveBgm;
+            UpdateSfxVolumes();
+        }
+
+        private void UpdateSfxVolumes()
+        {
+            float effective = EffectiveSfxVolume;
+            foreach (var voice in _sfxBaseVolumes)
+                if (voice.Key != null) voice.Key.volume = voice.Value * effective;
+        }
+
+        private void SetSfxVolume(AudioSource source, float volume)
+        {
+            float perPlay = Mathf.Clamp01(volume);
+            _sfxBaseVolumes[source] = perPlay;
+            source.volume = perPlay * EffectiveSfxVolume;
         }
 
         public void PlayBgm(AudioClip clip, bool loop = true, float fadeDuration = 0f)
@@ -383,8 +402,9 @@ namespace Nexus.Core.Services
         {
             runner = null;
             if (_audioRoot == null || !_audioRoot.activeInHierarchy) return false;
+            // A provider can share its root, but each service must own the runner it later destroys (#363).
             if (_fadeRunner == null)
-                _fadeRunner = _audioRoot.GetComponent<AudioFadeRunner>() ?? _audioRoot.AddComponent<AudioFadeRunner>();
+                _fadeRunner = _audioRoot.AddComponent<AudioFadeRunner>();
             runner = _fadeRunner;
             return runner != null;
         }
@@ -447,7 +467,7 @@ namespace Nexus.Core.Services
             var source = TakeSfxSource(clip);
             if (source == null) return;
             source.spatialBlend = 0f; // 2D sound
-            source.volume = Mathf.Clamp01(volume) * _masterVolume * _sfxVolume;
+            SetSfxVolume(source, volume);
             source.pitch = UnityEngine.Random.Range(pitchMin, pitchMax);
             source.PlayOneShot(clip);
         }
@@ -460,7 +480,7 @@ namespace Nexus.Core.Services
             if (source == null) return;
             source.transform.position = position;
             source.spatialBlend = 1f; // 3D spatial sound
-            source.volume = Mathf.Clamp01(volume) * _masterVolume * _sfxVolume;
+            SetSfxVolume(source, volume);
             source.pitch = 1f;
             source.PlayOneShot(clip);
         }
@@ -570,6 +590,7 @@ namespace Nexus.Core.Services
                 }
             }
             _sfxPool.Clear();
+            _sfxBaseVolumes.Clear();
         }
 
         private class AudioFadeRunner : MonoBehaviour { }

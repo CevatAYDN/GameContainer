@@ -210,10 +210,25 @@ namespace Nexus.Iap.Unity
             // pending order a fetch finds, which Unity IAP routes here first) is not the waiting request's answer: an owned product is
             // reported through Changed, a consumable through UnrequestedPurchase, and without a handler the order is kept (#204).
             bool answers = Answers(order);
-            if (!answers && !IsTracked(order) && !GrantUnrequested(order)) { Changed?.Invoke(); return; }
+            bool wasTracked = IsTracked(order);
+            if (!answers && !wasTracked && !GrantUnrequested(order)) { Changed?.Invoke(); return; }
             Track(order);   // before Complete: the game told Purchased sees the purchase as not yet confirmed
             // The game records ownership before the order is acknowledged with the store.
-            if (answers) Complete(PurchaseOutcome.Purchased);
+            try
+            {
+                if (answers) Complete(PurchaseOutcome.Purchased);
+            }
+            catch
+            {
+                // A failed delivery is not a granted order: the next fetch must offer it again.
+                string id = order?.Info?.TransactionID;
+                if (!wasTracked && !string.IsNullOrEmpty(id))
+                {
+                    _unconfirmed.Remove(id);
+                    _confirmAttempts.Remove(id);
+                }
+                throw;
+            }
             Changed?.Invoke();
             Confirm(order);
         }

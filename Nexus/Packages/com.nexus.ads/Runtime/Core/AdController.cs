@@ -8,7 +8,7 @@ namespace Nexus.Ads
     /// loaded ad per format that placements use; a show hands the slot to the SDK and reloads it on
     /// close; a failed load retries with <see cref="RetryPolicy"/> while the app is visible. Every
     /// show passes <see cref="PolicyGuard"/>; a block raises <see cref="Violation"/>. The reward is
-    /// delivered once per show and only when the provider answers <see cref="AdResult.Rewarded"/>.
+    /// delivered once per show and only when the provider reports an SDK-earned reward.
     /// Every provider callback is marshalled to <see cref="IMainThread"/>.
     /// </summary>
     public sealed class AdController : IDisposable
@@ -206,20 +206,29 @@ namespace Nexus.Ads
             slot.State = SlotState.Showing;
             _fullScreenOpen = true;
             _lastPlacement[format] = placement;
-            bool answered = false, expired = false;
+            bool answered = false, earned = false, rewardRecorded = false;
+            void KeepEarnedReward()
+            {
+                if (_disposed || !earned || rewardRecorded) return;
+                rewardRecorded = true;
+                Isolated(() => WriteReceipt(placement, out _), format, placement, "writing the reward receipt");
+                Isolated(() => _telemetry.Record(new AdEvent(AdEventKind.Rewarded, format, placement,
+                    "earned reward retained after the show ended without Rewarded: kept as the pending reward")),
+                    format, placement, "the telemetry sink");
+            }
+            void RewardEarned()
+            {
+                if (_disposed) return;
+                earned = true;
+                if (answered) KeepEarnedReward();
+            }
             void Answer(AdResult result, string detail)
             {
+                if (_disposed) return;
                 if (answered)
                 {
-                    // The watchdog ended the show and the game heard Failed: a reward the SDK pays after all is kept as the
-                    // pending receipt, which the game pays at its next start. Any other late answer, or a second one, pays nothing.
-                    if (expired && result == AdResult.Rewarded)
-                    {
-                        expired = false;
-                        Isolated(() => WriteReceipt(placement, out _), format, placement, "writing the reward receipt");
-                        Isolated(() => _telemetry.Record(new AdEvent(AdEventKind.Rewarded, format, placement, "after the show was ended as failed: kept as the pending reward")),
-                            format, placement, "the telemetry sink");
-                    }
+                    // This is also defensive against an external provider repeating its once-only result.
+                    if (result == AdResult.Rewarded) RewardEarned();
                     return;
                 }
                 answered = true;
@@ -231,7 +240,12 @@ namespace Nexus.Ads
                 // Each step is isolated, so the game's result arrives exactly once whatever a subscriber or sink throws (issue #176).
                 // The receipt is durable before the game hears of the reward: a kill in between keeps it.
                 RewardReceipt? receipt = null;
-                if (result == AdResult.Rewarded) Isolated(() => WriteReceipt(placement, out receipt), format, placement, "writing the reward receipt");
+                if (result == AdResult.Rewarded)
+                {
+                    earned = rewardRecorded = true;
+                    Isolated(() => WriteReceipt(placement, out receipt), format, placement, "writing the reward receipt");
+                }
+                else KeepEarnedReward();
                 if (result == AdResult.Rewarded || result == AdResult.Closed) Isolated(() => _session.RecordShown(declared), format, placement, "recording the show");
                 Isolated(() => _telemetry.Record(new AdEvent(result == AdResult.Failed ? AdEventKind.ShowFailed : result == AdResult.Rewarded ? AdEventKind.Rewarded : AdEventKind.Closed, format, placement, detail)),
                     format, placement, "the telemetry sink");
@@ -240,11 +254,18 @@ namespace Nexus.Ads
                 RaiseReadyChanged();
                 DeliverResult(onResult, result, receipt);
             }
-            _expireOpenShow = detail => { expired = true; Answer(AdResult.Failed, detail); };
+            _expireOpenShow = detail => Answer(AdResult.Failed, detail);
             _openShowFormat = format;
             _openShowOpened = _openShowLeftFocus = false;
             ArmShowDeadline();
-            try { _provider.Show(format, placement, result => OnMain(() => Answer(result, null))); }
+            try
+            {
+                Action<AdResult> completed = result => OnMain(() => Answer(result, null));
+                if (format == AdFormat.Rewarded && _provider is IRewardedShowProvider rewarded)
+                    rewarded.ShowRewarded(placement, completed, () => OnMain(RewardEarned));
+                else
+                    _provider.Show(format, placement, completed);
+            }
             catch (Exception ex)
             {
                 // the open flag would block every later full-screen show (NoStackedAds) and the slot would never reload (#151)
@@ -379,10 +400,13 @@ namespace Nexus.Ads
 
         public void OpenTestSuite() => _provider.OpenTestSuite();
 
+        /// <summary>Releases this controller's subscriptions and timers; supplied provider and consent ports remain caller-owned.</summary>
         public void Dispose()
         {
             if (_disposed) return;
             _disposed = true;
+            _expireOpenShow = null;
+            _fullScreenOpen = false;
             _provider.Loaded -= OnLoaded;
             _provider.LoadFailed -= OnLoadFailed;
             _provider.Opened -= OnOpened;

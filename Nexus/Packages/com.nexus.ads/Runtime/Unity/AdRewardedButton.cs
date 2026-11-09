@@ -60,15 +60,16 @@ namespace Nexus.Ads.Unity
             if (_inFlight) return;
             _inFlight = true;
             Refresh();
+            var controller = AdsBootstrap.Instance != null ? AdsBootstrap.Instance.Controller : null;
             Ads.Show(_placement, result =>
             {
                 _inFlight = false;
                 if (result == AdResult.Rewarded)
                 {
+                    var receipt = controller?.DeliveringReward;
                     _onRewarded.Invoke();
-                    // the listeners ran: the receipt is acknowledged here, so a game that saves asynchronously should acknowledge itself instead
-                    var receipt = Ads.PendingReward;
-                    if (receipt.HasValue) Ads.AcknowledgeReward(receipt.Value.Id);
+                    // A listener can deliver a newer reward; acknowledge only this callback's captured receipt.
+                    if (receipt.HasValue) controller.AcknowledgeReward(receipt.Value.Id);
                 }
                 else _onNotRewarded.Invoke();
                 Refresh();

@@ -84,7 +84,19 @@ builder.BindAsyncCommand<ContextStartedSignal, OfferUpdateCommand>(ExecutionMode
 
 An immediate update covers the game with Play's screen and restarts the app once installed. A flexible one downloads while the game goes on: `StartUpdateAsync(AppUpdateFlow.Flexible, ct)` ends `Downloaded`, and the game asks the player when to restart before it calls `CompleteUpdateAsync`. The priority is set per release through the Play Developer API, not in the Play Console ([Google's guide](https://developer.android.com/guide/playcore/in-app-updates)).
 
+`Downloaded` requires no error and either the SDK's downloaded status or its completed,
+full download whose status a late accepted-dialog callback changed to Pending (#389). SDK 1.8.3
+can publish failed/canceled status without completing its request; the adapter observes
+that terminal status while waiting and returns Failed/Cancelled instead of waiting
+indefinitely. Cancelling stops only the wait and detaches its completion handler.
+This does not cancel or repair Google's underlying request/manager: repeated manager
+ownership and retry after such an SDK-terminal state remain under #391 and device
+validation. Do not treat a returned failure as proof that the SDK is ready for another flow.
+
 ## Verification
 
 - Compiled and EditMode-tested in a disposable project with the four plugins as `file:` packages: `Nexus/artifacts/googleplay-20261102/`, 9 passed, 0 failed, 0 skipped (the repository's `docs/RELEASE_GATES.md`, Dependencies).
+- Controlled SDK 1.8.3 request regressions cover terminal status without a completion
+  event, late failed/accepted activity results, normal download and caller cancellation. They
+  do not construct the Java-facing manager or launch a store update.
 - On a phone the sheet and the update flows appear only for a build installed from Google Play (an internal test track at least); a sideloaded build completes the review without a sheet and finds no store update. The owner chose not to upload one, so neither is observed on a device.

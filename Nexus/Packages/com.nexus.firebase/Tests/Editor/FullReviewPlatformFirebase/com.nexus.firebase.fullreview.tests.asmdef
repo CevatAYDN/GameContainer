@@ -1,0 +1,54 @@
+{
+    "name": "com.nexus.firebase.fullreview.tests",
+    "rootNamespace": "Nexus.Editor.Tests",
+    "references": [
+        "com.nexus.core",
+        "com.nexus.core.testing",
+        "com.nexus.firebase",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll",
+        "Firebase.App.dll",
+        "Firebase.Analytics.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS",
+        "NEXUS_FULL_REVIEW_FIREBASE_141",
+        "NEXUS_FIREBASE_APP",
+        "NEXUS_FIREBASE_ANALYTICS",
+        "NEXUS_FIREBASE_CRASHLYTICS",
+        "NEXUS_FIREBASE_REMOTE_CONFIG"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.google.firebase.app",
+            "expression": "14.0.0",
+            "define": "NEXUS_FIREBASE_APP"
+        },
+        {
+            "name": "com.google.firebase.analytics",
+            "expression": "14.0.0",
+            "define": "NEXUS_FIREBASE_ANALYTICS"
+        },
+        {
+            "name": "com.google.firebase.crashlytics",
+            "expression": "14.0.0",
+            "define": "NEXUS_FIREBASE_CRASHLYTICS"
+        },
+        {
+            "name": "com.google.firebase.remote-config",
+            "expression": "14.0.0",
+            "define": "NEXUS_FIREBASE_REMOTE_CONFIG"
+        }
+    ],
+    "noEngineReferences": false
+}

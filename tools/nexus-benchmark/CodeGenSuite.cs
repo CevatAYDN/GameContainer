@@ -188,7 +188,7 @@ namespace NexusBench
     /// dispatchers and injectors for every harness type, and CodeGenSuite resets them in
     /// teardown, so no other suite can observe the registration.
     /// </summary>
-    public static class CodeGenSuite
+    public static partial class CodeGenSuite
     {
         private static int _failures;
 
@@ -201,6 +201,11 @@ namespace NexusBench
             Console.WriteLine("===============================================================================");
 
             Test_Codegen_Emits_Compiles_And_Boots();
+            Test_Naming_ArrayRanks_CompileAndBoot();
+            Test_Naming_KeywordTypes_CompileAndBoot();
+            Test_Naming_KeywordMembers_CompileAndBoot();
+            Test_Naming_CacheCollisions_CompileAndBoot();
+            Test_Naming_UnicodeSeparators_CompileAndBoot();
             // Before CG2: CG2 deletes its stub's file, and an editor binder that names the stub's types no longer compiles.
             Test_Reflection_EditorBinder_SourceGenerator_Agree();
             Test_Generator_Emits_Compiles_And_Boots();
@@ -938,12 +943,19 @@ public sealed class SdkLocalIntegration { [Inject] public CodeGenDep Dep; }
 
                 var differences = new List<string>();
                 int compared = 0;
+                int compilations = 0;
                 foreach (var (assemblyName, source) in new[]
                          {
                              ("NexusBench.CodeGenSourceStub", GeneratorStubSource),
                              ("NexusBench.CG6Game", "namespace NexusBench.CG6Game { public sealed class Marker { } }"),
+                             ("NexusBench.NamingArrays", ArrayNamingSource),
+                             ("NexusBench.NamingTypes", KeywordTypeNamingSource),
+                             ("NexusBench.NamingMembers", KeywordMemberNamingSource),
+                             ("NexusBench.NamingCaches", CacheCollisionNamingSource),
+                             ("NexusBench.NamingLiterals", UnicodeLiteralNamingSource),
                          })
                 {
+                    compilations++;
                     string fromSource = GenerateBinderSource(new Nexus.Generator.NexusBinderGenerator(), assemblyName, source);
                     string fromDll = GenerateBinderSource((IIncrementalGenerator)Activator.CreateInstance(shippedType), assemblyName, source);
                     if (fromSource.Length == 0)
@@ -960,7 +972,7 @@ public sealed class SdkLocalIntegration { [Inject] public CodeGenDep Dep; }
 
                 ok = differences.Count == 0;
                 detail = ok
-                    ? $"the DLL emits the source's binder on both compilations ({compared} chars)"
+                    ? $"the DLL emits the source's binder on {compilations} compilations ({compared} chars)"
                     : string.Join("; ", differences) + " — rebuild the DLL (SourceGenerators~/README.md)";
             }
             catch (Exception ex)
@@ -1841,8 +1853,9 @@ namespace NexusBench.Conditions
             ("Plain.cs", "namespace NexusBench.Conditions\n{\n    public interface IDep { }\n    public sealed class PlainType { [Inject] public IDep Dep; }\n"
                 + "    public sealed class PlainWithUnknownDep { [Inject] public UnknownIfType Other; }\n}\n"),
             ("MemberIf.cs", "namespace NexusBench.Conditions\n{\n    public sealed class MemberIfType\n    {\n#if UNITY_EDITOR\n        [Inject] public IDep Dep;\n#endif\n    }\n}\n"),
-            // The reading takes directive lines only, so a commented example opens an #if it cannot parse.
-            ("UnknownIf.cs", "namespace NexusBench.Conditions\n{\n/* an example:\n#if a commented example\n*/\n#if UNITY_EDITOR\n"
+            // Simulate source edited into an unparsable condition after the fixture assembly
+            // compiled. Comment-contained directives are now correctly ignored (#354).
+            ("UnknownIf.cs", "namespace NexusBench.Conditions\n{\n#if an invalid expression\n#if UNITY_EDITOR\n"
                 + "    public sealed class UnknownIfType { [Inject] public IDep Dep; }\n    public sealed class UnknownCtorOnly { public UnknownCtorOnly(IDep dep) { } }\n#endif\n}\n"),
         };
 
@@ -1915,9 +1928,9 @@ namespace NexusBench.Conditions
                 }
                 if (!header.Contains($"NexusBench.Conditions.MemberIfType: an [Inject] member in {Path.Combine(dir, "MemberIf.cs")} (line 6) is declared under #if UNITY_EDITOR"))
                     problems.Add("the header does not give the member #if reason: " + header);
-                if (!header.Contains("NexusBench.Conditions.UnknownIfType: every binder line that names it is left out: could not parse '#if (a commented example) && (UNITY_EDITOR)'"))
+                if (!header.Contains("NexusBench.Conditions.UnknownIfType: every binder line that names it is left out: could not parse '#if (an invalid expression) && (UNITY_EDITOR)'"))
                     problems.Add("the header does not give the unparsable #if reason: " + header);
-                if (warnings.Count(w => w.Contains("could not parse '#if (a commented example) && (UNITY_EDITOR)'")) != 1)
+                if (warnings.Count(w => w.Contains("could not parse '#if (an invalid expression) && (UNITY_EDITOR)'")) != 1)
                     problems.Add("the unparsable #if was not logged once: " + string.Join(" | ", warnings));
                 if (!linkXml.Contains("<type fullname=\"NexusBench.Conditions.UnknownCtorOnly\" preserve=\"nothing\"><method name=\".ctor\" /></type>"))
                     problems.Add("link.xml does not keep the constructor the factory no longer calls");

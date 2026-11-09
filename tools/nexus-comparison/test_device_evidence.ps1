@@ -43,6 +43,7 @@ function adb.exe {
     $global:LASTEXITCODE = if ($script:scenario -eq 'missing-native-exit') { $null } else { 0 }
     $failCommands = @{
         'failed-devices' = '^devices$'; 'failed-device' = '^get-state$'
+        'failed-start-server' = '^start-server$'
         'failed-install' = '^install '; 'failed-path' = '^shell pm path '
         'failed-hash' = '^shell sha256sum '; 'failed-clear' = '^shell rm '
         'failed-readlink' = '^shell readlink '
@@ -75,7 +76,22 @@ function adb.exe {
     }
     $output = @(& { switch -Regex ($command) {
         '^devices$' { "List of devices attached"; "fake-serial`tdevice"; return }
-        '^get-state$' { 'device'; return }
+        '^start-server$' {
+            if ($script:scenario -eq 'cold-daemon' -and -not $script:daemonWarm) {
+                '* daemon not running; starting now at tcp:5037'
+                '* daemon started successfully'
+            }
+            $script:daemonWarm = $true
+            return
+        }
+        '^get-state$' {
+            if ($script:scenario -eq 'cold-daemon' -and -not $script:daemonWarm) {
+                '* daemon not running; starting now at tcp:5037'
+                '* daemon started successfully'
+                $script:daemonWarm = $true
+            }
+            'device'; return
+        }
         '^install -r ' {
             $script:installs++
             if ($script:scenario -eq 'mutated-input') { [IO.File]::AppendAllText($script:inputApk, 'changed') }
@@ -227,6 +243,7 @@ try {
     }
     $cases = @('escape-artifact', 'escape-artifact-sibling', 'absolute-artifact', 'escape-move-source', 'escape-move-target', 'nested-evidence',
         'clean-first-install', 'wrong-post-hash', 'failed-post-path', 'failed-post-hash', 'empty-post-path', 'empty-post-hash', 'success-post-path',
+        'cold-daemon', 'failed-start-server',
         'success', 'success-stop', 'success-generated', 'native-success', 'native-failure', 'wrong-package', 'failed-aapt', 'empty-aapt',
         'failed-devices', 'failed-device', 'failed-install', 'failed-path', 'failed-hash', 'failed-clear', 'failed-absence',
         'failed-log-clear', 'failed-resolve', 'failed-start', 'failed-log', 'failed-result', 'failed-model', 'failed-release',
@@ -244,6 +261,7 @@ try {
         $script:json = $report | ConvertTo-Json -Depth 4
         $script:started = $script:completed = $false
         $script:terminated = $false
+        $script:daemonWarm = $false
         $script:identityReads = 0
         $script:moves = 0
         $script:stale = $case -ne 'clean-first-install'
@@ -266,8 +284,12 @@ try {
         }
         try { & $runner @parameters | Out-Null } catch { $failure = $_.Exception.Message }
         $evidence = $script:caseEvidence
-        if ($case -in @('success', 'success-stop', 'success-generated', 'native-success', 'success-post-path', 'clean-first-install', 'nested-evidence')) {
+        if ($case -in @('success', 'success-stop', 'success-generated', 'native-success', 'success-post-path', 'clean-first-install', 'nested-evidence', 'cold-daemon')) {
             Assert-Test ($failure -eq '') "$case failed: $failure"
+            if ($case -eq 'cold-daemon') {
+                Assert-Test ($script:calls.IndexOf('start-server') -ge 0 -and
+                    $script:calls.IndexOf('start-server') -lt $script:calls.IndexOf('get-state')) 'Daemon initialization did not precede strict device-state validation.'
+            }
             $device = Get-Content -LiteralPath (Join-Path $evidence 'android-device.json') -Raw | ConvertFrom-Json
             Assert-Test (Test-Path -LiteralPath (Join-Path $evidence 'android-results.json')) "$case did not publish results."
             Assert-Test ($device.serial -ceq 'fake-serial' -and $device.pid -ceq '1234' -and $device.tokenScope -ceq 'host-only') 'Missing actual process/device identity or host-only token scope.'

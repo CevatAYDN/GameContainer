@@ -268,7 +268,7 @@ namespace Nexus.Core
             {
                 depth.Value--;
                 NexusRuntime.Logger?.LogError($"[Nexus] Max fallback depth ({MaxFallbackDepth}) exceeded in this recovery chain. Aborting.");
-                return RecoveryAction.Abort;
+                throw Logged(new NexusRecoveryAbortException("Max fallback depth exceeded.", plan.FailedSignal.Exception));
             }
             bool depthClaimed = true;
             if (plan.FallbackType != null)
@@ -318,7 +318,7 @@ namespace Nexus.Core
                 {
                     depth.Value--;
                     NexusRuntime.Logger?.LogError($"[Nexus] Max fallback depth ({MaxFallbackDepth}) exceeded in this recovery chain. Aborting.");
-                    return RecoveryAction.Abort;
+                    throw Logged(new NexusRecoveryAbortException("Max fallback depth exceeded.", plan.FailedSignal.Exception));
                 }
                 if (plan.FallbackType != null)
                 {
@@ -327,11 +327,13 @@ namespace Nexus.Core
                         if (plan.FallbackIsAsync)
                         {
                             // E-4/P0-1-aligned: recognize generic-only async fallback commands too.
-                            await _executor.ExecuteAsync(new CommandHandlerInfo(plan.FallbackType, ExecutionMode.Sequential, -1, true), signal, ct);
+                            await _executor.ExecuteAsync(new CommandHandlerInfo(plan.FallbackType, ExecutionMode.Sequential, -1, true,
+                                CommandExecutor.ReadCommandTimeout(plan.FallbackType)), signal, ct);
                         }
                         else
                         {
-                            await _executor.ExecuteAsync(new CommandHandlerInfo(plan.FallbackType, ExecutionMode.Sequential, -1, false), signal, ct);
+                            await _executor.ExecuteAsync(new CommandHandlerInfo(plan.FallbackType, ExecutionMode.Sequential, -1, false,
+                                CommandExecutor.ReadCommandTimeout(plan.FallbackType)), signal, ct);
                         }
                     }
                     finally

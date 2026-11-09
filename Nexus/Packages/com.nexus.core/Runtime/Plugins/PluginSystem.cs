@@ -69,6 +69,9 @@ namespace Nexus.Core
 
     public class PluginContext : IPluginContext
     {
+#if UNITY_EDITOR || !UNITY_5_3_OR_NEWER
+        internal static Action<object> BeforeTraceSinkPublishForTests;
+#endif
         private readonly INexusPlugin _plugin;
         private readonly IContext _context;
         private readonly List<ISignalInterceptor> _interceptors = new();
@@ -151,8 +154,12 @@ namespace Nexus.Core
             {
                 _traceSinks.Add(sink);
                 _traceSinksSnapshot = new List<INexusTraceSink>(_traceSinks);
+#if UNITY_EDITOR || !UNITY_5_3_OR_NEWER
+                BeforeTraceSinkPublishForTests?.Invoke(_listLock);
+#endif
+                // Publish ownership and the global registration together with respect to Clear (#379).
+                NexusTrace.AddSink(sink);
             }
-            NexusTrace.AddSink(sink);
         }
 
         public void Clear()
@@ -174,11 +181,11 @@ namespace Nexus.Core
                 _decoratorsSnapshot = Array.Empty<ICommandDecorator>();
                 _serializersSnapshot = Array.Empty<IModelSerializer>();
                 _traceSinksSnapshot = Array.Empty<INexusTraceSink>();
-            }
 
-            foreach (var sink in sinksToClear)
-            {
-                NexusTrace.RemoveSink(sink);
+                foreach (var sink in sinksToClear)
+                {
+                    NexusTrace.RemoveSink(sink);
+                }
             }
             if (_context is Context ctx)
             {

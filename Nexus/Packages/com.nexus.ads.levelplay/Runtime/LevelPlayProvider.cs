@@ -14,8 +14,8 @@ namespace Nexus.Ads.LevelPlay
 {
     /// <summary>
     /// Unity LevelPlay (com.unity.services.levelplay 9.x) as the core's <see cref="IAdProvider"/>: one
-    /// <see cref="LevelPlayRewardedAd"/> and one <see cref="LevelPlayInterstitialAd"/> per configured ad
-    /// unit, a banner on demand, impression data as <see cref="AdRevenue"/>. The SDK fires
+    /// loaded <see cref="LevelPlayRewardedAd"/> and <see cref="LevelPlayInterstitialAd"/> per configured ad
+    /// unit, replaced after consumption, a banner on demand, impression data as <see cref="AdRevenue"/>. The SDK fires
     /// <c>OnAdRewarded</c> after <c>OnAdClosed</c> at times (its own documentation says so), so a close
     /// waits <see cref="RewardGraceSeconds"/> for a late reward before it answers Closed. Test mode
     /// (the Test tab) enables the integration test suite metadata and adapter debug logging before
@@ -27,7 +27,7 @@ namespace Nexus.Ads.LevelPlay
     /// and starts only the Families self-certified networks (issue #194). Init waits for a network: offline,
     /// the SDK answers Init from its cached response and every load of the session ends in 509 (issue #125).
     /// </summary>
-    public sealed class LevelPlayProvider : IAdProvider, IConsentFlow, IDisposable
+    public sealed class LevelPlayProvider : IAdProvider, IConsentFlow, IRewardedShowProvider, IDisposable
     {
         public const string ProviderName = "levelplay";
         public const double RewardGraceSeconds = 1.5;
@@ -36,24 +36,54 @@ namespace Nexus.Ads.LevelPlay
         private readonly IAdScheduler _scheduler;
         private readonly Func<bool> _networkReachable;
         private readonly Action<string, string> _setMetaData;
+        private readonly UnityMainThread _main = new UnityMainThread();
         private IDisposable _networkWait;
         private readonly Dictionary<AdFormat, string> _units = new Dictionary<AdFormat, string>();
         private LevelPlayRewardedAd _rewarded;
         private LevelPlayInterstitialAd _interstitial;
+        private AdState _rewardedState, _interstitialState;
         private LevelPlayBannerAd _banner;
         private string _bannerPlacement;
         private BannerPosition _bannerPosition;
         private bool _testTab, _bannerUnitMissingWarned;
         private Action<bool> _onReady;
-        private bool _initialized;
+        private bool _initialized, _disposed;
         private ShowState _show;
+
+        private sealed class AdState
+        {
+            public readonly AdFormat Format;
+            public ShowState Show;
+            private Action _destroy;
+            public bool Released { get; private set; }
+
+            public AdState(AdFormat format, Action destroy) { Format = format; _destroy = destroy; }
+            public void Release()
+            {
+                if (Released) return;
+                Released = true;
+                var destroy = _destroy;
+                _destroy = null;
+                destroy?.Invoke();
+            }
+        }
 
         private sealed class ShowState
         {
-            public AdFormat Format;
-            public Action<AdResult> OnResult;
+            public readonly AdState Ad;
+            public readonly string Placement;
+            public readonly Action<AdResult> OnResult;
+            public readonly Action OnRewardEarned;
             public bool Rewarded, Closed, Done;
             public IDisposable Grace;
+
+            public ShowState(AdState ad, string placement, Action<AdResult> result, Action earned)
+            {
+                Ad = ad;
+                Placement = placement ?? "";
+                OnResult = result;
+                OnRewardEarned = earned;
+            }
         }
 
         public LevelPlayProvider(IAdScheduler scheduler)
@@ -79,6 +109,7 @@ namespace Nexus.Ads.LevelPlay
         public void Initialize(ProviderConfig config, Action<bool> onReady)
         {
             if (config == null) throw new ArgumentNullException(nameof(config));
+            if (_disposed) throw new ObjectDisposedException(nameof(LevelPlayProvider));
             if (_initialized) { onReady?.Invoke(true); return; }
             _onReady = onReady;
             _testTab = config.TestMode; // LevelPlay's test mode is the Test tab (AdsSettings.ProviderConfigFor)
@@ -110,125 +141,202 @@ namespace Nexus.Ads.LevelPlay
         private void InitWhenReachable(string appKey)
         {
             _networkWait = null;
+            if (_disposed) return;
             if (!_networkReachable()) { _networkWait = _scheduler.Schedule(NetworkPollSeconds, () => InitWhenReachable(appKey)); return; }
             global::Unity.Services.LevelPlay.LevelPlay.OnInitSuccess += OnInitSuccess;
             global::Unity.Services.LevelPlay.LevelPlay.OnInitFailed += OnInitFailed;
             global::Unity.Services.LevelPlay.LevelPlay.Init(appKey); // the editor platform answers only on an Android or iOS build target; elsewhere the SDK is absent and nothing fires
         }
 
-        private void OnInitSuccess(LevelPlayConfiguration configuration)
+        private void OnInitSuccess(LevelPlayConfiguration configuration) => OnMain(() =>
         {
             global::Unity.Services.LevelPlay.LevelPlay.OnInitSuccess -= OnInitSuccess;
             global::Unity.Services.LevelPlay.LevelPlay.OnInitFailed -= OnInitFailed;
+            if (_initialized) return;
             _initialized = true;
             if (_units.TryGetValue(AdFormat.Rewarded, out var rewardedUnit) && !string.IsNullOrEmpty(rewardedUnit))
-            {
-                _rewarded = new LevelPlayRewardedAd(rewardedUnit);
-                _rewarded.OnAdLoaded += _ => Loaded?.Invoke(AdFormat.Rewarded);
-                _rewarded.OnAdLoadFailed += error => LoadFailed?.Invoke(AdFormat.Rewarded, Describe(error));
-                _rewarded.OnAdDisplayed += _ => Opened?.Invoke(AdFormat.Rewarded);
-                _rewarded.OnAdDisplayFailed += (_, error) => ShowFailed(AdFormat.Rewarded, error);
-                _rewarded.OnAdRewarded += (_, __) => OnRewarded();
-                _rewarded.OnAdClosed += _ => OnClosed(AdFormat.Rewarded);
-                _rewarded.OnAdImpressionDataReady += data => OnImpression(AdFormat.Rewarded, data);
-            }
+                CreateRewarded(rewardedUnit);
             if (_units.TryGetValue(AdFormat.Interstitial, out var interstitialUnit) && !string.IsNullOrEmpty(interstitialUnit))
-            {
-                _interstitial = new LevelPlayInterstitialAd(interstitialUnit);
-                _interstitial.OnAdLoaded += _ => Loaded?.Invoke(AdFormat.Interstitial);
-                _interstitial.OnAdLoadFailed += error => LoadFailed?.Invoke(AdFormat.Interstitial, Describe(error));
-                _interstitial.OnAdDisplayed += _ => Opened?.Invoke(AdFormat.Interstitial);
-                _interstitial.OnAdDisplayFailed += (_, error) => ShowFailed(AdFormat.Interstitial, error);
-                _interstitial.OnAdClosed += _ => OnClosed(AdFormat.Interstitial);
-                _interstitial.OnAdImpressionDataReady += data => OnImpression(AdFormat.Interstitial, data);
-            }
+                CreateInterstitial(interstitialUnit);
             var callback = _onReady; _onReady = null;
             callback?.Invoke(true);
+        });
+
+        private void CreateRewarded(string unit)
+        {
+            var ad = new LevelPlayRewardedAd(unit);
+            var state = new AdState(AdFormat.Rewarded, ad.DestroyAd);
+            _rewarded = ad;
+            _rewardedState = state;
+            ad.OnAdLoaded += _ => OnMain(() => { if (!state.Released) Loaded?.Invoke(state.Format); });
+            ad.OnAdLoadFailed += error => OnMain(() => { if (!state.Released) LoadFailed?.Invoke(state.Format, Describe(error)); });
+            ad.OnAdDisplayed += _ => OnMain(() => OnOpened(state));
+            ad.OnAdDisplayFailed += (_, error) => OnMain(() => ShowFailed(state, error));
+            ad.OnAdRewarded += (_, __) => OnMain(() => OnRewarded(state.Show));
+            ad.OnAdClosed += _ => OnMain(() => OnClosed(state.Show));
+            ad.OnAdImpressionDataReady += data => OnMain(() => OnImpression(state.Format, data, state.Show?.Placement));
         }
 
-        private void OnInitFailed(LevelPlayInitError error)
+        private void CreateInterstitial(string unit)
+        {
+            var ad = new LevelPlayInterstitialAd(unit);
+            var state = new AdState(AdFormat.Interstitial, ad.DestroyAd);
+            _interstitial = ad;
+            _interstitialState = state;
+            ad.OnAdLoaded += _ => OnMain(() => { if (!state.Released) Loaded?.Invoke(state.Format); });
+            ad.OnAdLoadFailed += error => OnMain(() => { if (!state.Released) LoadFailed?.Invoke(state.Format, Describe(error)); });
+            ad.OnAdDisplayed += _ => OnMain(() => OnOpened(state));
+            ad.OnAdDisplayFailed += (_, error) => OnMain(() => ShowFailed(state, error));
+            ad.OnAdClosed += _ => OnMain(() => OnClosed(state.Show));
+            ad.OnAdImpressionDataReady += data => OnMain(() => OnImpression(state.Format, data, state.Show?.Placement));
+        }
+
+        private void OnInitFailed(LevelPlayInitError error) => OnMain(() =>
         {
             global::Unity.Services.LevelPlay.LevelPlay.OnInitSuccess -= OnInitSuccess;
             global::Unity.Services.LevelPlay.LevelPlay.OnInitFailed -= OnInitFailed;
+            if (_initialized) return;
             Debug.LogWarning("[Nexus Ads] LevelPlay init failed: " + error);
             var callback = _onReady; _onReady = null;
             callback?.Invoke(false);
-        }
+        });
 
         public void Load(AdFormat format)
         {
+            if (_disposed) return;
+            if (!_initialized) { LoadFailed?.Invoke(format, "SDK not initialized"); return; }
+            if (!_units.TryGetValue(format, out var unit) || string.IsNullOrEmpty(unit))
+            {
+                LoadFailed?.Invoke(format, "no ad unit id for " + format);
+                return;
+            }
             switch (format)
             {
-                case AdFormat.Rewarded when _rewarded != null: _rewarded.LoadAd(); return;
-                case AdFormat.Interstitial when _interstitial != null: _interstitial.LoadAd(); return;
+                case AdFormat.Rewarded:
+                    if (_rewarded == null || _rewardedState.Show != null)
+                    {
+                        Retire(_rewardedState);
+                        if (_disposed) return;
+                        CreateRewarded(unit);
+                    }
+                    _rewarded.LoadAd();
+                    return;
+                case AdFormat.Interstitial:
+                    if (_interstitial == null || _interstitialState.Show != null)
+                    {
+                        Retire(_interstitialState);
+                        if (_disposed) return;
+                        CreateInterstitial(unit);
+                    }
+                    _interstitial.LoadAd();
+                    return;
                 default: LoadFailed?.Invoke(format, _initialized ? "no ad unit id for " + format : "SDK not initialized"); return;
             }
         }
 
         public bool IsReady(AdFormat format)
         {
+            if (_disposed) return false;
             switch (format)
             {
-                case AdFormat.Rewarded: return _rewarded != null && _rewarded.IsAdReady();
-                case AdFormat.Interstitial: return _interstitial != null && _interstitial.IsAdReady();
+                case AdFormat.Rewarded: return _rewarded != null && _rewardedState.Show == null && _rewarded.IsAdReady();
+                case AdFormat.Interstitial: return _interstitial != null && _interstitialState.Show == null && _interstitial.IsAdReady();
                 default: return false;
             }
         }
 
         public void Show(AdFormat format, string placement, Action<AdResult> onResult)
+            => Show(format, placement, onResult, null);
+
+        void IRewardedShowProvider.ShowRewarded(string placement, Action<AdResult> onResult, Action onRewardEarned)
+            => Show(AdFormat.Rewarded, placement, onResult, onRewardEarned);
+
+        private void Show(AdFormat format, string placement, Action<AdResult> onResult, Action onRewardEarned)
         {
             if (onResult == null) throw new ArgumentNullException(nameof(onResult));
             if (!IsReady(format)) { onResult(AdResult.NotReady); return; }
-            // The controller asks for a show only after it answered the last one, so a show still open here is one the SDK never
-            // answered and the controller's watchdog ended (#180): a ready ad replaces it. The latch answered NotReady to every
-            // later show (#233); with nothing ready it stays, so a reward the SDK still pays reaches the controller's receipt.
-            // shortcut: one ad object per format, so a late callback of the replaced ad during the new show counts for the new one;
-            // tell them apart by the ad info if a device shows it.
-            var stale = _show;
-            if (stale != null && !stale.Done) { stale.Done = true; stale.Grace?.Dispose(); } // its grace would finish the new show
-            var show = _show = new ShowState { Format = format, OnResult = onResult };
+            if (_show != null && !_show.Done) Retire(_show.Ad);
+            var ad = format == AdFormat.Rewarded ? _rewardedState : _interstitialState;
+            var show = _show = new ShowState(ad, placement, onResult, onRewardEarned);
+            ad.Show = show;
             try { if (format == AdFormat.Rewarded) _rewarded.ShowAd(placement); else _interstitial.ShowAd(placement); }
-            catch { if (_show == show) _show = null; throw; } // an open show would answer NotReady to every later one (#151)
+            catch { Retire(ad); throw; }
         }
 
-        private void OnRewarded()
+        private void OnOpened(AdState ad)
         {
-            var show = _show;
-            if (show == null || show.Done || show.Format != AdFormat.Rewarded) return;
+            if (!ad.Released && ad.Show != null && !ad.Show.Done && ReferenceEquals(_show, ad.Show))
+                Opened?.Invoke(ad.Format);
+        }
+
+        private void OnRewarded(ShowState show)
+        {
+            if (show == null || show.Rewarded) return;
             show.Rewarded = true;
-            if (show.Closed) Finish(AdFormat.Rewarded, AdResult.Rewarded); // the late reward the SDK documents
+            show.OnRewardEarned?.Invoke();
+            if (show.Closed) Finish(show, AdResult.Rewarded);
         }
 
-        private void OnClosed(AdFormat format)
+        private void OnClosed(ShowState show)
         {
-            var show = _show;
-            if (show == null || show.Done || show.Format != format) return;
+            if (show == null || show.Done || show.Closed) return;
             show.Closed = true;
-            if (format != AdFormat.Rewarded) { Finish(format, AdResult.Closed); return; }
-            if (show.Rewarded) { Finish(format, AdResult.Rewarded); return; }
-            show.Grace = _scheduler.Schedule(RewardGraceSeconds, () => Finish(AdFormat.Rewarded, show.Rewarded ? AdResult.Rewarded : AdResult.Closed));
+            if (show.Ad.Format != AdFormat.Rewarded) { Finish(show, AdResult.Closed); return; }
+            if (show.Rewarded) { Finish(show, AdResult.Rewarded); return; }
+            show.Grace = _scheduler.Schedule(RewardGraceSeconds, () => Finish(show, show.Rewarded ? AdResult.Rewarded : AdResult.Closed));
         }
 
         // the show result carries no reason: the SDK's is written here, in every build, as the AdMob provider does (issue #164)
-        private void ShowFailed(AdFormat format, LevelPlayAdError error)
+        private void ShowFailed(AdState ad, LevelPlayAdError error)
         {
-            Debug.LogWarning("[Nexus Ads] LevelPlay " + format + " failed to show: " + Describe(error));
-            Finish(format, AdResult.Failed);
+            if (ad.Show == null || ad.Show.Done) return;
+            Debug.LogWarning("[Nexus Ads] LevelPlay " + ad.Format + " failed to show: " + Describe(error));
+            Finish(ad.Show, AdResult.Failed);
         }
 
-        private void Finish(AdFormat format, AdResult result)
+        private void Finish(ShowState show, AdResult result)
         {
-            var show = _show;
-            if (show == null || show.Done || show.Format != format) return;
+            if (_disposed || show == null || show.Done) return;
             show.Done = true;
-            show.Grace?.Dispose();
-            _show = null;
-            show.OnResult(result);
+            var grace = show.Grace;
+            show.Grace = null;
+            if (ReferenceEquals(_show, show)) _show = null;
+            try { grace?.Dispose(); }
+            finally
+            {
+                try { Release(show.Ad); }
+                finally { show.OnResult(result); }
+            }
+        }
+
+        private void Release(AdState ad)
+        {
+            if (ad == null) return;
+            if (ReferenceEquals(_rewardedState, ad)) { _rewardedState = null; _rewarded = null; }
+            if (ReferenceEquals(_interstitialState, ad)) { _interstitialState = null; _interstitial = null; }
+            // Queued callbacks may retain this show's identity, but the provider keeps no history of SDK objects.
+            // Delivery of additional native callbacks after handle destruction is not guaranteed here.
+            ad.Release();
+        }
+
+        private void Retire(AdState ad)
+        {
+            var show = ad?.Show;
+            if (show != null)
+            {
+                show.Done = true;
+                if (ReferenceEquals(_show, show)) _show = null;
+                var grace = show.Grace;
+                show.Grace = null;
+                try { grace?.Dispose(); }
+                finally { Release(ad); }
+            }
+            else Release(ad);
         }
 
         public void ShowBanner(string placement, BannerPosition position)
         {
-            if (!_initialized) return;
+            if (_disposed || !_initialized) return;
             if (!_units.TryGetValue(AdFormat.Banner, out var unit) || string.IsNullOrEmpty(unit))
             {
                 if (!_bannerUnitMissingWarned)
@@ -239,8 +347,9 @@ namespace Nexus.Ads.LevelPlay
             placement = placement ?? "";
             if (_banner != null && (position != _bannerPosition || placement != _bannerPlacement))
             {
-                _banner.DestroyAd(); // LevelPlay 9.6's banner fixes its position and placement when it is built: another one rebuilds it (issue #195)
+                var previous = _banner;
                 _banner = null;
+                previous.DestroyAd(); // LevelPlay 9.6 fixes position and placement when the banner is built.
             }
             if (_banner == null)
             {
@@ -252,10 +361,16 @@ namespace Nexus.Ads.LevelPlay
                     .SetPlacementName(placement)
                     .SetDisplayOnLoad(true)
                     .Build();
-                _banner = new LevelPlayBannerAd(unit, config);
-                _banner.OnAdLoadFailed += error => Debug.LogWarning("[Nexus Ads] LevelPlay banner did not load: " + Describe(error));
-                _banner.OnAdImpressionDataReady += data => OnImpression(AdFormat.Banner, data);
-                _banner.LoadAd();
+                var banner = _banner = new LevelPlayBannerAd(unit, config);
+                banner.OnAdLoadFailed += error => OnMain(() =>
+                {
+                    if (ReferenceEquals(_banner, banner)) Debug.LogWarning("[Nexus Ads] LevelPlay banner did not load: " + Describe(error));
+                });
+                banner.OnAdImpressionDataReady += data => OnMain(() =>
+                {
+                    if (ReferenceEquals(_banner, banner)) OnImpression(AdFormat.Banner, data, placement);
+                });
+                banner.LoadAd();
                 return;
             }
             _banner.ShowAd();
@@ -263,38 +378,66 @@ namespace Nexus.Ads.LevelPlay
 
         public void HideBanner() => _banner?.HideAd();
 
-        public void OpenTestSuite() => global::Unity.Services.LevelPlay.LevelPlay.LaunchTestSuite();
+        public void OpenTestSuite() { if (!_disposed) global::Unity.Services.LevelPlay.LevelPlay.LaunchTestSuite(); }
 
         // the format comes from the ad object, not data.AdFormat: the device SDK sends "rewarded_video", the editor SDK "editor_mock_format"
-        private void OnImpression(AdFormat format, LevelPlayImpressionData data)
+        private void OnImpression(AdFormat format, LevelPlayImpressionData data, string placement = null)
         {
             if (data == null) return;
-            Revenue?.Invoke(new AdRevenue(data.AdNetwork ?? ProviderName, data.Placement ?? "", format, data.Revenue ?? 0, "USD", data.Precision ?? ""));
+            Revenue?.Invoke(new AdRevenue(data.AdNetwork ?? ProviderName, placement ?? data.Placement ?? "", format, data.Revenue ?? 0, "USD", data.Precision ?? ""));
         }
 
         private static string Describe(LevelPlayAdError error) => error == null ? "unknown" : error.ErrorCode + " " + error.ErrorMessage;
 
         /// <summary>
-        /// Leaves LevelPlay's init events and stops the wait for a network. The events are static: with domain reload off, a provider
-        /// whose session ended before Init answered was still called by the next session's Init (issue #194).
+        /// Leaves LevelPlay's init events, cancels waits and releases every owned ad instance once.
         /// </summary>
         public void Dispose()
         {
-            _networkWait?.Dispose();
+            if (_disposed) return;
+            _disposed = true;
+            _initialized = false;
+            var wait = _networkWait;
             _networkWait = null;
             global::Unity.Services.LevelPlay.LevelPlay.OnInitSuccess -= OnInitSuccess;
             global::Unity.Services.LevelPlay.LevelPlay.OnInitFailed -= OnInitFailed;
             _onReady = null;
+            try { wait?.Dispose(); }
+            finally
+            {
+                try { Retire(_rewardedState); }
+                finally
+                {
+                    try { Retire(_interstitialState); }
+                    finally
+                    {
+                        var banner = _banner;
+                        _banner = null;
+                        _show = null;
+                        Loaded = null;
+                        LoadFailed = null;
+                        Opened = null;
+                        Revenue = null;
+                        banner?.DestroyAd();
+                    }
+                }
+            }
+        }
+
+        private void OnMain(Action action)
+        {
+            if (_main.IsCurrent) { if (!_disposed) action(); }
+            else _main.Post(() => { if (!_disposed) action(); });
         }
 
         // ----- IConsentFlow: LevelPlay ships no form; consent arrives from the game's CMP (Google UMP is shared automatically).
 
-        public bool Completed => true;
-        public bool CanRequestAds => true;
+        public bool Completed => !_disposed;
+        public bool CanRequestAds => !_disposed;
         public bool PrivacyOptionsRequired => false;
         public event Action Changed { add { } remove { } }
-        public void Request(Action onCompleted) => onCompleted?.Invoke();
-        public void ShowPrivacyOptions(Action onClosed) => onClosed?.Invoke();
+        public void Request(Action onCompleted) { if (!_disposed) onCompleted?.Invoke(); }
+        public void ShowPrivacyOptions(Action onClosed) { if (!_disposed) onClosed?.Invoke(); }
 
         /// <summary>Forwards a GDPR answer from a CMP that is not shared with the SDK automatically (SDK 9.5.0+).</summary>
         public static void SetGdprConsent(bool consent) => LevelPlayPrivacySettings.SetGDPRConsent(consent);

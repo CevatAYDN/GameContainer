@@ -35,7 +35,7 @@ current_commit() {
   local head dirty
   head="$(git -C "$PROJECT" rev-parse HEAD)"
   [[ "$head" =~ ^[a-fA-F0-9]{40}$ ]]
-  dirty="$(git -C "$PROJECT" status --porcelain --untracked-files=no -- Packages Assets)"
+  dirty="$(git -C "$PROJECT" status --porcelain --untracked-files=all -- Packages Assets)"
   if [ -n "$dirty" ]; then head="$head (Packages or Assets modified)"; fi
   printf '%s' "$head"
 }

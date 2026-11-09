@@ -11,7 +11,7 @@ namespace Nexus.Ads.Editor
     /// <summary>Generates the <c>AdPlacements</c> constants from the settings' placement names, so a misspelt name does not compile.</summary>
     public static class AdPlacementsGenerator
     {
-        private static readonly Regex Identifier = new Regex("^[A-Za-z_][A-Za-z0-9_]*$");
+        private static readonly Regex Identifier = new Regex(@"\A[A-Za-z_][A-Za-z0-9_]*\z");
 
         public static string Render(IEnumerable<PlacementEntry> placements)
         {
@@ -21,13 +21,24 @@ namespace Nexus.Ads.Editor
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var p in placements)
             {
-                if (!Identifier.IsMatch(p.Name ?? "")) throw new InvalidOperationException("placement '" + p.Name + "' is not a C# identifier");
-                if (!seen.Add(p.Name)) throw new InvalidOperationException("placement '" + p.Name + "' is declared twice");
+                string error = NameError(p.Name, seen, out string constant);
+                if (error != null) throw new InvalidOperationException(error);
                 sb.Append("        /// <summary>").Append(p.Format).Append(p.NaturalBreak ? ", natural break" : "").Append("</summary>\n");
-                sb.Append("        public const string ").Append(Pascal(p.Name)).Append(" = \"").Append(p.Name).Append("\";\n");
+                sb.Append("        public const string ").Append(constant).Append(" = \"").Append(p.Name).Append("\";\n");
             }
             sb.Append("    }\n}\n");
             return sb.ToString();
+        }
+
+        internal static string NameError(string name, HashSet<string> generatedNames, out string constant)
+        {
+            constant = null;
+            if (!Identifier.IsMatch(name ?? "")) return "placement '" + name + "' is not a C# identifier";
+            constant = Pascal(name);
+            if (!Identifier.IsMatch(constant)) return "placement '" + name + "' generates an invalid constant '" + constant + "'";
+            if (constant == "AdPlacements") return "placement '" + name + "' generates a constant with the containing type's name";
+            if (!generatedNames.Add(constant)) return "placement '" + name + "' generates a duplicate constant '" + constant + "'";
+            return null;
         }
 
         /// <summary>shop_refill → ShopRefill; already-Pascal names stay.</summary>

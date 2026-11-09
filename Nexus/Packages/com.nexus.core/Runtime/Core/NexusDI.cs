@@ -187,6 +187,7 @@ namespace Nexus.Core
         private int _startablesResolved; // 1 once a context started this container's startables (#208)
         private List<IAsyncDisposable> _asyncDisposeBacklog; // guarded by _singletonLock
         private int _disposeState;
+        private int _teardownInProgress;
         private readonly object _disposeLock = new();
         private ConcurrentDictionary<Type, bool> _lazyServiceTypes;
         internal Action<INexusService> LazyServiceResolvedCallback { get; set; }
@@ -437,7 +438,7 @@ namespace Nexus.Core
             private Lifetime _lifetime = Lifetime.Scoped;
             private bool _bindInterfaces;
             private readonly List<ParameterOverride> _overrides = new();
-            private Binding _applied;
+            private readonly Dictionary<Type, Binding> _applied = new();
             private NexusDI _appliedTarget;
 
             internal FluentTypeBinder(NexusDI di)
@@ -500,21 +501,13 @@ namespace Nexus.Core
                 var target = _di.BindingTarget(_lifetime);
                 // WithParameter(..).AsSingleton() on a child: the first step bound Scoped in the child, where it would
                 // shadow the root's singleton (#211)
-                if (_applied != null && _appliedTarget != target)
-                    _appliedTarget.RemoveBindingIfCurrent(_applied);
-                _applied = binding;
-                _appliedTarget = target;
-                lock (target._disposeLock)
+                if (_appliedTarget != null && _appliedTarget != target)
                 {
-                    target.ThrowIfDisposed();
-                    target.SetBindingCore(typeof(T), binding);
-                    if (_bindInterfaces)
-                    {
-                        var interfaces = GetUserDefinedInterfaces(_implType);
-                        for (int i = 0; i < interfaces.Length; i++)
-                            target.SetBindingCore(interfaces[i], binding);
-                    }
+                    _appliedTarget.RemoveBindingsIfCurrent(_applied);
+                    _applied.Clear();
                 }
+                _appliedTarget = target;
+                target.SetSharedBinding(typeof(T), _bindInterfaces ? GetUserDefinedInterfaces(_implType) : null, binding, _applied);
             }
         }
 
@@ -1000,7 +993,7 @@ namespace Nexus.Core
                 if ((overrides != null && overrides.Length > 0) || _di.ExternalAdapter != null)
                 {
                     var general = CreateInstance(binding.ConcreteType, overrides);
-                    Inject(general);
+                    _di.InjectOrEnd(general);
                     return general;
                 }
                 int generation = Volatile.Read(ref s_cacheGeneration);
@@ -1010,21 +1003,29 @@ namespace Nexus.Core
                 var meta = binding.CachedMeta;
                 var ctor = binding.CachedConstructor;
                 object instance = ctor != null ? ctor(_di) : CreateInstanceCore(type, meta, null);
-                var injector = binding.CachedInjector;
-                if (injector != null)
+                try
                 {
-                    injector(instance, _di);
+                    var injector = binding.CachedInjector;
+                    if (injector != null)
+                    {
+                        injector(instance, _di);
+                        RunPostConstructs(instance, meta);
+                        return instance;
+                    }
+                    if (meta.HasMembers)
+                    {
+                        InjectFields(instance, type, meta);
+                        InjectProperties(instance, type, meta);
+                        InjectMethods(instance, type, meta);
+                    }
                     RunPostConstructs(instance, meta);
                     return instance;
                 }
-                if (meta.HasMembers)
+                catch
                 {
-                    InjectFields(instance, type, meta);
-                    InjectProperties(instance, type, meta);
-                    InjectMethods(instance, type, meta);
+                    _di.EndFailedConstruction(instance);
+                    throw;
                 }
-                RunPostConstructs(instance, meta);
-                return instance;
             }
 
             private static void RefreshBindingCache(Binding binding, int generation)
@@ -1418,7 +1419,44 @@ namespace Nexus.Core
             }
         }
 
-        private void SetBindingCore(Type key, Binding binding)
+        private static bool CanRetainSingleton(Binding existing, Binding binding)
+            => existing.Instance != null && !existing.BoundInstance && existing.Lifetime == Lifetime.Singleton
+                && binding.Lifetime == Lifetime.Singleton && existing.ConcreteType == binding.ConcreteType
+                && existing.Factory == null && binding.Factory == null && binding.Instance == null
+                && (binding.ParameterOverrides == null || SameOverrides(existing.ParameterOverrides, binding.ParameterOverrides));
+
+        private void SetSharedBinding(Type key, Type[] aliases, Binding binding, Dictionary<Type, Binding> applied = null)
+        {
+            lock (_disposeLock)
+            {
+                ThrowIfDisposed();
+                // Retain one binding for the whole alias group, never one instance per key.
+                Binding retained = null;
+                if (_bindings.TryGetValue(key, out var existing) && CanRetainSingleton(existing, binding))
+                    retained = existing;
+                if (retained == null && aliases != null)
+                    for (int i = 0; i < aliases.Length; i++)
+                        if (_bindings.TryGetValue(aliases[i], out existing) && CanRetainSingleton(existing, binding))
+                        {
+                            retained = existing;
+                            break;
+                        }
+                binding = retained ?? binding;
+                // A fluent chain owns changed keys, not pre-existing registrations of a retained singleton.
+                if (applied != null && (!_bindings.TryGetValue(key, out existing) || !ReferenceEquals(existing, binding)))
+                    applied[key] = binding;
+                SetBindingCore(key, binding, retainSingleton: false);
+                if (aliases != null)
+                    for (int i = 0; i < aliases.Length; i++)
+                    {
+                        if (applied != null && (!_bindings.TryGetValue(aliases[i], out existing) || !ReferenceEquals(existing, binding)))
+                            applied[aliases[i]] = binding;
+                        SetBindingCore(aliases[i], binding, retainSingleton: false);
+                    }
+            }
+        }
+
+        private void SetBindingCore(Type key, Binding binding, bool retainSingleton = true)
         {
             if (_bindings.TryGetValue(key, out var existing) && !ReferenceEquals(existing, binding))
             {
@@ -1426,10 +1464,7 @@ namespace Nexus.Core
                 // instead of building a second one and keeping the first alive (#197); with WithParameter, when the values
                 // are equal (#211). Different values build a new one, with the warning below. A binding without values
                 // keeps it too: AsSingleton().WithParameter(x) applies AsSingleton first.
-                if (existing.Instance != null && !existing.BoundInstance && existing.Lifetime == Lifetime.Singleton
-                    && binding.Lifetime == Lifetime.Singleton && existing.ConcreteType == binding.ConcreteType
-                    && existing.Factory == null && binding.Factory == null && binding.Instance == null
-                    && (binding.ParameterOverrides == null || SameOverrides(existing.ParameterOverrides, binding.ParameterOverrides)))
+                if (retainSingleton && CanRetainSingleton(existing, binding))
                     return;
                 // Re-registering the exact same shape with no live instance is a benign
                 // idempotent pattern (e.g. a command type bound once per handled signal);
@@ -1452,15 +1487,15 @@ namespace Nexus.Core
             Interlocked.Increment(ref _bindingVersion);
         }
 
-        /// <summary>Removes every key still bound to this binding (a fluent chain moving its binding to another container).</summary>
-        private void RemoveBindingIfCurrent(Binding binding)
+        /// <summary>Removes only this fluent chain's writes that are still current when it moves to another container.</summary>
+        private void RemoveBindingsIfCurrent(Dictionary<Type, Binding> applied)
         {
             lock (_disposeLock)
             {
                 bool removed = false;
                 var entries = (ICollection<KeyValuePair<Type, Binding>>)_bindings;
-                foreach (var entry in _bindings)
-                    if (ReferenceEquals(entry.Value, binding)) removed |= entries.Remove(entry);
+                foreach (var entry in applied)
+                    removed |= entries.Remove(entry);
                 if (removed) Interlocked.Increment(ref _bindingVersion);
             }
         }
@@ -1594,74 +1629,32 @@ namespace Nexus.Core
         /// </summary>
         public void BindMultiple<TInterface1, TInterface2, TImplementation>(bool isSingleton = true)
             where TImplementation : class, TInterface1, TInterface2
-        {
-            var shared = new Binding { ConcreteType = typeof(TImplementation), IsSingleton = isSingleton };
-            SetBinding(typeof(TInterface1), shared);
-            SetBinding(typeof(TInterface2), shared);
-            SetBinding(typeof(TImplementation), shared);
-        }
+            => BindMultiple(new[] { typeof(TInterface1), typeof(TInterface2) }, typeof(TImplementation), isSingleton);
 
         /// <summary>Three-interface polymorphic binding (see the two-interface overload).</summary>
         public void BindMultiple<TInterface1, TInterface2, TInterface3, TImplementation>(bool isSingleton = true)
             where TImplementation : class, TInterface1, TInterface2, TInterface3
-        {
-            var shared = new Binding { ConcreteType = typeof(TImplementation), IsSingleton = isSingleton };
-            SetBinding(typeof(TInterface1), shared);
-            SetBinding(typeof(TInterface2), shared);
-            SetBinding(typeof(TInterface3), shared);
-            SetBinding(typeof(TImplementation), shared);
-        }
+            => BindMultiple(new[] { typeof(TInterface1), typeof(TInterface2), typeof(TInterface3) }, typeof(TImplementation), isSingleton);
 
         /// <summary>Reflection-form polymorphic binding sharing ONE Binding instance across all interfaces and concrete type.</summary>
         public void BindMultiple(Type[] interfaceTypes, Type concreteType, bool isSingleton = true)
-        {
-            var shared = new Binding { ConcreteType = concreteType, IsSingleton = isSingleton };
-            if (interfaceTypes != null)
-            {
-                for (int i = 0; i < interfaceTypes.Length; i++)
-                {
-                    SetBinding(interfaceTypes[i], shared);
-                }
-            }
-            SetBinding(concreteType, shared);
-        }
+            => BindMultiple(interfaceTypes, concreteType, isSingleton ? Lifetime.Scoped : Lifetime.Transient);
 
         /// <summary>Two-interface polymorphic binding with an explicit <see cref="Lifetime"/>.</summary>
         public void BindMultiple<TInterface1, TInterface2, TImplementation>(Lifetime lifetime)
             where TImplementation : class, TInterface1, TInterface2
-        {
-            var shared = new Binding { ConcreteType = typeof(TImplementation), Lifetime = lifetime };
-            var target = BindingTarget(lifetime);
-            target.SetBinding(typeof(TInterface1), shared);
-            target.SetBinding(typeof(TInterface2), shared);
-            target.SetBinding(typeof(TImplementation), shared);
-        }
+            => BindMultiple(new[] { typeof(TInterface1), typeof(TInterface2) }, typeof(TImplementation), lifetime);
 
         /// <summary>Three-interface polymorphic binding with an explicit <see cref="Lifetime"/>.</summary>
         public void BindMultiple<TInterface1, TInterface2, TInterface3, TImplementation>(Lifetime lifetime)
             where TImplementation : class, TInterface1, TInterface2, TInterface3
-        {
-            var shared = new Binding { ConcreteType = typeof(TImplementation), Lifetime = lifetime };
-            var target = BindingTarget(lifetime);
-            target.SetBinding(typeof(TInterface1), shared);
-            target.SetBinding(typeof(TInterface2), shared);
-            target.SetBinding(typeof(TInterface3), shared);
-            target.SetBinding(typeof(TImplementation), shared);
-        }
+            => BindMultiple(new[] { typeof(TInterface1), typeof(TInterface2), typeof(TInterface3) }, typeof(TImplementation), lifetime);
 
         /// <summary>Reflection-form polymorphic binding with an explicit <see cref="Lifetime"/>.</summary>
         public void BindMultiple(Type[] interfaceTypes, Type concreteType, Lifetime lifetime)
         {
             var shared = new Binding { ConcreteType = concreteType, Lifetime = lifetime };
-            var target = BindingTarget(lifetime);
-            if (interfaceTypes != null)
-            {
-                for (int i = 0; i < interfaceTypes.Length; i++)
-                {
-                    target.SetBinding(interfaceTypes[i], shared);
-                }
-            }
-            target.SetBinding(concreteType, shared);
+            BindingTarget(lifetime).SetSharedBinding(concreteType, interfaceTypes, shared);
         }
 
         // ─── Cross-Boundary Binding (StrangeIoC-style cross-context injection) ───
@@ -1830,7 +1823,7 @@ namespace Nexus.Core
             if (type == null) throw new ArgumentNullException(nameof(type));
             ThrowIfDisposed();
             var instance = _injector.CreateInstance(type, overrides);
-            _injector.Inject(instance);
+            InjectOrEnd(instance);
             return instance;
         }
 
@@ -2527,15 +2520,18 @@ namespace Nexus.Core
                 QueueLazyService(service);
         }
 
-        internal void NotifyLazyServiceResolved(Type type, object instance)
+        internal void NotifyLazyServiceResolved(Type type, object instance, string name = null)
         {
             if (instance is not INexusService service) return;
-            // The container that binds the type owns the service's initialization, so a child that resolves its
+            // The container that binds the type and name owns initialization, so a child that resolves its
             // parent's service never initializes it a second time (#190).
             var owner = this;
             for (var container = this; container != null; container = container._parent)
             {
-                if (container._bindings.ContainsKey(type)) { owner = container; break; }
+                bool registeredHere = string.IsNullOrEmpty(name)
+                    ? container._bindings.ContainsKey(type)
+                    : Volatile.Read(ref container._namedBindings)?.ContainsKey((type, name)) == true;
+                if (registeredHere) { owner = container; break; }
             }
             owner.QueueLazyService(service);
         }
@@ -2858,21 +2854,25 @@ namespace Nexus.Core
         }
 
         /// <summary>
-        /// Injects a scoped instance the container just built. When injection or [PostConstruct] throws, the instance was
-        /// never published nor tracked, so nothing else would end it: it is ended here and the exception rethrown (issue #325).
-        /// A method of its own so that ResolveBinding, which holds the transient path, gains no exception region.
+        /// Injects an instance the container just built. Failure ends the unreturned object; successful
+        /// transient construction still transfers cleanup to the caller.
         /// </summary>
         private void InjectOrEnd(object instance)
         {
             try { _injector.Inject(instance); }
             catch
             {
-                // a member left pending before the throw would otherwise be injected into the ended instance by ReInjectAll
-                lock (_pendingInjectionsLock) _pendingInjections?.Remove(instance);
-                var asyncOnly = EndSingleton(instance, awaitable: false);
-                if (asyncOnly != null) _ = DisposeAllAsyncInBackground(new[] { asyncOnly });
+                EndFailedConstruction(instance);
                 throw;
             }
+        }
+
+        private void EndFailedConstruction(object instance)
+        {
+            // A member left pending before the throw must never be injected into the ended object.
+            lock (_pendingInjectionsLock) _pendingInjections?.Remove(instance);
+            var asyncOnly = EndSingleton(instance, awaitable: false);
+            if (asyncOnly != null) _ = DisposeAllAsyncInBackground(new[] { asyncOnly });
         }
 
         /// <summary>
@@ -2927,7 +2927,12 @@ namespace Nexus.Core
         /// Disposes the singletons the game's bindings created, services included, newest first, while the container
         /// still resolves: a consumer ends before the services it uses (#197).
         /// </summary>
-        internal void DisposeSingletonsInReverseOrder() => EndInReverseOrder(TakeSingletonsToDispose());
+        internal void DisposeSingletonsInReverseOrder()
+        {
+            if (IsDisposed || Interlocked.CompareExchange(ref _teardownInProgress, 1, 0) != 0) return;
+            try { EndInReverseOrder(TakeSingletonsToDispose()); }
+            finally { Volatile.Write(ref _teardownInProgress, 0); }
+        }
 
         /// <summary>
         /// Injects an instance the game built and bound, then counts it as created now, after the dependencies its
@@ -2951,20 +2956,30 @@ namespace Nexus.Core
         }
 
         /// <summary>Awaited form of <see cref="DisposeSingletonsInReverseOrder"/>.</summary>
-        internal ValueTask DisposeSingletonsInReverseOrderAsync() => EndInReverseOrderAsync(TakeSingletonsToDispose());
+        internal async ValueTask DisposeSingletonsInReverseOrderAsync()
+        {
+            if (IsDisposed || Interlocked.CompareExchange(ref _teardownInProgress, 1, 0) != 0) return;
+            try { await EndInReverseOrderAsync(TakeSingletonsToDispose()); }
+            finally { Volatile.Write(ref _teardownInProgress, 0); }
+        }
 
         public void Dispose()
         {
-            if (IsDisposed) return;
-            DisposeSingletonsInReverseOrder();
-            if (!TryBeginDispose(out var remaining)) return;
-            EndInReverseOrder(remaining);
-            List<IAsyncDisposable> backlog;
-            lock (_singletonLock) { backlog = _asyncDisposeBacklog; _asyncDisposeBacklog = null; }
-            // Never block the calling thread on async teardown: the pure IAsyncDisposable singletons are disposed in ONE
-            // ordered chain on the thread pool, not in one fire-and-forget task each.
-            if (backlog != null)
-                _ = DisposeAllAsyncInBackground(backlog);
+            // Claim teardown before user callbacks, without closing their dependency resolution.
+            if (IsDisposed || Interlocked.CompareExchange(ref _teardownInProgress, 1, 0) != 0) return;
+            try
+            {
+                EndInReverseOrder(TakeSingletonsToDispose());
+                if (!TryBeginDispose(out var remaining)) return;
+                EndInReverseOrder(remaining);
+                List<IAsyncDisposable> backlog;
+                lock (_singletonLock) { backlog = _asyncDisposeBacklog; _asyncDisposeBacklog = null; }
+                // Never block the calling thread on async teardown: the pure IAsyncDisposable singletons are disposed in ONE
+                // ordered chain on the thread pool, not in one fire-and-forget task each.
+                if (backlog != null)
+                    _ = DisposeAllAsyncInBackground(backlog);
+            }
+            finally { Volatile.Write(ref _teardownInProgress, 0); }
         }
 
         /// <summary>
@@ -2994,10 +3009,14 @@ namespace Nexus.Core
 
         public async ValueTask DisposeAsync()
         {
-            if (IsDisposed) return;
-            await DisposeSingletonsInReverseOrderAsync();
-            if (!TryBeginDispose(out var remaining)) return;
-            await EndInReverseOrderAsync(remaining);
+            if (IsDisposed || Interlocked.CompareExchange(ref _teardownInProgress, 1, 0) != 0) return;
+            try
+            {
+                await EndInReverseOrderAsync(TakeSingletonsToDispose());
+                if (!TryBeginDispose(out var remaining)) return;
+                await EndInReverseOrderAsync(remaining);
+            }
+            finally { Volatile.Write(ref _teardownInProgress, 0); }
         }
 
         /// <summary>

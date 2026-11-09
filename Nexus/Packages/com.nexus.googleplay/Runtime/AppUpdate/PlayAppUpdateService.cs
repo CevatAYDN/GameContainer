@@ -1,4 +1,5 @@
 #if NEXUS_PLAY_APPUPDATE
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Google.Play.AppUpdate;
@@ -10,15 +11,20 @@ namespace Nexus.GooglePlay.AppUpdate
 {
     /// <summary>
     /// Google Play's in-app update behind <see cref="IAppUpdateService"/> (#273). Google's <see cref="AppUpdateManager"/> reaches
-    /// Java and adds a handler to the scene when it is made, so it is made at the first call, not when the service is bound.
+    /// Java and adds a never-removed, scene-persistent handler when it is made, so one manager is made per process, at the first
+    /// call of any instance, and shared by every service instance (#391).
     /// An error is written to every build's log with Google's error code; a declined update is not an error.
     /// </summary>
     [Preserve]
     public sealed class PlayAppUpdateService : NexusService<IAppUpdateService>, IAppUpdateService
     {
-        private AppUpdateManager _manager;
+        private static AppUpdateManager s_manager;
 
-        private AppUpdateManager Manager => _manager ??= new AppUpdateManager();
+        internal static Func<AppUpdateManager> CreateManager = () => new AppUpdateManager();
+
+        internal static AppUpdateManager Manager => s_manager ??= CreateManager();
+
+        internal static void ResetSharedManagerForTests() => s_manager = null;
 
         public async ValueTask<AppUpdateCheck> CheckAsync(CancellationToken ct)
         {
@@ -49,8 +55,20 @@ namespace Nexus.GooglePlay.AppUpdate
             // manager throws "Another update flow is already in progress" (com.google.play.appupdate 1.8.3).
             if (info.UpdateAvailability == UpdateAvailability.UpdateNotAvailable || !info.IsUpdateTypeAllowed(options))
                 return AppUpdateOutcome.Unavailable;
-            var request = await PlayOperations.Wait(Manager.StartUpdate(info, options), ct);
-            return request.Error == AppUpdateErrorCode.NoError ? AppUpdateOutcome.Downloaded : Report("run its flow", request.Error);
+            return await WaitForResultAsync(Manager.StartUpdate(info, options), ct);
+        }
+
+        internal static async ValueTask<AppUpdateOutcome> WaitForResultAsync(AppUpdateRequest operation, CancellationToken ct)
+        {
+            var request = await PlayOperations.Wait(operation, ct);
+            if (request.Error != AppUpdateErrorCode.NoError) return Report("run its flow", request.Error);
+            // A late accepted-dialog result can restore Pending after a completed SDK download.
+            if (request.Status == AppUpdateStatus.Downloaded ||
+                (request.Status == AppUpdateStatus.Pending && request.IsDone && request.DownloadProgress == 1f))
+                return AppUpdateOutcome.Downloaded;
+            if (request.Status == AppUpdateStatus.Canceled) return AppUpdateOutcome.Cancelled;
+            NexusLog.WarnAlways($"[GooglePlay] The in-app update ended with status {request.Status} despite NoError.");
+            return AppUpdateOutcome.Failed;
         }
 
         public async ValueTask<bool> CompleteUpdateAsync(CancellationToken ct)

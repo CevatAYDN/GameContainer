@@ -146,5 +146,21 @@ namespace Nexus.Editor.Tests
             Assert.That(conditions.For(typeof(DevOnlyTool)), Is.EqualTo("DEVELOPMENT_BUILD || UNITY_EDITOR"));
             Assert.That(conditions.MemberProblem(typeof(ProviderTool)), Is.Null);
         }
+
+        [Test]
+        public void CommentsAndMultilineLiterals_CannotRemoveAnEditorOnlyTypeGuard()
+            => new FullReviewCodegenTests().CommentsAndMultilineLiterals_CannotRemoveAnEditorOnlyTypeGuard();
+
+        [Test]
+        public void AmbiguousNestedShortNames_DoNotBecomeAnUnconditionalPlayerReference()
+            => new FullReviewCodegenTests().AmbiguousNestedShortNames_DoNotBecomeAnUnconditionalPlayerReference();
+
+        [Test]
+        public void ConditionalPartialMembers_KeepTheInjectorAndConstructorOnReflection()
+            => new FullReviewCodegenTests().ConditionalPartialMembers_KeepTheInjectorAndConstructorOnReflection();
+
+        [Test]
+        public void MissingSourceDeclaration_IsUnknown_NotUnconditional()
+            => new FullReviewCodegenTests().MissingSourceDeclaration_IsUnknown_NotUnconditional();
     }
 }

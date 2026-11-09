@@ -94,6 +94,9 @@ namespace Nexus.Core
     /// </summary>
     public sealed class SubscriptionRegistry : IDisposable
     {
+#if UNITY_EDITOR || !UNITY_5_3_OR_NEWER
+        internal static Action BeforeSubscriptionConstructionForTests;
+#endif
         private readonly Dictionary<Type, SubscriptionNode> _subscriptions = new();
         private volatile Dictionary<Type, SubscriptionNode> _subscriptionsReadCopy = new();
         private readonly object _subLock = new();
@@ -185,10 +188,14 @@ namespace Nexus.Core
             {
                 return new SignalSubscription<T>(handler, lifetimeToken, null);
             }
+#if UNITY_EDITOR || !UNITY_5_3_OR_NEWER
+            BeforeSubscriptionConstructionForTests?.Invoke();
+#endif
             SignalSubscription<T> sub = null;
             // Closure captures `sub` itself so Unsubscribe matches by RawSubscription identity
             // (same pattern as SignalBus's subscription path).
             sub = new SignalSubscription<T>(handler, lifetimeToken, () => Unsubscribe(type, sub), deferLifetimeRegistration: true);
+            if (!sub.IsActive) return sub;
             AddSubscription(type, sub, handler, isAsync: false);
             // Register the auto-dispose callback only now that the subscription is fully
             // constructed and its node added — a cancellation racing this window disposes a
@@ -207,8 +214,12 @@ namespace Nexus.Core
             {
                 return new AsyncSignalSubscription<T>(handler, lifetimeToken, null);
             }
+#if UNITY_EDITOR || !UNITY_5_3_OR_NEWER
+            BeforeSubscriptionConstructionForTests?.Invoke();
+#endif
             AsyncSignalSubscription<T> sub = null;
             sub = new AsyncSignalSubscription<T>(handler, lifetimeToken, () => Unsubscribe(type, sub), deferLifetimeRegistration: true);
+            if (!sub.IsActive) return sub;
             AddSubscription(type, sub, handler, isAsync: true);
             sub.RegisterLifetimeCallback();
             return sub;

@@ -27,12 +27,30 @@ namespace Nexus.Firebase.Sdk
         private readonly Dictionary<string, string> _snapshot = new Dictionary<string, string>();
         private bool _ready;
         private bool _notReadyReported;
+        private bool _disposed;
+
+        // Lazy, instance-local SDK and persistence calls; no DefaultInstance access during construction.
+        internal Func<Task<FirebaseDependencyStatus>> CheckDependenciesAsync = () => FirebaseAppSdk.CheckAndFixDependenciesAsync();
+        internal Func<TimeSpan, Task> FetchSdkAsync = expiration => FirebaseConfigSdk.DefaultInstance.FetchAsync(expiration);
+        internal Func<Task<bool>> ActivateSdkAsync = () => FirebaseConfigSdk.DefaultInstance.ActivateAsync();
+        internal Func<IEnumerable<string>> ReadKeys = () => FirebaseConfigSdk.DefaultInstance.Keys;
+        internal Func<string, string> ReadRawValue = key =>
+        {
+            FirebaseConfigValue value = FirebaseConfigSdk.DefaultInstance.GetValue(key);
+            return value.Source == FirebaseValueSource.StaticValue ? null : value.StringValue;
+        };
+        internal Func<DateTime?> ReadLastFetchUtc = () => LoadLastFetch();
+        internal Action<DateTime> WriteLastFetchUtc = utcNow => SaveLastFetch(utcNow);
 
         public event Action<string> Changed;
 
         public override async ValueTask InitializeAsync(CancellationToken ct)
         {
-            FirebaseDependencyStatus status = await FirebaseAppSdk.CheckAndFixDependenciesAsync();
+            if (_disposed) return;
+            ct.ThrowIfCancellationRequested();
+            FirebaseDependencyStatus status = await CheckDependenciesAsync();
+            if (_disposed) return;
+            ct.ThrowIfCancellationRequested();
             if (status != FirebaseDependencyStatus.Available)
             {
                 NexusLog.WarnAlways("[Firebase] Remote Config is off: the SDK's dependencies are " + status);
@@ -45,6 +63,7 @@ namespace Nexus.Firebase.Sdk
 
         public async ValueTask<bool> FetchAsync(CancellationToken ct)
         {
+            if (_disposed) return false;
             if (!_ready || ct.IsCancellationRequested)
             {
                 // once, in every build: the game runs on its fallbacks (issue #171)
@@ -56,23 +75,26 @@ namespace Nexus.Firebase.Sdk
                 return false;
             }
 
-            if (!RemoteConfigFetchPolicy.IsFetchDue(LoadLastFetch(), DateTime.UtcNow))
+            if (!RemoteConfigFetchPolicy.IsFetchDue(ReadLastFetchUtc(), DateTime.UtcNow))
             {
                 return true;
             }
 
             try
             {
-                await FirebaseConfigSdk.DefaultInstance.FetchAsync(TimeSpan.Zero);
-                await FirebaseConfigSdk.DefaultInstance.ActivateAsync();
+                await FetchSdkAsync(TimeSpan.Zero);
+                if (_disposed || ct.IsCancellationRequested) return false;
+                await ActivateSdkAsync();
             }
             catch (Exception error)
             {
+                if (_disposed || ct.IsCancellationRequested) return false;
                 NexusLog.WarnAlways("[Firebase] Remote Config fetch failed: " + error.Message);
                 return false;
             }
 
-            SaveLastFetch(DateTime.UtcNow);
+            if (_disposed || ct.IsCancellationRequested) return false;
+            WriteLastFetchUtc(DateTime.UtcNow);
             RaiseChanges(notify: true);
             return true;
         }
@@ -85,6 +107,14 @@ namespace Nexus.Firebase.Sdk
 
         public string GetString(string key, string fallback) => RemoteConfigParser.ToText(Raw(key), fallback);
 
+        public override void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _ready = false;
+            _snapshot.Clear();
+        }
+
         private string Raw(string key)
         {
             if (!_ready)
@@ -92,14 +122,17 @@ namespace Nexus.Firebase.Sdk
                 return null;
             }
 
-            FirebaseConfigValue value = FirebaseConfigSdk.DefaultInstance.GetValue(key);
-            return value.Source == FirebaseValueSource.StaticValue ? null : value.StringValue;
+            return ReadRawValue(key);
         }
 
         private void RaiseChanges(bool notify)
         {
-            foreach (string key in FirebaseConfigSdk.DefaultInstance.Keys)
+            if (_disposed) return;
+            var removed = new HashSet<string>(_snapshot.Keys);
+            foreach (string key in ReadKeys())
             {
+                if (_disposed) return;
+                removed.Remove(key);
                 string current = Raw(key);
                 bool known = _snapshot.TryGetValue(key, out string previous);
                 _snapshot[key] = current;
@@ -107,6 +140,12 @@ namespace Nexus.Firebase.Sdk
                 {
                     Changed?.Invoke(key);
                 }
+            }
+            foreach (string key in removed)
+            {
+                if (_disposed) return;
+                _snapshot.Remove(key);
+                if (notify) Changed?.Invoke(key);
             }
         }
 

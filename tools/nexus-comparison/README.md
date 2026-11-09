@@ -100,7 +100,10 @@ new evidence folder even after a failed run; `-ArtifactFolder` must stay under t
 repository's `Nexus/artifacts`.
 
 Every ADB call records serial, arguments, UTC interval, native exit and output in
-`adb-commands.jsonl`. Native and evidence-write failures abort the run. Before
+`adb-commands.jsonl`. The runner starts the daemon before requiring an exact
+`device` state reply (#409), since Unity can stop ADB when its build exits.
+Startup diagnostics are retained; authorization, exit-code and ownership checks
+are not relaxed. Native and evidence-write failures abort the run. Before
 launch the previous benchmark result must be absent and log clearing must succeed.
 The launcher observes a new PID and accepts only its exact completion marker and
 canonical result path. Resolving the existing storage root also supports a first
@@ -118,7 +121,7 @@ finalization succeed. A failed run may retain raw/candidate evidence but is not
 accepted. Only the comparison's fixed result file is removed; no game save or
 whole app-data reset/uninstall is performed.
 
-Device-free regressions, including failed clear/start, stale result/marker,
+Device-free regressions, including cold/failed daemon startup, failed clear/start, stale result/marker,
 wrong-package and post-run hash mismatch:
 
 ```powershell

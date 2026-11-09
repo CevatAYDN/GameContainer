@@ -142,7 +142,12 @@ namespace Nexus.Core.Services
             {
                 users.Users.Remove(this);
                 users.ModalOwners.Remove(this);
-                if (users.Users.Count == 0 && users.CreatedByNexus) SafeDestroyUtility.SafeDestroy(_canvasObject);
+                if (users.Users.Count == 0 && users.CreatedByNexus)
+                {
+                    // Retire discovery before deferred destruction so a same-frame owner cannot adopt this canvas.
+                    _canvasObject.name = "[Nexus_UICanvas_Retiring]";
+                    SafeDestroyUtility.SafeDestroy(_canvasObject);
+                }
                 else ApplyInteractivity(users);
             }
             _canvasObject = null;

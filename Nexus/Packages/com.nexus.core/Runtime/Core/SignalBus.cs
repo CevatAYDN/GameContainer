@@ -265,16 +265,14 @@ namespace Nexus.Core
         // Known tradeoff (adversarial review): the tree semantics mean a legitimate fan-out
         // of concurrent in-flight async dispatches derived from one tree sums toward the
         // cap — hence the separate, more generous MaxAsyncStackDepth (32) vs the sync
-        // path's MaxStackDepth (10, which guards real stack overflow). The box field is
-        // volatile: continuations mutate it from arbitrary threads, and the plain int
-        // read/writes would otherwise be a visibility downgrade vs AsyncLocal<int>'s
-        // internally-synchronized access (a stale read could only skew the abort decision
-        // at the exact boundary).
+        // path's MaxStackDepth (10, which guards real stack overflow). Claims and releases
+        // use Interlocked: sibling continuations share the box, so volatile read/write alone
+        // would lose increments or decrements (#374).
         private static readonly System.Threading.AsyncLocal<AsyncStackDepthBox> s_asyncStackDepth = new();
 
         private sealed class AsyncStackDepthBox
         {
-            public volatile int Value;
+            public int Value;
         }
 
         // Async-path reentrancy cap. Separate from MaxStackDepth (sync): the shared box
@@ -284,6 +282,9 @@ namespace Nexus.Core
         // headroom.
         private const int MaxAsyncStackDepth = 32;
 
+#if UNITY_EDITOR || !UNITY_5_3_OR_NEWER
+        internal static Action<Type> BeforeAsyncDepthIncrementForTests;
+#endif
         private const int MaxStackDepth = 10;
 
         // Shared reflection caches (signal setters, generic dispatchers, cross-context
@@ -955,9 +956,12 @@ namespace Nexus.Core
                 depthBox = new AsyncStackDepthBox();
                 s_asyncStackDepth.Value = depthBox;
             }
-            if (++depthBox.Value > MaxAsyncStackDepth)
+#if UNITY_EDITOR || !UNITY_5_3_OR_NEWER
+            BeforeAsyncDepthIncrementForTests?.Invoke(typeof(T));
+#endif
+            if (Interlocked.Increment(ref depthBox.Value) > MaxAsyncStackDepth)
             {
-                depthBox.Value--;
+                Interlocked.Decrement(ref depthBox.Value);
                 // Same as the sync path — always throw, never return silently in
                 // Release builds (silent return masked runaway async chains).
                 throw new NexusReentrancyException($"Async stack overflow detected. Reentrancy limit of {MaxAsyncStackDepth} exceeded for signal {typeof(T).FullName}");
@@ -1247,11 +1251,11 @@ namespace Nexus.Core
             }
             finally
             {
-                // Plain field decrement on the inherited box — zero AsyncLocal traffic on the
+                // Atomic decrement on the inherited box — zero AsyncLocal writes on the
                 // exit path (the box is guaranteed non-null here: the increment above either
                 // succeeded with a box in the current context or threw before this try).
                 depthBox = s_asyncStackDepth.Value;
-                if (depthBox != null) depthBox.Value--;
+                if (depthBox != null) Interlocked.Decrement(ref depthBox.Value);
                 _subscriptionRegistry.ExitDispatch();
             }
             // Every subscriber, composite and cross-context target has run: the first failure reaches the caller (issue #189).
@@ -1458,6 +1462,7 @@ namespace Nexus.Core
             finally
             {
                 s_compositeDepth--;
+                buffer.Clear();
                 // Return the rented nested buffer to the free list so the next nested
                 // composite dispatch reuses it instead of allocating a fresh List<>.
                 if (isNested && s_nestedBufferFreeList == null)
@@ -1596,7 +1601,9 @@ namespace Nexus.Core
                 // Cancel command work before registries and pools are torn down. Every async
                 // command links this token, so cancellation is observable before dependencies
                 // disappear underneath the command.
-                _commandExecutor.TryCancelInFlightCommands();
+                Exception cancellationFailure = null;
+                try { _commandExecutor.TryCancelInFlightCommands(); }
+                catch (Exception ex) { cancellationFailure = ex; }
             // Snapshot the nodes before disposing: RawSubscription.Dispose() re-enters
             // the registry's Unsubscribe → deferred sweep. The registries then reclaim
             // every node and clear all state, so we dispose the raw subscriptions first
@@ -1629,6 +1636,8 @@ namespace Nexus.Core
                 _hasAnyCompositeTriggers = false;
                 _signalFilters.Clear();
                 _hasAnySignalFilters = false;
+                // Cancellation callbacks are user code; report only after releasing owned state (#361).
+                if (cancellationFailure != null) NexusRuntime.Logger?.LogException(cancellationFailure);
             }
         }
 

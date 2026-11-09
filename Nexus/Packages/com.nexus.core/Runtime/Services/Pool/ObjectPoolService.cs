@@ -22,14 +22,14 @@ namespace Nexus.Core.Services
     {
         /// <summary>
         /// Creates up to <paramref name="count"/> inactive instances. A pool keeps at most 128; a larger count is
-        /// cut to what the pool can keep, with a warning.
+        /// cut to what the pool can keep, with a warning. Activation callbacks wait until Spawn.
         /// </summary>
         void Prewarm(GameObject prefab, int count);
         /// <summary>
         /// Frame-budgeted prewarm. Spreads instantiation across multiple frames
         /// (at most <paramref name="instancesPerFrame"/> per frame) so a large pool no longer
         /// stalls the main thread in a single frame on level load. The returned task completes
-        /// when the instances are pooled, is cancelled when the service is disposed, and fails when an
+        /// when the instances are pooled, is cancelled when the pool is cleared or the service is disposed, and fails when an
         /// instance cannot be created. The count is cut to what the pool can keep, as in <see cref="Prewarm"/>.
         /// </summary>
         System.Threading.Tasks.Task PrewarmAsync(GameObject prefab, int count, int instancesPerFrame = 8);
@@ -38,6 +38,8 @@ namespace Nexus.Core.Services
         /// instance's parent; without one the instance is a root of the active scene, as with Instantiate, and a scene
         /// load unloads it. Despawned instances wait under the service's own root, so a destroyed parent does not take
         /// the pool with it.
+        /// A parenting/activation/spawn callback that clears, disposes or returns this acquisition
+        /// interrupts it with InvalidOperationException (ObjectDisposedException on disposal).
         /// </summary>
         GameObject Spawn(GameObject prefab, Vector3 position = default, Quaternion rotation = default, Transform parent = null);
         T Spawn<T>(T prefab, Vector3 position = default, Quaternion rotation = default, Transform parent = null) where T : Component;
@@ -48,7 +50,9 @@ namespace Nexus.Core.Services
         /// initialized service there is no timer, so the instance is despawned at once, with a warning.
         /// </summary>
         void DespawnAfter(GameObject instance, float seconds);
+        /// <summary>Clears the current pool. A callback may create a new pool whose leases remain owned.</summary>
         void ClearPool(GameObject prefab);
+        /// <summary>Clears the pools present at entry; callback-created replacements remain owned.</summary>
         void ClearAllPools();
     }
 
@@ -66,11 +70,13 @@ namespace Nexus.Core.Services
             public Stack<GameObject> Inactive { get; } = new();
             public HashSet<GameObject> Active { get; } = new();
             public Transform RootTransform { get; }
+            public bool Clearing;
 
             public PoolData(GameObject prefab, Transform serviceRoot)
             {
                 Prefab = prefab;
                 var poolRoot = new GameObject($"Pool_{prefab.name}");
+                poolRoot.SetActive(false);
                 poolRoot.transform.SetParent(serviceRoot);
                 RootTransform = poolRoot.transform;
             }
@@ -102,6 +108,7 @@ namespace Nexus.Core.Services
         }
         private Transform _masterPoolRoot;
         private GameObject _masterRootObject;
+        private bool _disposed;
 
         private readonly List<IPoolable> _poolableBuffer = new(8);
         // Reentrancy depth for the shared buffer above: an OnSpawned/OnDespawned callback
@@ -115,6 +122,7 @@ namespace Nexus.Core.Services
 
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
+            if (_disposed) throw new ObjectDisposedException(nameof(ObjectPoolService));
             _masterRootObject = new GameObject("[Nexus_ObjectPool]");
             UnityEngine.Object.DontDestroyOnLoad(_masterRootObject);
             _masterPoolRoot = _masterRootObject.transform;
@@ -141,8 +149,15 @@ namespace Nexus.Core.Services
         {
             for (int i = 0; i < count; i++)
             {
+                if (pool.Clearing || _disposed) return;
                 var instance = CreateInstance(pool);
+                if (pool.Clearing || _disposed)
+                {
+                    SafeDestroyUtility.SafeDestroy(instance);
+                    return;
+                }
                 instance.SetActive(false);
+                if (DiscardInvalidLease(pool, instance)) return;
                 if (pool.Inactive.Count < MaxInactivePerPool)
                 {
                     pool.Inactive.Push(instance);
@@ -198,7 +213,8 @@ namespace Nexus.Core.Services
             }
             finally
             {
-                tcs.TrySetResult(true); // a no-op once TryAddInactive failed the task
+                if (pool.Clearing || _disposed) tcs.TrySetCanceled();
+                else tcs.TrySetResult(true); // a no-op once TryAddInactive failed the task
                 _pendingPrewarms.Remove(tcs);
             }
         }
@@ -209,7 +225,9 @@ namespace Nexus.Core.Services
         {
             try
             {
+                if (pool.Clearing || _disposed) { tcs.TrySetCanceled(); return false; }
                 AddInactive(pool, count);
+                if (pool.Clearing || _disposed) { tcs.TrySetCanceled(); return false; }
                 return true;
             }
             catch (Exception ex)
@@ -235,15 +253,27 @@ namespace Nexus.Core.Services
                 ForgetDestroyedActive(pool);
                 instance = CreateInstance(pool);
             }
+            RequireAcquisition(pool, instance);
+
+            // Own the lease before parenting or activation can call back into Despawn (#360).
+            pool.Active.Add(instance);
+            var spawnedKey = GetKey(instance);
+            _poolsByInstanceId[spawnedKey] = pool;
+            long generation = ++_generationCounter;
+            _spawnGenerations[spawnedKey] = generation;
 
             var t = instance.transform;
             if (parent != null)
+            {
                 t.SetParent(parent, false);
+                RequireAcquisition(pool, instance, generation);
+            }
             else
             {
                 // As Instantiate without a parent: a root of the active scene, not a child of the pool root, which lives in
                 // DontDestroyOnLoad and kept the instance through scene loads (issue #227).
                 t.SetParent(null, false);
+                RequireAcquisition(pool, instance, generation);
                 var activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
                 if (activeScene.IsValid() && instance.scene != activeScene)
                     UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(instance, activeScene);
@@ -254,11 +284,7 @@ namespace Nexus.Core.Services
             bool isDefaultRotation = rotation.x == 0f && rotation.y == 0f && rotation.z == 0f && rotation.w == 0f;
             t.SetPositionAndRotation(position, isDefaultRotation ? Quaternion.identity : rotation);
             instance.SetActive(true);
-
-            pool.Active.Add(instance);
-            var spawnedKey = GetKey(instance);
-            _poolsByInstanceId[spawnedKey] = pool;
-            _spawnGenerations[spawnedKey] = ++_generationCounter;
+            RequireAcquisition(pool, instance, generation);
 
             var poolables = _poolableCallbackDepth == 0 ? _poolableBuffer : new List<IPoolable>(8);
             poolables.Clear();
@@ -268,6 +294,7 @@ namespace Nexus.Core.Services
             {
                 for (int i = 0; i < poolables.Count; i++)
                 {
+                    RequireAcquisition(pool, instance, generation);
                     try { poolables[i].OnSpawned(); }
                     catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
                 }
@@ -278,7 +305,30 @@ namespace Nexus.Core.Services
                 poolables.Clear();
             }
 
+            RequireAcquisition(pool, instance, generation);
             return instance;
+        }
+
+        private void RequireAcquisition(PoolData pool, GameObject instance, long generation)
+        {
+            RequireAcquisition(pool, instance);
+            if (!pool.Active.Contains(instance) || !_spawnGenerations.TryGetValue(GetKey(instance), out long current) || current != generation)
+                throw new InvalidOperationException("The pool acquisition was returned or replaced during a callback.");
+        }
+
+        private void RequireAcquisition(PoolData pool, GameObject instance)
+        {
+            if (!DiscardInvalidLease(pool, instance)) return;
+            if (_disposed) throw new ObjectDisposedException(nameof(ObjectPoolService));
+            throw new InvalidOperationException("The pool acquisition was cleared or destroyed during a callback.");
+        }
+
+        private bool DiscardInvalidLease(PoolData pool, GameObject instance)
+        {
+            if (instance != null && !pool.Clearing && !_disposed) return false;
+            if (!ReferenceEquals(instance, null)) Forget(instance);
+            SafeDestroyUtility.SafeDestroy(instance);
+            return true;
         }
 
         public T Spawn<T>(T prefab, Vector3 position = default, Quaternion rotation = default, Transform parent = null) where T : Component
@@ -323,7 +373,7 @@ namespace Nexus.Core.Services
                 return;
             }
 
-            if (!pool.Active.Remove(instance)) return;
+            if (pool.Clearing || !pool.Active.Remove(instance)) return;
 
             var poolables = _poolableCallbackDepth == 0 ? _poolableBuffer : new List<IPoolable>(8);
             poolables.Clear();
@@ -343,8 +393,13 @@ namespace Nexus.Core.Services
                 poolables.Clear();
             }
 
+            // A callback may clear this pool or dispose the service while this lease is
+            // outside Active. It must not be reparented to that now-destroyed root (#345).
+            if (DiscardInvalidLease(pool, instance)) return;
             instance.SetActive(false);
+            if (DiscardInvalidLease(pool, instance)) return;
             instance.transform.SetParent(pool.RootTransform, false);
+            if (DiscardInvalidLease(pool, instance)) return;
             // Bound inactive retention per pool so a burst of Despawn calls cannot
             // grow the pool without limit. Overflow instances are destroyed — memory is
             // reclaimed instead of retained forever.
@@ -427,8 +482,9 @@ namespace Nexus.Core.Services
         // parent (issue #184).
         private PoolData GetOrCreatePool(GameObject prefab)
         {
+            if (_disposed) throw new ObjectDisposedException(nameof(ObjectPoolService));
             var prefabKey = GetKey(prefab);
-            if (!_poolsByPrefabId.TryGetValue(prefabKey, out var pool))
+            if (!_poolsByPrefabId.TryGetValue(prefabKey, out var pool) || pool.Clearing)
             {
                 pool = new PoolData(prefab, _masterPoolRoot);
                 _poolsByPrefabId[prefabKey] = pool;
@@ -484,8 +540,10 @@ namespace Nexus.Core.Services
 
         private GameObject CreateInstance(PoolData pool)
         {
+            // The pool root is inactive, including while Instantiate runs Awake/OnEnable eligibility checks.
             var inst = UnityEngine.Object.Instantiate(pool.Prefab, pool.RootTransform);
             inst.name = pool.Prefab.name;
+            inst.SetActive(false);
             return inst;
         }
 
@@ -494,31 +552,57 @@ namespace Nexus.Core.Services
             if (prefab == null) return;
             var prefabKey = GetKey(prefab);
             if (_poolsByPrefabId.TryGetValue(prefabKey, out var pool))
+                ClearPool(pool);
+        }
+
+        private void ClearPool(PoolData pool)
+        {
+            if (pool.Clearing) return;
+            pool.Clearing = true;
+            ClearMarkedPool(pool);
+        }
+
+        private void ClearMarkedPool(PoolData pool)
+        {
+            var activeSnapshot = new GameObject[pool.Active.Count];
+            pool.Active.CopyTo(activeSnapshot);
+            pool.Active.Clear();
+            try
             {
                 while (pool.Inactive.Count > 0)
                 {
                     var inst = pool.Inactive.Pop();
                     if (inst != null) SafeDestroyUtility.SafeDestroy(inst);
                 }
-                foreach (var active in pool.Active)
+                foreach (var active in activeSnapshot)
                 {
-                    if (active != null)
+                    try
                     {
-                        var activeKey = GetKey(active);
-                        _poolsByInstanceId.Remove(activeKey);
-                        _spawnGenerations.Remove(activeKey);
+                        if (active == null) continue;
                         var poolables = active.GetComponents<IPoolable>();
                         for (int i = 0; i < poolables.Length; i++)
                         {
+                            if (poolables[i] is UnityEngine.Object component && component == null) continue;
                             try { poolables[i].OnDespawned(); }
                             catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
                         }
+                    }
+                    finally
+                    {
+                        _poolsByInstanceId.Remove(GetKey(active));
+                        _spawnGenerations.Remove(GetKey(active));
                         SafeDestroyUtility.SafeDestroy(active);
                     }
                 }
-                pool.Active.Clear();
+            }
+            finally
+            {
                 if (pool.RootTransform != null) SafeDestroyUtility.SafeDestroy(pool.RootTransform.gameObject);
-                _poolsByPrefabId.Remove(prefabKey);
+                var key = GetKey(pool.Prefab);
+                // A callback may have replaced this prefab's pool. Never remove the new
+                // pool or its instance mappings while finishing the old one.
+                if (_poolsByPrefabId.TryGetValue(key, out var current) && ReferenceEquals(current, pool))
+                    _poolsByPrefabId.Remove(key);
             }
         }
 
@@ -532,43 +616,23 @@ namespace Nexus.Core.Services
 
         public void ClearAllPools()
         {
-            foreach (var kvp in _poolsByPrefabId)
+            var snapshot = new PoolData[_poolsByPrefabId.Count];
+            _poolsByPrefabId.Values.CopyTo(snapshot, 0);
+            // Close every entry-snapshot pool before the first callback, so a spawn
+            // into a pool cleared later also belongs to a replacement.
+            for (int i = 0; i < snapshot.Length; i++)
             {
-                var pool = kvp.Value;
-                while (pool.Inactive.Count > 0)
-                {
-                    var inst = pool.Inactive.Pop();
-                    if (inst != null) SafeDestroyUtility.SafeDestroy(inst);
-                }
-                foreach (var active in pool.Active)
-                {
-                    if (active != null)
-                    {
-                        // Per-instance dictionary cleanup now mirrors ClearPool
-                        // exactly — previously the entries were only dropped by the bulk
-                        // .Clear() below, so any per-instance teardown added between the loop
-                        // and the final Clear would silently operate on stale registrations.
-                        var activeKey = GetKey(active);
-                        _poolsByInstanceId.Remove(activeKey);
-                        _spawnGenerations.Remove(activeKey);
-                        var poolables = active.GetComponents<IPoolable>();
-                        for (int i = 0; i < poolables.Length; i++)
-                        {
-                            try { poolables[i].OnDespawned(); }
-                            catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
-                        }
-                        SafeDestroyUtility.SafeDestroy(active);
-                    }
-                }
-                if (pool.RootTransform != null) SafeDestroyUtility.SafeDestroy(pool.RootTransform.gameObject);
+                if (snapshot[i].Clearing) snapshot[i] = null;
+                else snapshot[i].Clearing = true;
             }
-            _poolsByPrefabId.Clear();
-            _poolsByInstanceId.Clear();
-            _spawnGenerations.Clear();
+            for (int i = 0; i < snapshot.Length; i++)
+                if (snapshot[i] != null) ClearMarkedPool(snapshot[i]);
         }
 
         public override void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
             // Complete pending PrewarmAsync tasks before the coroutine runner is destroyed
             // so awaiting callers never hang on a TCS that will no longer be signalled.
             if (_pendingPrewarms.Count > 0)
@@ -582,11 +646,12 @@ namespace Nexus.Core.Services
                 }
             }
 
-            ClearAllPools();
-            if (_masterRootObject != null)
+            try { ClearAllPools(); }
+            finally
             {
-                SafeDestroyUtility.SafeDestroy(_masterRootObject);
+                if (_masterRootObject != null) SafeDestroyUtility.SafeDestroy(_masterRootObject);
                 _masterRootObject = null;
+                _masterPoolRoot = null;
             }
         }
 

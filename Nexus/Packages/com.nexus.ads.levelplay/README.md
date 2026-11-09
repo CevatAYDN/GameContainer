@@ -24,8 +24,7 @@ mediation, and the simulator runs in the editor and on unlisted devices. Plan an
    disabled `com.google.external-dependency-manager` stub, as Firebase setups do, issue #61) in one Package
    Manager request; the editor reloads (`PrepareCli` exits 3: run it
    again). The second press does the rest of the Android setup; the validator (`android.nativesdk`,
-   `android.gradle`, `android.adapter`) stops an Android build that misses any of it except the Gradle
-   properties template:
+   `android.gradle`, `android.adapter`) stops an Android build that misses a required step:
    - the versions file first: the press writes LevelPlay's current `LevelPlayVersions.json` from its
      server over the project's copy `Assets/LevelPlay/Editor/LevelPlayVersions.json`, as LevelPlay's own
      installer does before it installs (issue #144). When the server cannot be read the log says so and
@@ -55,8 +54,8 @@ mediation, and the simulator runs in the editor and on unlisted devices. Plan an
    - the custom Gradle properties template `Assets/Plugins/Android/gradleTemplate.properties`, copied
      from Unity's: with a custom main template the External Dependency Manager writes
      `android.useAndroidX` / `android.enableJetifier` into it and, when it is missing, reports
-     `Resolution Failed` on every resolution and build (issue #49); no validator check covers it, that
-     message is the only sign;
+     `Resolution Failed` on every resolution and build (issue #49); the validator now checks this
+     `gradle.properties` preparation step under `android.gradle` (#396);
    - the resolution into that template (Done when the template names the exact dependencies the two
      declarations hold, `com.unity3d.ads-mediation:mediation-sdk:9.7.0` and
      `com.unity3d.ads-mediation:unityads-adapter:5.15.0` above; a resolver set to write `.aar` files into
@@ -86,13 +85,23 @@ reverted, it comes back on the next open.
 | Core call | LevelPlay |
 |---|---|
 | `Initialize(config)` | `LevelPlayPrivacySettings.SetCOPPA` from the child-directed / under-age flags; for the child-directed flag `SetMetaData("is_deviceid_optout", "true")` and `SetMetaData("Google_Family_Self_Certified_SDKS", "true")` (Play Families, issue #194); then with test mode `SetMetaData("is_test_suite", "enable")` and `SetAdaptersDebug(true)`, then `LevelPlay.Init(appKey)` once `Application.internetReachability` reports a network (asked every 2 s, logged once as `[Nexus Ads] LevelPlay init waits for a network`; offline the SDK answers Init from its cached response and every load of the session then ends in `509 Mediation No fill`, issue #125); on `OnInitSuccess` one `LevelPlayRewardedAd` and one `LevelPlayInterstitialAd` per configured ad unit |
-| `Load(format)` | `LoadAd()`; `OnAdLoaded` → `Loaded`, `OnAdLoadFailed` → `LoadFailed` with the SDK's code and message |
+| `Load(format)` | Creates a replacement after a consumed ad, then `LoadAd()`; `OnAdLoaded` → `Loaded`, `OnAdLoadFailed` → `LoadFailed` with the SDK's code and message |
 | `IsReady(format)` | `IsAdReady()` |
 | `Show(format, placement)` | `ShowAd(placement)`; `OnAdDisplayed` → `Opened`; a rewarded ad's `OnAdClosed` answers `Closed` after a grace period of 1.5 s unless `OnAdRewarded` arrived (the SDK documents that the reward can fire after the close), an interstitial's answers `Closed` at once; `OnAdDisplayFailed` → `Failed` |
 | `ShowBanner`, `HideBanner` | one adaptive `LevelPlayBannerAd` at the top or bottom, `ShowAd` / `HideAd`; another position or placement destroys it and builds a new one (the SDK's banner has no setter for either), and a missing banner unit id logs one warning naming the tab |
-| `Dispose()` (the bootstrap's `OnDestroy`) | leaves `LevelPlay.OnInitSuccess` / `OnInitFailed`, which are static, and stops the wait for a network: with domain reload off a provider whose session ended before Init answered was still called by the next session's Init (issue #194) |
+| `Dispose()` (the bootstrap's `OnDestroy`) | Leaves static init events, stops network/grace waits, releases owned rewarded/interstitial/banner objects and makes stale callbacks inert (#194, #390) |
 | `OpenTestSuite` | `LevelPlay.LaunchTestSuite()` (needs the test suite metadata, which test mode sets) |
 | `Revenue` | each ad's `OnAdImpressionDataReady` → `AdRevenue(network, placement, format, revenue, "USD", precision)`, the format taken from the ad object (the SDK's `AdFormat` string is `rewarded_video` on Android) |
+
+Callbacks retain their original ad/show identity (#384). The public result completes once;
+the built-in controller also receives a separate earned notification, allowing a delivered
+late notification to retain one pending receipt after ordinary close or watchdog completion.
+Duplicate earning notifications do not recreate an acknowledged receipt. No collection of old
+SDK ads is retained. These controlled callback guarantees do not establish that the native SDK
+delivers a callback after its handle is destroyed; that device/provider boundary remains open.
+
+The controller borrows its provider/consent ports. Bootstrap disposes a separate consent flow
+created by its factory, while a directly constructed flow remains its caller's responsibility.
 
 Consent: LevelPlay ships no consent form, and GDPR consent collected by Google UMP or a compatible CMP is
 shared with the SDK automatically (SDK 7.7.0+). With `com.google.ads.mobile` and `com.nexus.ads.admob` in

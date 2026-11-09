@@ -55,6 +55,14 @@ var context = await ContextFactory.StartAsync("Gameplay", builder =>
 registered (strict mode throws; non-strict logs and leaves the member null, then
 retries on `ReInjectAll`).
 
+Regenerate the AOT binder after an upgrade. Its source-condition index leaves
+unmatched/ambiguous declarations and conditional partial members on the preserved
+reflection path instead of assuming they exist unconditionally in a player (#354).
+Output-path migration preserves the prior binder/meta on refusal and requires
+the old file's generated ownership before retiring it (#401).
+Generated output preserves array shapes, escaped identifiers and cache identity
+(#408); it must compile and boot, not merely contain expected text.
+
 ## 3. Signals, commands, and observers
 
 - **Fire signals** with `SignalBus.Fire(new MySignal(...))`. Sync signals with
@@ -65,6 +73,9 @@ retries on `ReInjectAll`).
   `BindCommand<TSignal, TCommand>()`.
 - **Reactive models** use `ObservableProperty<T>`; subscribe with
   `property.OnChanged((oldV, newV) => ...)`.
+- `Select`/`CombineLatest` reject stale concurrent computation results, including during
+  initialization (#346). A pending publication may coalesce; user selectors and observers
+  are not invoked under the derived property's publication lock.
 - **Mediators** subscribe in `OnBind()`; every subscription is auto-disposed on
   `Unbind()`/`Reset()` — never subscribe in the constructor.
 
@@ -94,27 +105,55 @@ pools mediators and clears injected references on return.
   domain lifecycle hooks for non-service objects.
 - `IPostContextLifecycle.OnPostContext` runs after ALL contexts initialize
   (cross-context wiring) via `NexusRuntime.FinalizeInitializationAsync`.
+- Failed configuration still retains lifecycle cleanup ownership; disposal code
+  must tolerate partial startup. DI cleans failed, unreturned constructions, but
+  successful transient products remain caller-owned (#365, #371).
+- Reentrant cancellation of view binding cannot publish a mediator afterwards;
+  failed prefab injection destroys the inactive clone (#362, #368).
+- Optional Firebase adapters discard late initialization/fetch publication after
+  disposal or cancellation (#385). Consent/key-change rules and controlled-SDK
+  evidence are documented in the Firebase package; no live collection is implied.
 
 ## 6. Storage and anti-cheat
 
+- `SaveThrottler` releases references from each completed Tick buffer, including nested
+  and failed saves (#349); the warmed capacity stays available without retaining old owners.
+- `InMemoryPlayerPrefsService` tests confirmed saves, injected failures, unreadable
+  keys and abrupt reopen (#351); real encrypted files still verify filesystem commits.
+- `EconomyService.EarnOnce`/`EarnBigOnce` commit balance and receipt ids together (#350);
+  a duplicate still confirms pending data. `TryGetBalance`/`TryGetBigBalance` let a
+  mediator stay bound while saved data is unavailable and attach its observable
+  after recovery (#352). See the migration guide before adopting wallet payloads.
+- `ProgressionService` rejects unreadable/malformed saved levels without replacing them
+  (#402). Restore the data and retry initialization before level mutations. Disposal
+  prevents delayed save callbacks from overwriting a replacement service (#404).
 - `GameSaveManager` writes model snapshots to a temporary file and swaps it in with
   `File.Replace`; where the platform does not support `File.Replace` it logs a warning and
   falls back to a non-atomic delete-then-move. A load finds a save that stopped between the
   delete and the move in its staged file, and saves of one slot land in call order (issue #119).
+  The ordering starts before the context hop/capture callback, so a reentrant save or
+  delete is not overwritten by its interrupted caller (#405).
 - `EncryptedStorageService` provides AES-256 + HMAC-SHA256 integrity and device-bound
   keys by default (`StorageKeyBinding.App` keeps data readable after a backup restore on
   another phone; README, "Services"). It uses atomic replacement where available and a recoverable backup elsewhere.
   Tampered payloads are rejected on read; device power-loss guarantees require testing.
+  An unqueryable canonical path is unreadable, not permission to load an older backup
+  (#403); a failed read cannot overwrite a newer confirmed deletion's cache state (#406).
 - `OfflineTimeCalculator` validates offline reward time against **both** the wall
-  clock and a monotonic clock (`Stopwatch.GetTimestamp`), so within one boot session a
+  clock and a monotonic clock (Android's `SystemClock.elapsedRealtime`, otherwise
+  `Stopwatch.GetTimestamp`), so within one boot session a
   device clock set backwards **or forwards** cannot inflate rewards; across a reboot the
   monotonic clock restarts and only the wall-clock check and the `maxOfflineSeconds` cap apply.
+  An unreadable/malformed saved counter grants zero; an absent legacy counter retains
+  the capped wall-clock fallback (#407).
 
 ## 7. Threading rules
 
 - Unity APIs must only be touched on the main thread. `GameSaveManager` marshals
   restores back to the captured `SynchronizationContext`; `Root` throws
   `ThreadStateException` if a lifecycle continuation escapes the main thread.
+- A `Thread.Sleep` text match in the repository triage script is only a review
+  candidate, not proof of a main-thread call (#355). Verify the actual execution path.
 - Every async API takes a `CancellationToken` and forwards it; contexts cancel
   their `LifetimeToken` on dispose.
 - **Teardown is non-blocking.** Prefer `await context.DisposeAsync()`; the sync
@@ -123,12 +162,32 @@ pools mediators and clears injected references on return.
 
 ## 8. Reentrancy and recovery
 
+- Object-pool clear callbacks may create replacement pools; their new leases stay owned.
+  `Dispose` closes acquisition before callbacks, so do not spawn during or after disposal
+  (#345). Activation/OnSpawned interruptions never return stale leases; a prewarm
+  interrupted by clearing its pool completes as cancelled, even on its final yield.
+- Fresh pool clones acquire ownership before activation (#360). A same-frame UI
+  replacement cannot adopt its predecessor's retiring canvas (#358).
+- Composite retries/timeouts and fallback-depth aborts use the same failure
+  contracts as ordinary commands; cancellation errors do not bypass bus cleanup
+  (#357, #361, #367, #370).
+- Network rollback recomputes handler-derived signals after a late input instead of reusing
+  their old payloads (#348). Submit corrections before rollback, keep handlers synchronous,
+  and capture every participating model. A handler can emit at its current tick or a later
+  tick, not back into a tick already replayed; pending schedules from earlier parents survive
+  partial rollback. Future inputs keep their recording time, and derived schedules use corrected
+  production order. Abandoned future snapshots cannot be restored: capture the new tick with
+  `SetTick` or resimulate through it first.
+- Direct `NetworkSignalHistory<T>.ReplaySignals` calls may nest: each keeps its own
+  snapshot, even if a callback clears/prunes the underlying history (#344).
 - The signal bus aborts runaway chains with `NexusReentrancyException` in every build
   (Debug AND Release) beyond **10** nested synchronous or **32** nested async dispatches; the
   two counters are separate, so a sync handler that fires async starts a fresh async budget.
   Silent returns are not allowed.
 - `RecoveryEngine` triages command failures (skip/abort/fallback/retry) through a
   single `BuildPlan` decision tree; a custom `IRecoveryStrategy` can override it.
+- The optional FSM exits a superseded state even if its pending enter fails late
+  (#347). The transition queue awaits that cleanup before entering the next state.
 
 ## 9. Validating your project
 

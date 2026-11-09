@@ -76,7 +76,7 @@ for path in files:
     path.parent.mkdir(parents=True, exist_ok=True)
     if scenario == "stale_outputs" and path.exists():
         continue
-    content = "a" * 40 if path == identity else "fixture player bytes"
+    content = os.environ.get("FAKE_COMMIT", "a" * 40) if path == identity else "fixture player bytes"
     if path == identity and scenario == "wrong_commit":
         content = "b" * 40
     path.write_text(content, encoding="utf-8")
@@ -158,6 +158,41 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(
             (self.tool / "artifacts/editmode-results.xml").read_text(), PASS_XML
         )
+
+    def test_untracked_sources_are_named_in_the_build_identity(self):
+        git = shutil.which("git")
+        self.assertIsNotNone(git)
+        git_command = [git, "-C", str(self.root)]
+        subprocess.run(git_command + ["init", "--quiet"], check=True, capture_output=True)
+        subprocess.run(git_command + ["add", "Nexus/ProjectSettings/ProjectVersion.txt"], check=True, capture_output=True)
+        subprocess.run(git_command + ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                                      "commit", "--quiet", "-m", "fixture"], check=True, capture_output=True)
+        head = subprocess.run(git_command + ["rev-parse", "HEAD"], check=True,
+                              capture_output=True, text=True).stdout.strip()
+        (self.bin / "git").write_text(
+            '#!/usr/bin/env bash\nexec "' + Path(git).as_posix() + '" "$@"\n', encoding="utf-8"
+        )
+        source = self.project / "Packages/example/Runtime/Untracked.cs"
+        source.parent.mkdir(parents=True)
+        source.write_text("public class Untracked { }\n", encoding="utf-8")
+        self.producing_editor()
+        expected = head + " (Packages or Assets modified)"
+        self.env["FAKE_COMMIT"] = expected
+        result = self.run_runner()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.evidence()[0] / "source.commit").read_text().strip(), expected)
+
+    def test_status_query_failure_is_not_a_clean_worktree(self):
+        (self.bin / "git").write_text(
+            '#!/usr/bin/env bash\n'
+            'if [[ "$*" == *rev-parse* ]]; then echo aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;\n'
+            'elif [[ "$*" == *status* ]]; then echo "status failed" >&2; exit 17; fi\n',
+            encoding="utf-8"
+        )
+        self.producing_editor()
+        result = self.run_runner()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.root / "calls.jsonl").exists(), "no editor should start with unknown source identity")
 
     def test_missing_new_results_fail_even_when_old_reports_exist(self):
         self.seed_stale()

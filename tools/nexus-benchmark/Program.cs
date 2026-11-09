@@ -649,6 +649,30 @@ namespace NexusBench
                 if (json) EmitJson();
                 return rc;
             }
+            if (cmdArgs.Count > 0 && cmdArgs[0] == "--framework-closure")
+            {
+                int rc = FrameworkClosureSuite.Run();
+                if (json) EmitJson();
+                return rc == 0 ? 0 : 1;
+            }
+            if (cmdArgs.Count > 0 && cmdArgs[0] == "--consumer-persistence")
+            {
+                int rc = ConsumerPersistenceSuite.Run();
+                if (json) EmitJson();
+                return rc == 0 ? 0 : 1;
+            }
+            if (cmdArgs.Count > 0 && cmdArgs[0] == "--framework-audit")
+            {
+                int rc = FrameworkAuditSuite.Run(cmdArgs.Count > 1 ? cmdArgs[1] : null);
+                if (json) EmitJson();
+                return rc == 0 ? 0 : 1;
+            }
+            if (cmdArgs.Count > 0 && cmdArgs[0] == "--codegen")
+            {
+                int rc = CodeGenSuite.Run();
+                if (json) EmitJson();
+                return rc == 0 ? 0 : 1;
+            }
             if (cmdArgs.Count > 0 && cmdArgs[0] == "--soak")
             {
                 int iterations = 10;
@@ -725,6 +749,9 @@ namespace NexusBench
             _failures += AdsCoreSuite.Run();
             _failures += DurableRewardSuite.Run();
             _failures += EconomyUnreadableSuite.Run();
+            _failures += ConsumerPersistenceSuite.Run();
+            _failures += FrameworkClosureSuite.Run();
+            _failures += FrameworkAuditSuite.Run();
             _failures += CounterSampleSuite.Run();
             // Last: creates real Contexts and must not disturb earlier suites' assumptions
             // about active-context counts or trace-buffer state.

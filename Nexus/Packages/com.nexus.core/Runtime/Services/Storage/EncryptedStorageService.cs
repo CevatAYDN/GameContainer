@@ -526,25 +526,22 @@ namespace Nexus.Core.Services
             }
 
             // ── Slow path, outside the lock ──
-            // The path lookup (File.Exists, the legacy MD5 name) runs here too (#314 R3-11): writers serialize on
+            // The path lookup (file attributes, the legacy MD5 name) runs here too (#314 R3-11): writers serialize on
             // _writeLock, not _lock, so _lock never kept the files still, and a write after readVersion fails the version
             // check below, which keeps the cache from taking a stale value.
-            filePath = ResolveExistingFilePath(key);
-            mainPath = GetFilePath(key);
-            if (!File.Exists(filePath))
-            {
-                CacheNegativeResult(key);
-                return StorageReadStatus.Absent;
-            }
-
             try
             {
+                filePath = ResolveExistingFilePath(key);
+                mainPath = GetFilePath(key);
+                if (filePath == null)
+                    return CacheNegativeResult(key, readVersion, out value);
+
                 string backupPath = mainPath + ".bak";
                 string problem = Decode(File.ReadAllBytes(filePath), key, out string val, out bool olderFormat, out bool unversioned);
                 // File.Replace keeps the previous version in .bak: a main file emptied by a power loss, or one that fails
                 // its check, falls back to it, and so does a main file an interrupted two-rename commit never put back (#166)
                 bool fromBackup = filePath == backupPath;
-                if (problem != null && filePath == mainPath && File.Exists(backupPath)
+                if (problem != null && filePath == mainPath && FileExistsForRead(backupPath)
                     && Decode(File.ReadAllBytes(backupPath), key, out string backupValue, out olderFormat, out unversioned) == null)
                 {
                     NexusLog.WarnAlways($"[EncryptedStorage] The save file for key '{key}' {problem}: read the version before its last write from the backup, so that write is lost, and writes it back.");
@@ -561,8 +558,7 @@ namespace Nexus.Core.Services
                 {
                     if (problem == IntegrityFailure) LogTamperWarning(key);
                     else NexusLog.WarnAlways($"[EncryptedStorage] The save file for key '{key}' {problem}: unreadable, reverting to default.");
-                    CacheNegativeResult(key, unreadable: true);
-                    return StorageReadStatus.Unreadable;
+                    return CacheNegativeResult(key, readVersion, out value, unreadable: true);
                 }
 
                 // A recovered, v2 or unversioned value is re-encrypted as v3 under the current (FNV-1a) name; an unversioned
@@ -605,24 +601,29 @@ namespace Nexus.Core.Services
             catch (Exception ex)
             {
                 NexusLog.WarnAlways($"[EncryptedStorage] Failed to read/decrypt save key '{key}': {ex.Message}");
-                CacheNegativeResult(key, unreadable: true);
-                return StorageReadStatus.Unreadable;
+                return CacheNegativeResult(key, readVersion, out value, unreadable: true);
             }
         }
 
         /// <summary>
-        /// Caches a negative (missing/corrupt) read result — but never clobbers a value a
-        /// concurrent SetString wrote while the disk read was in flight (dirty key, or an
-        /// AutoSave write that already updated the cache without marking it dirty).
+        /// Caches a negative (missing/corrupt) result only for the generation read.
+        /// A completed delete is authoritative too, even though its cache value is null and no longer dirty.
         /// </summary>
-        private void CacheNegativeResult(string key, bool unreadable = false)
+        private StorageReadStatus CacheNegativeResult(string key, long readVersion, out string value, bool unreadable = false)
         {
             lock (_lock)
             {
-                if (_dirtyKeys.Contains(key)) return;
-                if (_cache.TryGetValue(key, out var existing) && existing != null) return;
+                value = null;
+                if (!IsCurrentVersionLocked(key, readVersion) || _dirtyKeys.Contains(key)
+                    || (_cache.TryGetValue(key, out var existing) && existing != null))
+                {
+                    return _cache.TryGetValue(key, out var current)
+                        ? CachedLocked(key, current, out value)
+                        : StorageReadStatus.Absent;
+                }
                 _cache[key] = null;
                 if (unreadable) _unreadable.Add(key);
+                return CachedLocked(key, null, out value);
             }
         }
 
@@ -919,10 +920,10 @@ namespace Nexus.Core.Services
             if (_disposed) return ExportFailed(key, "the store is disposed", out failure);
             // The export read the save file: after a failed save it held an older value, and a key kept only in .bak or under
             // its older (MD5) file name exported as null (issue #166). It now encodes what the store reads.
-            string value = GetString(key, null);
-            if (value == null)
+            var status = Read(key, out string value);
+            if (status != StorageReadStatus.Present)
             {
-                if (File.Exists(ResolveExistingFilePath(key)))
+                if (status == StorageReadStatus.Unreadable)
                     return ExportFailed(key, "its save file could not be read (the warning before this line says why)", out failure);
                 failure = "the key has no value";
                 return null;
@@ -1097,12 +1098,13 @@ namespace Nexus.Core.Services
             // B1 invariant: file I/O outside the shared lock so slow disk access doesn't stall other operations
             // A key written by an older build may still live under its legacy
             // MD5-derived filename — report it as present so migration can run.
-            string newPath = GetFilePath(key);
-            if (File.Exists(newPath)) return true;
-            if (File.Exists(newPath + ".bak")) return true;
-
-            string legacyPath = GetLegacyFilePath(key);
-            return legacyPath != null && File.Exists(legacyPath);
+            try { return ResolveExistingFilePath(key) != null; }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                NexusLog.WarnAlways($"[EncryptedStorage] Could not query save key '{key}' this time: {ex.Message}");
+                // An unavailable path is not confirmed absence. Do not invite callers to reset it.
+                return true;
+            }
         }
 
         /// <summary>Platform replace seam; unsupported implementations use backup recovery.</summary>
@@ -1292,15 +1294,28 @@ namespace Nexus.Core.Services
         /// Resolves the on-disk file for a key. Prefers the current FNV-1a filename;
         /// falls back to the legacy MD5 filename (A6) so pre-migration saves are still
         /// readable. The legacy file is migrated (re-saved under the new name) on read.
+        /// Returns null only for confirmed absence; an unavailable canonical path cannot select an older backup.
         /// </summary>
         private string ResolveExistingFilePath(string key)
         {
             string newPath = GetFilePath(key);
-            if (File.Exists(newPath)) return newPath;
-            if (File.Exists(newPath + ".bak")) return newPath + ".bak";
+            if (FileExistsForRead(newPath)) return newPath;
+            if (FileExistsForRead(newPath + ".bak")) return newPath + ".bak";
 
             string legacyPath = GetLegacyFilePath(key);
-            return legacyPath != null && File.Exists(legacyPath) ? legacyPath : newPath;
+            return legacyPath != null && FileExistsForRead(legacyPath) ? legacyPath : null;
+        }
+
+        private static bool FileExistsForRead(string path)
+        {
+            FileAttributes attributes;
+            try { attributes = File.GetAttributes(path); }
+            catch (FileNotFoundException) { return false; }
+            // File.Exists hides access errors and directories. A missing/unqueryable parent
+            // also cannot establish that this initialized store has no value for the key.
+            if ((attributes & FileAttributes.Directory) != 0)
+                throw new IOException($"The save path '{path}' is a directory, not a file.");
+            return true;
         }
 
         private void TryDeleteLegacyFile(string key)

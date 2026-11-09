@@ -62,6 +62,15 @@ What it does:
   The ids reach `RequestConfiguration.TestDeviceIds` and the consent debug settings only while the
   configuration runs on Google's sample units, so a release build never carries them.
 
+Provider callbacks retain their originating ad/show (#384), so an old close cannot close or
+destroy a replacement. Public show completion remains once-only; a separate internal earned
+notification lets the controller preserve one pending receipt after close/watchdog completion.
+This covers callbacks that reach the provider, not a guarantee of native delivery after handle
+destruction. Provider disposal releases its SDK objects and its own UMP flow; stale loads release
+their returned ad instead of reviving readiness (#390). A separately constructed UMP flow is
+owned by its caller; bootstrap owns one created by its consent factory. Disposed flows cannot
+request a form from a late update callback.
+
 Proven against Google Mobile Ads 11.6.0 in a disposable project (`Nexus/artifacts/admob-<date>/`, gate
 row in [`docs/RELEASE_GATES.md`](../../../docs/RELEASE_GATES.md)): the plugin's editor placeholders
 load, show, pay and close through the provider. Not covered: app-open, native and rewarded

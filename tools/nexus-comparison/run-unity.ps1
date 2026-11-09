@@ -175,6 +175,8 @@ try {
             if ($devices.Count -ne 1) { throw "Expected exactly one adb device, found $($devices.Count); pass -AdbSerial." }
             $AdbSerial = ($devices[0] -split "`t")[0]
         }
+        # Unity can stop adb on exit; consume daemon startup diagnostics before checking one strict state reply.
+        Invoke-ComparisonAdb @('start-server') | Out-Null
         if ((@(Invoke-ComparisonAdb @('get-state')) -join '').Trim() -cne 'device') { throw 'Serial is not an authorized connected device.' }
         if (Get-ComparisonPid) { throw 'Comparison app already running; no automatic preflight kill.' }
         Assert-ComparisonApk

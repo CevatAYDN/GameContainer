@@ -251,6 +251,8 @@ namespace Nexus.Generator
 
         private static string Name(ITypeSymbol type) => type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
+        private static string Identifier(string name) => SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None ? "@" + name : name;
+
         /// <summary>A type's name in the binder's header list of types the reflection path serves.</summary>
         private static string DisplayName(ITypeSymbol type) => type.ToDisplayString();
 
@@ -279,17 +281,6 @@ namespace Nexus.Generator
             return ns == null || ns.IsGlobalNamespace ? name : ns.ToDisplayString() + "." + name;
         }
 
-        private static string SafeIdentifier(string name)
-        {
-            var sb = new StringBuilder(name.Length);
-            for (int i = 0; i < name.Length; i++)
-            {
-                char c = name[i];
-                sb.Append(char.IsLetterOrDigit(c) || c == '_' ? c : '_');
-            }
-            return sb.ToString();
-        }
-
         /// <summary>A C# string literal for any text (binding names, member names, the member signature).</summary>
         private static string Literal(string text)
         {
@@ -304,6 +295,8 @@ namespace Nexus.Generator
                     case '\n': sb.Append("\\n"); break;
                     case '\t': sb.Append("\\t"); break;
                     case '\0': sb.Append("\\0"); break;
+                    case '\u2028': sb.Append("\\u2028"); break;
+                    case '\u2029': sb.Append("\\u2029"); break;
                     default:
                         if (char.IsControl(c)) sb.Append("\\x").Append(((int)c).ToString("x4"));
                         else sb.Append(c);
@@ -639,11 +632,11 @@ namespace Nexus.Generator
             //    required member goes to the runtime, so the generated path gives the reflection path's answer ──
             var cacheSb = new StringBuilder();
             var initSb = new StringBuilder();
+            int nextCacheId = 0;
             foreach (var type in injectTypes)
             {
                 var members = GetMemberSet(type);
                 string fullName = Name(type);
-                string typeSafeName = SafeIdentifier(fullName);
 
                 bool emittable = members.Fields.All(f => IsEmittable(f.ContainingType) && IsEmittable(f.Type))
                     && members.Properties.All(p => IsEmittable(p.ContainingType) && IsEmittable(p.Type))
@@ -654,15 +647,19 @@ namespace Nexus.Generator
                     continue;
                 }
 
-                var cacheNames = new HashSet<string>(StringComparer.Ordinal);
+                // Reuse by member identity; distinct type names can sanitize to the same identifier.
+                var cacheNames = new Dictionary<ISymbol, string>(SymbolEqualityComparer.Default);
                 string Target(INamedTypeSymbol declaring)
                     => SymbolEqualityComparer.Default.Equals(declaring, type) ? "instance" : $"(({Name(declaring)})instance)";
                 string Cache(string kind, string reflectionType, ISymbol member, string lookup)
                 {
                     string declaringName = Name(member.ContainingType);
-                    string cacheName = $"s_{kind}_{typeSafeName}_{SafeIdentifier(declaringName)}_{SafeIdentifier(member.Name)}";
-                    if (cacheNames.Add(cacheName))
+                    if (!cacheNames.TryGetValue(member, out string cacheName))
+                    {
+                        cacheName = $"s_{kind}_{nextCacheId++}";
+                        cacheNames.Add(member, cacheName);
                         cacheSb.AppendLine($"        private static readonly System.Reflection.{reflectionType} {cacheName} = typeof({declaringName}).{lookup}({Literal(member.Name)}, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly);");
+                    }
                     return cacheName;
                 }
                 // Public members are set directly; a private or protected member, a readonly field and a non-public or
@@ -670,19 +667,19 @@ namespace Nexus.Generator
                 string Get(ISymbol member)
                 {
                     if (member is IFieldSymbol f)
-                        return f.DeclaredAccessibility == Accessibility.Public ? $"{Target(f.ContainingType)}.{f.Name}" : $"{Cache("f", "FieldInfo", f, "GetField")}.GetValue(instance)";
+                        return f.DeclaredAccessibility == Accessibility.Public ? $"{Target(f.ContainingType)}.{Identifier(f.Name)}" : $"{Cache("f", "FieldInfo", f, "GetField")}.GetValue(instance)";
                     var p = (IPropertySymbol)member;
                     return p.GetMethod != null && p.GetMethod.DeclaredAccessibility == Accessibility.Public
-                        ? $"{Target(p.ContainingType)}.{p.Name}" : $"{Cache("p", "PropertyInfo", p, "GetProperty")}.GetValue(instance)";
+                        ? $"{Target(p.ContainingType)}.{Identifier(p.Name)}" : $"{Cache("p", "PropertyInfo", p, "GetProperty")}.GetValue(instance)";
                 }
                 string Set(ISymbol member, string value)
                 {
                     if (member is IFieldSymbol f)
                         return f.DeclaredAccessibility == Accessibility.Public && !f.IsReadOnly
-                            ? $"{Target(f.ContainingType)}.{f.Name} = {value};" : $"{Cache("f", "FieldInfo", f, "GetField")}.SetValue(instance, {value});";
+                            ? $"{Target(f.ContainingType)}.{Identifier(f.Name)} = {value};" : $"{Cache("f", "FieldInfo", f, "GetField")}.SetValue(instance, {value});";
                     var p = (IPropertySymbol)member;
                     return p.SetMethod.DeclaredAccessibility == Accessibility.Public && !p.SetMethod.IsInitOnly
-                        ? $"{Target(p.ContainingType)}.{p.Name} = {value};" : $"{Cache("p", "PropertyInfo", p, "GetProperty")}.SetValue(instance, {value});";
+                        ? $"{Target(p.ContainingType)}.{Identifier(p.Name)} = {value};" : $"{Cache("p", "PropertyInfo", p, "GetProperty")}.SetValue(instance, {value});";
                 }
                 void EmitMember(ISymbol member, ITypeSymbol memberType)
                 {
@@ -714,7 +711,7 @@ namespace Nexus.Generator
                 {
                     var m = members.Methods[methodIndex];
                     string declaringName = Name(m.ContainingType);
-                    string cacheName = $"s_m_{typeSafeName}_{SafeIdentifier(declaringName)}_{SafeIdentifier(m.Name)}_{methodIndex}";
+                    string cacheName = $"s_m_{nextCacheId++}";
                     string parameterTypes = string.Join(", ", m.Parameters.Select(x => $"typeof({Name(x.Type)})"));
                     cacheSb.AppendLine($"        private static readonly System.Reflection.MethodInfo {cacheName} = typeof({declaringName}).GetMethod({Literal(m.Name)}, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly, null, new System.Type[] {{ {parameterTypes} }}, null);");
                     initSb.AppendLine("                {");

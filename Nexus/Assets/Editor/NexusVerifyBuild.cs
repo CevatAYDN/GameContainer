@@ -94,15 +94,18 @@ namespace NexusVerify
 
         /// <summary>
         /// Writes the commit the player was built from to builds/&lt;name&gt;.commit, so tools/device-acceptance
-        /// names the player's commit rather than the HEAD it runs at (issue #105). Nothing is written when git fails.
+        /// names the player's commit rather than the HEAD it runs at (issue #105).
+        /// Unknown Git identity fails the build without keeping a stale sidecar (#400).
         /// </summary>
         private static void WriteCommitFile(string targetName)
         {
             string path = $"builds/{targetName}.commit";
             System.IO.File.Delete(path); // an older build's file must not name this player
             string head = Git("rev-parse HEAD");
-            if (string.IsNullOrEmpty(head)) return;
-            if (!string.IsNullOrEmpty(Git("status --porcelain --untracked-files=no -- Packages Assets")))
+            if (string.IsNullOrEmpty(head)) throw new System.IO.IOException("Could not establish the build's Git revision.");
+            string dirty = Git("status --porcelain --untracked-files=all -- Packages Assets");
+            if (dirty == null) throw new System.IO.IOException("Could not establish whether the build's source tree is modified.");
+            if (!string.IsNullOrEmpty(dirty))
                 head += " (Packages or Assets modified)";
             System.IO.File.WriteAllText(path, head + "\n");
         }

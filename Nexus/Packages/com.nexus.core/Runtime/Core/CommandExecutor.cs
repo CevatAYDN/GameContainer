@@ -322,8 +322,38 @@ namespace Nexus.Core
         // The command's own [CommandTimeout] fired and the context did not cancel: a failure, not a shutdown (issue #168).
         // A decorator may hand the cancellation on wrapped, so its inner exception counts too.
         private static bool TimedOut(Exception ex, CancellationTokenSource timeoutCts, CancellationTokenSource executorLinkedCts)
-            => timeoutCts != null && timeoutCts.IsCancellationRequested && !executorLinkedCts.Token.IsCancellationRequested
+            => TimedOut(ex, timeoutCts, executorLinkedCts.Token);
+
+        private static bool TimedOut(Exception ex, CancellationTokenSource timeoutCts, CancellationToken dispatchToken)
+            => timeoutCts != null && timeoutCts.IsCancellationRequested && !dispatchToken.IsCancellationRequested
                && (ex is OperationCanceledException || ex.InnerException is OperationCanceledException);
+
+        internal static int ReadCommandTimeout(Type commandType)
+            => (Attribute.GetCustomAttribute(commandType, typeof(CommandTimeoutAttribute)) as CommandTimeoutAttribute)?.Milliseconds ?? 0;
+
+        private async ValueTask ExecuteAsyncCompositeWithOptionalTimeout(IAsyncCompositeCommand command,
+            CompositeContext context, int timeoutMs, CancellationToken ct, bool useDecorators)
+        {
+            CancellationTokenSource timeoutCts = null;
+            try
+            {
+                if (timeoutMs > 0 && !ct.IsCancellationRequested)
+                {
+                    timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeoutCts.CancelAfter(timeoutMs);
+                }
+                var token = timeoutCts?.Token ?? ct;
+                if (useDecorators)
+                    await ExecuteWithDecoratorsAsync(command, () => command.ExecuteAsync(context, token));
+                else
+                    await command.ExecuteAsync(context, token);
+            }
+            catch (Exception ex) when (TimedOut(ex, timeoutCts, ct))
+            {
+                throw new CommandTimeoutException(command.GetType(), timeoutMs, ex);
+            }
+            finally { timeoutCts?.Dispose(); }
+        }
 
         public void Execute(CommandHandlerInfo handler, object signal)
         {
@@ -711,6 +741,7 @@ namespace Nexus.Core
         {
             int retryCount = 0;
             bool shouldRun = true;
+            int timeoutMs = trigger.IsAsync ? ReadCommandTimeout(trigger.CommandType) : 0;
             // NOTE: metrics are recorded in ExecuteComposite (the single public entry point)
             // — async composites flow through here via ExecuteCompositeCommandAsync, so
             // recording here too would double-count every async composite command.
@@ -769,14 +800,7 @@ namespace Nexus.Core
                         inFlightIncremented = true;
                         try
                         {
-                            if (_context is Context decoratorCtx && decoratorCtx.PluginsReadOnlyCopy.Count > 0)
-                            {
-                                await ExecuteWithDecoratorsAsync(asyncCompCmd, async () => await asyncCompCmd.ExecuteAsync(context, ct));
-                            }
-                            else
-                            {
-                                await asyncCompCmd.ExecuteAsync(context, ct);
-                            }
+                            await ExecuteAsyncCompositeWithOptionalTimeout(asyncCompCmd, context, timeoutMs, ct, hasDecorators);
                         }
                         finally
                         {
@@ -796,14 +820,7 @@ namespace Nexus.Core
                         inFlightIncremented = true;
                         try
                         {
-                            if (_context is Context decoratorCtx && decoratorCtx.PluginsReadOnlyCopy.Count > 0)
-                            {
-                                await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
-                            }
-                            else
-                            {
-                                await asyncCmd.ExecuteAsync(ct);
-                            }
+                            await ExecuteAsyncWithOptionalTimeout(asyncCmd, timeoutMs, ct, hasDecorators);
                         }
                         finally
                         {
@@ -997,7 +1014,11 @@ namespace Nexus.Core
                     NexusTrace.EndEvent(traceId, TraceStatus.Failed);
 #endif
                     var action = _recovery.HandleErrorWithDecision(ex, trigger.CommandType, null, ref retryCount);
-                    if (action != RecoveryAction.Retry)
+                    if (action == RecoveryAction.Retry)
+                    {
+                        retryCount++;
+                    }
+                    else
                     {
                         shouldRun = false;
                         // One-shot contract (see Execute): a skipped failure surfaces so SignalBus releases the trigger.

@@ -88,17 +88,19 @@ namespace Nexus.Editor.Tests
         // Issue #205: every timestamp key shared one monotonic tick, so recording slot B clamped slot A's offline time
         // to the time since B's quit.
         [Test]
-        public void OfflineTimeCalculator_RecordingOneKey_DoesNotClampTheOfflineTimeOfAnother()
+        public async System.Threading.Tasks.Task OfflineTimeCalculator_RecordingOneKey_DoesNotClampTheOfflineTimeOfAnother()
         {
             var prefs = new InMemoryPlayerPrefsService();
             OfflineTimeCalculator.RecordQuitTimestamp(prefs, "slotA");
-            // slot A quit an hour ago: move every value it stored back by an hour (seconds and milliseconds)
-            foreach (var key in new System.Collections.Generic.List<string>(prefs.Keys))
-                prefs.SetLong(key, prefs.GetLong(key) - (key == "slotA" ? 3600L : 3600L * 1000L));
+            // Mono's counter can start with this editor process; backdating an hour invents invalid negative data.
+            await System.Threading.Tasks.Task.Delay(1100);
+            long beforeOtherSlot = OfflineTimeCalculator.CalculateOfflineSeconds(prefs, 28800L, "slotA");
+            Assert.GreaterOrEqual(beforeOtherSlot, 1L, "The clock control must advance before testing independent slots.");
 
             OfflineTimeCalculator.RecordQuitTimestamp(prefs, "slotB");
 
-            Assert.GreaterOrEqual(OfflineTimeCalculator.CalculateOfflineSeconds(prefs, 28800L, "slotA"), 3590L);
+            Assert.GreaterOrEqual(OfflineTimeCalculator.CalculateOfflineSeconds(prefs, 28800L, "slotA"), beforeOtherSlot,
+                "Recording slot B must not reset slot A's already observed offline interval.");
         }
 
         // Issue #120: the cap went unchecked into Math.Min, so a negative cap from a game's configuration returned negative

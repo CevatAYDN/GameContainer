@@ -117,9 +117,9 @@ namespace Nexus.Core.Extensions
         }
 
         private readonly object _saveLock = new();
-        // Issue #119: each capture takes the next number (captures run on the main thread, in call order); a write whose
-        // slot already holds a later number is skipped. DeleteSave takes a number too (#296). Only used under _saveLock,
-        // except the increment.
+        // Each save takes its number before a context hop or user capture callback; reentrant saves/deletes
+        // must be newer than the interrupted request (#405). A write whose slot holds a later number is skipped.
+        // DeleteSave takes a number too (#296). Only used under _saveLock, except the increment.
         private long _captureSequence;
         private readonly System.Collections.Generic.Dictionary<string, long> _writtenSequence = new();
         // Retry jitter source, hoisted from the retry loop (a new Random per retry could
@@ -151,17 +151,16 @@ namespace Nexus.Core.Extensions
             ct.ThrowIfCancellationRequested();
 
             byte[] modelData = null;
-            long sequence = 0;
+            long sequence = Interlocked.Increment(ref _captureSequence);
             var ctx = MainThreadContext;
             if (ctx != null && SynchronizationContext.Current != ctx)
             {
-                await RunOnCapturedContextAsync(() => { CaptureMainThreadValues(); modelData = model.CaptureSaveData(); sequence = Interlocked.Increment(ref _captureSequence); }, ctx, ct);
+                await RunOnCapturedContextAsync(() => { CaptureMainThreadValues(); modelData = model.CaptureSaveData(); }, ctx, ct);
             }
             else
             {
                 CaptureMainThreadValues();
                 modelData = model.CaptureSaveData();
-                sequence = Interlocked.Increment(ref _captureSequence);
             }
 
             string dir = SaveDirectory;

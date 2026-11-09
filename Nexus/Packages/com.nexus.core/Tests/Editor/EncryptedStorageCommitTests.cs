@@ -278,7 +278,7 @@ namespace Nexus.Editor.Tests
         public void LegacyCustomStore_DefaultIsFalse_AndSaveOrThrowDoesNotInferFromVoidSave()
         {
             var memory = new Nexus.Core.InMemoryPlayerPrefsService();
-            IPlayerPrefsService store = memory;
+            IPlayerPrefsService store = new LegacyStore(memory);
             store.SetInt("value", 42);
             store.Save();
             Require(!store.TrySave(), "an unsupported store must not claim durable confirmation");
@@ -314,6 +314,27 @@ namespace Nexus.Editor.Tests
                 AfterReplace = null;
                 action?.Invoke();
             }
+        }
+
+        // Intentionally implements only the original interface: adding confirmation to
+        // the shipped in-memory fake must not weaken this legacy-adapter regression.
+        private sealed class LegacyStore : IPlayerPrefsService
+        {
+            private readonly IPlayerPrefsService _inner;
+            public LegacyStore(IPlayerPrefsService inner) => _inner = inner;
+            public int GetInt(string key, int defaultValue = 0) => _inner.GetInt(key, defaultValue);
+            public void SetInt(string key, int value) => _inner.SetInt(key, value);
+            public bool GetBool(string key, bool defaultValue = false) => _inner.GetBool(key, defaultValue);
+            public void SetBool(string key, bool value) => _inner.SetBool(key, value);
+            public string GetString(string key, string defaultValue = "") => _inner.GetString(key, defaultValue);
+            public void SetString(string key, string value) => _inner.SetString(key, value);
+            public float GetFloat(string key, float defaultValue = 0) => _inner.GetFloat(key, defaultValue);
+            public void SetFloat(string key, float value) => _inner.SetFloat(key, value);
+            public long GetLong(string key, long defaultValue = 0) => _inner.GetLong(key, defaultValue);
+            public void SetLong(string key, long value) => _inner.SetLong(key, value);
+            public bool HasKey(string key) => _inner.HasKey(key);
+            public void DeleteKey(string key) => _inner.DeleteKey(key);
+            public void Save() => _inner.Save();
         }
 
         private sealed class Files : IDisposable

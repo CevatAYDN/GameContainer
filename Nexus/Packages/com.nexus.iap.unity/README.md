@@ -50,6 +50,12 @@ instead of `Unknown` once the store answers (#268). A purchase reports `Purchase
 game first and is confirmed with the store right after, so the game records ownership before
 acknowledgement. A confirm the store refuses is warned in every build and sent again after 5 s,
 30 s and 2 min; after that the next purchase fetch (each start and `Restore`) confirms it.
+If the requested delivery callback throws, the adapter does not confirm or remember that
+new order as granted (#381). A later fetch offers it through the recovery delivery path.
+Keep the grant idempotent and let persistence failures propagate at this synchronous
+boundary. Conversely, a successful grant whose store confirmation fails is remembered
+in the current session, so confirmation retries do not grant it again. Across restarts,
+the game's durable transaction-id ledger remains necessary.
 `IsConfirmationPending(productId)` is true until the store confirms the purchase (Google Play
 refunds a purchase not acknowledged within three days), and `Changed` is raised when it turns
 false. Consumables are never reported as owned; non-consumables and subscriptions are

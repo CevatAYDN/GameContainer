@@ -47,6 +47,7 @@ namespace Nexus.Core.Services
     {
         /// <summary>Sets and initializes the network adapter. A replaced adapter's banner is hidden and, when it is
         /// <see cref="IDisposable"/>, it is disposed; its late initialize callback is ignored.</summary>
+        /// <exception cref="ObjectDisposedException">The service is disposed; the supplied adapter remains caller-owned.</exception>
         void SetNetworkAdapter(IAdNetworkAdapter adapter);
         void SetInterstitialCooldown(float seconds);
         bool IsInterstitialAvailable(string placement);
@@ -92,6 +93,7 @@ namespace Nexus.Core.Services
         private readonly SecureObservableFloat _lastInterstitialTime = new(-999f);
         private bool _isInitialized;
         private readonly object _lock = new();
+        private int _disposeState;
         // Set while the interstitial cooldown may still block; Tick clears it and raises ReadyChanged when the cooldown
         // ends (issue #99). Read without the lock, so an idle frame costs one field read.
         private volatile bool _cooldownWakeArmed;
@@ -105,12 +107,20 @@ namespace Nexus.Core.Services
 
         public AdService()
         {
-            _forwardReadyChanged = () => ReadyChanged?.Invoke();
+            _forwardReadyChanged = () => { if (Volatile.Read(ref _disposeState) == 0) ReadyChanged?.Invoke(); };
         }
 
+        /// <exception cref="ObjectDisposedException">The service is disposed and cannot register for ticks.</exception>
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
-            TickService?.RegisterTickable(this);
+            if (Volatile.Read(ref _disposeState) != 0) throw new ObjectDisposedException(nameof(AdService));
+            var ticks = TickService;
+            ticks?.RegisterTickable(this);
+            if (Volatile.Read(ref _disposeState) != 0)
+            {
+                ticks?.UnregisterTickable(this);
+                throw new ObjectDisposedException(nameof(AdService));
+            }
             return default;
         }
 
@@ -132,6 +142,7 @@ namespace Nexus.Core.Services
             IAdNetworkAdapter previous;
             lock (_lock)
             {
+                if (_disposeState != 0) throw new ObjectDisposedException(nameof(AdService));
                 previous = _adapter;
                 _adapter = adapter;
                 _isInitialized = false;
@@ -141,7 +152,16 @@ namespace Nexus.Core.Services
             if (previous is IAdReadinessAdapter previousReadiness) previousReadiness.ReadyChanged -= _forwardReadyChanged;
             // a replaced adapter is disposed, as IapService does (#118, #314 R3-05)
             if (previous is IDisposable replaced && !ReferenceEquals(previous, adapter)) replaced.Dispose();
+            // Replacement cleanup can dispose this service or install another adapter.
+            lock (_lock) { if (_disposeState != 0 || !ReferenceEquals(_adapter, adapter)) return; }
             if (adapter is IAdReadinessAdapter readiness) readiness.ReadyChanged += _forwardReadyChanged;
+            bool stillCurrent;
+            lock (_lock) { stillCurrent = _disposeState == 0 && ReferenceEquals(_adapter, adapter); }
+            if (!stillCurrent)
+            {
+                if (adapter is IAdReadinessAdapter stale) stale.ReadyChanged -= _forwardReadyChanged;
+                return;
+            }
 
             // Initialize OUTSIDE the lock: adapter SDKs may block or re-enter this service
             // (e.g. invoke callbacks synchronously), and holding the lock across that would
@@ -152,7 +172,7 @@ namespace Nexus.Core.Services
                 {
                     // a late answer of a replaced adapter does not mark the current one (#314 R3-05)
                     bool current;
-                    lock (_lock) { current = ReferenceEquals(_adapter, adapter); if (current) _isInitialized = true; }
+                    lock (_lock) { current = _disposeState == 0 && ReferenceEquals(_adapter, adapter); if (current) _isInitialized = true; }
                     if (current) ReadyChanged?.Invoke();
                 });
             }
@@ -322,14 +342,35 @@ namespace Nexus.Core.Services
 
         public override void Dispose()
         {
-            TickService?.UnregisterTickable(this);
-            _cooldownWakeArmed = false;
             IAdNetworkAdapter adapter;
-            lock (_lock) { adapter = _adapter; }
-            if (adapter is IAdReadinessAdapter readiness) readiness.ReadyChanged -= _forwardReadyChanged;
-            _interstitialCooldownSeconds.ClearOnChanged();
-            _lastInterstitialTime.ClearOnChanged();
-            base.Dispose();
+            lock (_lock)
+            {
+                if (_disposeState != 0) return;
+                _disposeState = 1;
+                _cooldownWakeArmed = false;
+                adapter = _adapter;
+                _adapter = null;
+                _isInitialized = false;
+            }
+            try { TickService?.UnregisterTickable(this); }
+            finally
+            {
+                try
+                {
+                    if (adapter is IAdReadinessAdapter readiness) readiness.ReadyChanged -= _forwardReadyChanged;
+                    adapter?.HideBanner();
+                }
+                finally
+                {
+                    try { (adapter as IDisposable)?.Dispose(); }
+                    finally
+                    {
+                        _interstitialCooldownSeconds.ClearOnChanged();
+                        _lastInterstitialTime.ClearOnChanged();
+                        base.Dispose();
+                    }
+                }
+            }
         }
     }
 }

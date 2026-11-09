@@ -28,8 +28,11 @@ namespace Nexus.Editor
         private static readonly Regex s_declaration = new Regex(
             @"\b(?:record\s+(?:class|struct)|class|struct|interface|enum|record)\s+@?([A-Za-z_]\w*)", RegexOptions.Compiled);
         private static readonly Regex s_partial = new Regex(@"\bpartial\b", RegexOptions.Compiled);
-        // String and char literals, emptied before braces are counted: "{0}" opens no block.
-        private static readonly Regex s_literal = new Regex(@"@""(?:[^""]|"""")*""|""(?:[^""\\]|\\.)*""|'(?:[^'\\]|\\.)*'", RegexOptions.Compiled);
+        // Match whole comment/literal spans before splitting lines: braces/directives
+        // inside a multiline verbatim string or block comment are not source tokens.
+        private static readonly Regex s_nonCode = new Regex(
+            @"//[^\r\n]*|/\*[\s\S]*?\*/|@""(?:[^""]|"""")*""|""(?:[^""\\\r\n]|\\[^\r\n])*""|'(?:[^'\\\r\n]|\\[^\r\n])*'",
+            RegexOptions.Compiled);
         private static readonly Regex s_inject = new Regex(
             @"(?:\[\s*(?:\w+\s*:\s*)?|,)\s*(?:global::)?(?:Nexus\.Core\.)?(?:Optional)?Inject(?:Attribute)?\s*(?:\]|\(|,)", RegexOptions.Compiled);
 
@@ -101,6 +104,13 @@ namespace Nexus.Editor
                 var editor = new HashSet<string>(source.Defines);
                 foreach (var declaration in declarations)
                 {
+                    if (declaration.Partial)
+                    {
+                        string partCondition = Simplify(declaration.Condition, OwnSymbol(editor));
+                        if (partCondition == null) return Unparsable(declaration.Condition, declaration.File);
+                        if (partCondition != ForType(t))
+                            return $"a partial declaration in {declaration.File} is under #if {partCondition}; its members may be absent from the player";
+                    }
                     foreach (var (line, raw) in index.Files[declaration.File].ConditionalInjects)
                     {
                         // shortcut: the type is the one declared above the line; a file with several types
@@ -134,7 +144,8 @@ namespace Nexus.Editor
                 var index = Index(assembly, source.Files);
                 var editor = new HashSet<string>(source.Defines);
                 var sb = new StringBuilder();
-                bool compiled = false, always = false;
+                bool compiled = false, always = false, allTopLevelPartial = true;
+                int matchingDeclarations = 0;
                 if (index.Declarations.TryGetValue(Key(type), out var declarations))
                 {
                     foreach (var declaration in declarations)
@@ -148,16 +159,22 @@ namespace Nexus.Editor
                         // A declaration the Editor does not compile is not where this type came from.
                         if (inEditor != Always) continue;
                         compiled = true;
+                        matchingDeclarations++;
+                        allTopLevelPartial &= declaration.Partial && !declaration.Nested;
                         string c = Simplify(declaration.Condition, OwnSymbol(editor));
-                        if (c == Always) { always = true; break; }
+                        if (c == Always) { always = true; continue; }
                         if (sb.Length > 0) sb.Append(" || ");
                         sb.Append('(').Append(c).Append(')');
                     }
                 }
-                // No declaration the Editor compiles: generated source keeps "always", but an unreadable file may hold
-                // the declaration under an #if of its own.
-                if (result == Always && !compiled && index.Unreadable.Count > 0)
-                    result = Problem(type, "could not read " + index.Unreadable[0]);
+                // This lightweight index uses short names. It cannot safely merge
+                // distinct nested declarations or assume a missing declaration is unconditional.
+                if (result == Always && matchingDeclarations > 1 && !allTopLevelPartial)
+                    result = Problem(type, "ambiguous source declarations for " + Key(type));
+                else if (result == Always && !compiled)
+                    result = Problem(type, index.Unreadable.Count > 0
+                        ? "could not read " + index.Unreadable[0]
+                        : "could not establish a source declaration for " + Key(type));
                 else if (result == Always && !always && sb.Length > 0)
                     result = Simplify(sb.ToString(), _ => null) ?? Always;
             }
@@ -209,11 +226,11 @@ namespace Nexus.Editor
                 }
                 var scan = Scan(text);
                 index.Files[file] = scan;
-                foreach (var (ns, name, condition, line, partial) in scan.Declarations)
+                foreach (var (ns, name, condition, line, partial, nested) in scan.Declarations)
                 {
                     string key = ns + "|" + name;
                     if (!index.Declarations.TryGetValue(key, out var list)) index.Declarations[key] = list = new List<Declaration>();
-                    list.Add(new Declaration { Condition = condition, File = file, Line = line, Partial = partial });
+                    list.Add(new Declaration { Condition = condition, File = file, Line = line, Partial = partial, Nested = nested });
                 }
             }
             _indexes[assembly] = index;
@@ -233,13 +250,14 @@ namespace Nexus.Editor
             public string File;
             public int Line;
             public bool Partial;
+            public bool Nested;
         }
 
         /// <summary>What one source file declares, and its [Inject] lines that sit under an #if of their own.</summary>
         internal sealed class FileScan
         {
             /// <summary>Every type declaration with the raw condition of the directives around it, its 1-based line, and whether it is partial.</summary>
-            public readonly List<(string Namespace, string Name, string Condition, int Line, bool Partial)> Declarations = new List<(string, string, string, int, bool)>();
+            public readonly List<(string Namespace, string Name, string Condition, int Line, bool Partial, bool Nested)> Declarations = new List<(string, string, string, int, bool, bool)>();
 
             /// <summary>
             /// [Inject]/[OptionalInject] lines inside an #if branch that declares no type, so the branch is inside the
@@ -265,9 +283,8 @@ namespace Nexus.Editor
             var scan = new FileScan();
             var frames = new List<Frame>();
             var injects = new List<(int Line, (Frame Frame, int Branch)[] Branches)>();
-            // Namespace blocks nest: `namespace A { namespace B {` declares A.B, and a type after B's closing brace is in
-            // A again (#250). shortcut: braces inside /* */ comments and raw string literals are counted; an unbalanced one
-            // there gives the types after it the wrong namespace, so their #if is missed. Track comments if a game hits it.
+            // Namespace blocks nest: `namespace A { namespace B {` declares A.B, and a
+            // type after B's closing brace is in A again (#250).
             var namespaces = new List<(string Name, int Depth)>();
             string fileNamespace = "", pendingNamespace = null;
             int depth = 0;
@@ -294,7 +311,7 @@ namespace Nexus.Editor
                 foreach (var block in namespaces) parts.Add(block.Name);
                 return string.Join(".", parts);
             }
-            var lines = source.Split('\n');
+            var lines = StripNonCode(source).Split('\n');
             for (int n = 0; n < lines.Length; n++)
             {
                 string line = lines[n].Trim();
@@ -312,8 +329,7 @@ namespace Nexus.Editor
                     else if (directive == "endif" && frames.Count > 0) frames.RemoveAt(frames.Count - 1);
                     continue;
                 }
-                line = StripComment(line);
-                string code = s_literal.Replace(line, "\"\"");
+                string code = line;
                 var nsMatch = s_namespace.Match(code);
                 if (nsMatch.Success)
                 {
@@ -327,7 +343,9 @@ namespace Nexus.Editor
                 {
                     Braces(code, counted, m.Index);
                     counted = m.Index;
-                    scan.Declarations.Add((Namespace(), m.Groups[1].Value, Condition(current), n + 1, s_partial.IsMatch(code.Substring(0, m.Index))));
+                    int namespaceDepth = namespaces.Count > 0 ? namespaces[namespaces.Count - 1].Depth : 0;
+                    scan.Declarations.Add((Namespace(), m.Groups[1].Value, Condition(current), n + 1,
+                        s_partial.IsMatch(code.Substring(0, m.Index)), depth > namespaceDepth));
                     declared = true;
                 }
                 Braces(code, counted, code.Length);
@@ -341,6 +359,15 @@ namespace Nexus.Editor
                 if (own.Length > 0) scan.ConditionalInjects.Add((line, Condition(own)));
             }
             return scan;
+        }
+
+        private static string StripNonCode(string source)
+        {
+            var code = source.ToCharArray();
+            foreach (Match match in s_nonCode.Matches(source))
+                for (int i = match.Index; i < match.Index + match.Length; i++)
+                    if (code[i] != '\r' && code[i] != '\n') code[i] = ' ';
+            return new string(code);
         }
 
         private static string StripComment(string line)

@@ -49,6 +49,42 @@ namespace Nexus.Editor.Tests
 #if UNITY_EDITOR
         [Test]
 #endif
+        public void ReadQueries_EncryptedFaultAndImport_KeepViewsRecoverableWithoutMutation()
+        {
+            foreach (bool big in new[] { false, true })
+            {
+                using var files = new Files();
+                var seed = Seed(files, big);
+                string key = big ? BigKey : LongKey;
+                var exporter = files.Open();
+                string payload = exporter.ExportEncryptedSaveData(key);
+                files.Close(exporter);
+                string path = Files.PathFor(seed, key);
+                var store = files.Open();
+                var economy = files.Economy(store);
+                using (File.Open(path, FileMode.Open, FileAccess.Read, FileShare.None))
+                    Require(!economy.TryGetBalance("coin", out _) && !economy.TryGetBigBalance("coin", out _),
+                        "filesystem access failure must report unavailable without an economy exception");
+                Require(economy.TryGetBalance("coin", out var restored) && restored == 1000,
+                    "released file access must recover the same service");
+                economy.Dispose();
+                files.Close(store);
+                File.WriteAllBytes(path, new byte[] { 1, 2, 3 });
+                File.Delete(path + ".bak");
+                var corruptStore = files.Open();
+                var corrupt = files.Economy(corruptStore);
+                Require(!corrupt.TryGetBalance("coin", out _) && !corrupt.TryGetBigBalance("coin", out _),
+                    "corrupt data must also report unavailable");
+                Require(File.ReadAllBytes(path).Length == 3, "queries must preserve corrupt evidence");
+                Require(corruptStore.ImportEncryptedSaveData(key, payload), "valid import must restore access");
+                Require(corrupt.TryGetBalance("coin", out var recovered) && recovered == 1000,
+                    "the same unavailable service must retry after import");
+            }
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
         public void CanonicalBigReadFault_PreservesCanonicalAndReadableLegacy()
         {
             foreach (bool longView in new[] { false, true })

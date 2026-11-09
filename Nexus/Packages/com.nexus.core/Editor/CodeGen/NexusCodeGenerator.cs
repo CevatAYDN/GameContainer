@@ -1,9 +1,11 @@
 using System;
+using System.CodeDom;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Text;
 using System.Linq;
+using Microsoft.CSharp;
 using UnityEditor;
 using UnityEngine;
 using Nexus.Core;
@@ -13,6 +15,7 @@ namespace Nexus.Editor
     public static class NexusCodeGenerator
     {
         private const string AutoGenKey = "Nexus.AutoGenerateAOTBinder";
+        private static readonly CSharpCodeProvider s_csharp = new CSharpCodeProvider();
         
         public static bool AutoGenerateEnabled
         {
@@ -118,10 +121,7 @@ namespace Nexus.Editor
             => (optional ? "?" : "") + (string.IsNullOrEmpty(name) ? "" : "=" + name);
 
         /// <summary>
-        /// E-C1 fix: converts a Type to a compilable C# reference name. The previous
-        /// FullName.Replace("+", ".") produced INVALID C# for generic types (the raw
-        /// backtick arity marker leaked and type arguments were dropped → CS0246/CS0305
-        /// in the generated binder). Handles nested, generic and array types correctly.
+        /// Uses the C# provider for nested/generic type names, array ranks and escaped identifiers.
         /// Returns null for open generic definitions (ContainsGenericParameters) — those
         /// can never be named in generated code and are skipped by the caller.
         /// </summary>
@@ -129,45 +129,7 @@ namespace Nexus.Editor
         {
             if (type == null) return null;
             if (type.ContainsGenericParameters) return null;
-            if (type.IsArray)
-            {
-                var elem = GetCSharpTypeName(type.GetElementType());
-                return elem != null ? elem + "[]" : null;
-            }
-
-            var sb = new StringBuilder();
-            if (type.IsNested)
-            {
-                var parent = GetCSharpTypeName(type.DeclaringType);
-                if (parent == null) return null;
-                sb.Append(parent);
-                sb.Append('.');
-            }
-            else if (!string.IsNullOrEmpty(type.Namespace))
-            {
-                sb.Append(type.Namespace);
-                sb.Append('.');
-            }
-
-            var name = type.Name;
-            int tick = name.IndexOf('`');
-            if (tick > 0) name = name.Substring(0, tick);
-            sb.Append(name);
-
-            if (type.IsGenericType)
-            {
-                var args = type.GetGenericArguments();
-                sb.Append('<');
-                for (int i = 0; i < args.Length; i++)
-                {
-                    if (i > 0) sb.Append(", ");
-                    var argName = GetCSharpTypeName(args[i]);
-                    if (argName == null) return null;
-                    sb.Append(argName);
-                }
-                sb.Append('>');
-            }
-            return sb.ToString();
+            return s_csharp.GetTypeOutput(new CodeTypeReference(type));
         }
 
         // Attribute lookups as NexusDI's MetadataCache makes them (GetCustomAttribute inherits through overrides).
@@ -205,6 +167,8 @@ namespace Nexus.Editor
                     case '\n': sb.Append("\\n"); break;
                     case '\t': sb.Append("\\t"); break;
                     case '\0': sb.Append("\\0"); break;
+                    case '\u2028': sb.Append("\\u2028"); break;
+                    case '\u2029': sb.Append("\\u2029"); break;
                     default:
                         if (char.IsControl(c)) sb.Append("\\x").Append(((int)c).ToString("x4"));
                         else sb.Append(c);
@@ -288,15 +252,6 @@ namespace Nexus.Editor
         /// </summary>
         internal static bool CanEmitConstructorFactory(Type type)
             => !typeof(UnityEngine.Object).IsAssignableFrom(type);
-
-        /// <summary>E-C1: sanitizes a C# type name into a valid identifier prefix for cache fields.</summary>
-        private static string GetSafeIdentifierName(string csharpTypeName)
-        {
-            var sb = new StringBuilder(csharpTypeName.Length);
-            foreach (char c in csharpTypeName)
-                sb.Append(char.IsLetterOrDigit(c) || c == '_' ? c : '_');
-            return sb.ToString();
-        }
 
         [MenuItem("Nexus/Generate AOT Binder", false, 60)]
         public static void GenerateBinder() => GenerateBinderCore(write: true);
@@ -657,10 +612,10 @@ namespace Nexus.Editor
             // (strict throw, or log and ReInjectAll) and an unbound optional member keeps its value. Each injector carries the
             // member signature it was generated for: the runtime drops an injector whose type has other members since.
             // All-or-nothing per type: a member the binder cannot name leaves the whole type to the reflection path.
+            int nextCacheId = 0;
             foreach (var type in injectTypes)
             {
                 string fullName = GetCSharpTypeName(type);
-                string typeSafeName = GetSafeIdentifierName(fullName);
                 var set = GetMemberSet(type, memberCache);
 
                 // The framework and third-party exclusion applies to the declaring types; a member's type only has to be
@@ -681,14 +636,18 @@ namespace Nexus.Editor
                 }
 
                 int cacheStart = cacheSb.Length, initStart = initSb.Length;
-                var cacheNames = new HashSet<string>(StringComparer.Ordinal);
+                // Reuse by member identity; distinct type names can sanitize to the same identifier.
+                var cacheNames = new Dictionary<MemberInfo, string>();
                 string Target(Type declaring) => declaring == type ? "instance" : $"(({GetCSharpTypeName(declaring)})instance)";
                 string Cache(string kind, string reflectionType, MemberInfo member, string lookup)
                 {
                     string declaringName = GetCSharpTypeName(member.DeclaringType);
-                    string cacheName = $"s_{kind}_{typeSafeName}_{GetSafeIdentifierName(declaringName)}_{GetSafeIdentifierName(member.Name)}";
-                    if (cacheNames.Add(cacheName))
+                    if (!cacheNames.TryGetValue(member, out string cacheName))
+                    {
+                        cacheName = $"s_{kind}_{nextCacheId++}";
+                        cacheNames.Add(member, cacheName);
                         cacheSb.AppendLine($"        private static readonly System.Reflection.{reflectionType} {cacheName} = typeof({declaringName}).{lookup}({Literal(member.Name)}, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly);");
+                    }
                     return cacheName;
                 }
                 // Public members are set directly; a private or protected member, a readonly field and a non-public or
@@ -696,17 +655,17 @@ namespace Nexus.Editor
                 string Get(MemberInfo member)
                 {
                     if (member is FieldInfo f)
-                        return f.IsPublic ? $"{Target(f.DeclaringType)}.{f.Name}" : $"{Cache("f", "FieldInfo", f, "GetField")}.GetValue(instance)";
+                        return f.IsPublic ? $"{Target(f.DeclaringType)}.{s_csharp.CreateEscapedIdentifier(f.Name)}" : $"{Cache("f", "FieldInfo", f, "GetField")}.GetValue(instance)";
                     var p = (PropertyInfo)member;
-                    return p.GetMethod != null && p.GetMethod.IsPublic ? $"{Target(p.DeclaringType)}.{p.Name}" : $"{Cache("p", "PropertyInfo", p, "GetProperty")}.GetValue(instance)";
+                    return p.GetMethod != null && p.GetMethod.IsPublic ? $"{Target(p.DeclaringType)}.{s_csharp.CreateEscapedIdentifier(p.Name)}" : $"{Cache("p", "PropertyInfo", p, "GetProperty")}.GetValue(instance)";
                 }
                 string Set(MemberInfo member, string value)
                 {
                     if (member is FieldInfo f)
-                        return f.IsPublic && !f.IsInitOnly ? $"{Target(f.DeclaringType)}.{f.Name} = {value};" : $"{Cache("f", "FieldInfo", f, "GetField")}.SetValue(instance, {value});";
+                        return f.IsPublic && !f.IsInitOnly ? $"{Target(f.DeclaringType)}.{s_csharp.CreateEscapedIdentifier(f.Name)} = {value};" : $"{Cache("f", "FieldInfo", f, "GetField")}.SetValue(instance, {value});";
                     var p = (PropertyInfo)member;
                     var setter = p.GetSetMethod(true);
-                    return setter.IsPublic && !IsInitOnly(setter) ? $"{Target(p.DeclaringType)}.{p.Name} = {value};" : $"{Cache("p", "PropertyInfo", p, "GetProperty")}.SetValue(instance, {value});";
+                    return setter.IsPublic && !IsInitOnly(setter) ? $"{Target(p.DeclaringType)}.{s_csharp.CreateEscapedIdentifier(p.Name)} = {value};" : $"{Cache("p", "PropertyInfo", p, "GetProperty")}.SetValue(instance, {value});";
                 }
                 void EmitMember(MemberInfo member, Type memberType)
                 {
@@ -738,7 +697,7 @@ namespace Nexus.Editor
                     var m = set.Methods[methodIndex];
                     var prms = m.GetParameters();
                     string declaringName = GetCSharpTypeName(m.DeclaringType);
-                    string cacheName = $"s_m_{typeSafeName}_{GetSafeIdentifierName(declaringName)}_{GetSafeIdentifierName(m.Name)}_{methodIndex}";
+                    string cacheName = $"s_m_{nextCacheId++}";
                     string parameterTypes = string.Join(", ", prms.Select(x => $"typeof({GetCSharpTypeName(x.ParameterType)})"));
                     cacheSb.AppendLine($"        private static readonly System.Reflection.MethodInfo {cacheName} = typeof({declaringName}).GetMethod({Literal(m.Name)}, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly, null, new System.Type[] {{ {parameterTypes} }}, null);");
                     initSb.AppendLine("                {");
@@ -851,15 +810,17 @@ namespace Nexus.Editor
             string binderFolder = settings.BinderOutputPath;
             string linkXmlFolder = settings.LinkXmlOutputPath;
 
-            // Delete old file if the path has changed
+            // Validate ownership now, but retire the old script only after both new
+            // outputs are written. A refused destination must preserve its predecessor.
             string defaultFolder = "Assets/Scripts/Nexus";
             string defaultFile = Path.Combine(defaultFolder, "NexusGeneratedBinder.g.cs");
-            if (write && binderFolder != defaultFolder && File.Exists(defaultFile))
-            {
-                File.Delete(defaultFile);
-                if (File.Exists(defaultFile + ".meta"))
-                    File.Delete(defaultFile + ".meta");
-            }
+            string destBinderFile = Path.Combine(binderFolder, "NexusGeneratedBinder.g.cs");
+            var pathComparison = Path.DirectorySeparatorChar == '\\' ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            bool retireDefault = !string.Equals(Path.GetFullPath(destBinderFile), Path.GetFullPath(defaultFile), pathComparison)
+                && File.Exists(defaultFile);
+            if (write && retireDefault && !File.ReadAllText(defaultFile).Contains("<auto-generated>"))
+                throw new InvalidOperationException($"[Nexus CodeGen] Overwrite blocked: the old binder '{defaultFile}' " +
+                    "does not contain the <auto-generated> tag. Move the owned file explicitly before changing the output path.");
 
             // Create target folders
             if (write && !Directory.Exists(binderFolder))
@@ -882,7 +843,6 @@ namespace Nexus.Editor
             }
 
             // Write binder file with overwrite guard
-            string destBinderFile = Path.Combine(binderFolder, "NexusGeneratedBinder.g.cs");
             string newBinderContent = sb.ToString();
 
             if (string.IsNullOrEmpty(newBinderContent))
@@ -975,7 +935,7 @@ namespace Nexus.Editor
 
             string newLinkXmlContent = xmlSb.ToString();
             if (!write)
-                return binderCurrent && File.Exists(destLinkXmlFile) && File.ReadAllText(destLinkXmlFile) == newLinkXmlContent;
+                return !retireDefault && binderCurrent && File.Exists(destLinkXmlFile) && File.ReadAllText(destLinkXmlFile) == newLinkXmlContent;
 
             // Overwrite guard: a hand-curated link.xml is never silently replaced.
             // Failing loudly is important here.  Silently retaining stale preservation
@@ -1003,6 +963,13 @@ namespace Nexus.Editor
                 changed = true;
             }
             EnsureGitIgnore(linkXmlFolder, "link.xml");
+
+            if (retireDefault)
+            {
+                File.Delete(defaultFile);
+                if (File.Exists(defaultFile + ".meta")) File.Delete(defaultFile + ".meta");
+                changed = true;
+            }
 
             if (changed)
             {

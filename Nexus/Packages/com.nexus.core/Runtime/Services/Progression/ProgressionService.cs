@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -70,20 +71,48 @@ namespace Nexus.Core.Services
         // this without reintroducing the cross-property invariant.
         private readonly object _levelLock = new();
         private int _updateDepth;
+        private bool _loadFailed;
+        private bool _disposed;
+        private bool _disposing;
 
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
-            var store = Store;
-            if (store != null)
+            lock (_levelLock)
             {
-                _currentLevel.SetByService(Math.Max(1, store.GetInt(KeyCurrentLevel, 1)));
-                _maxUnlockedLevel.SetByService(Math.Max(_currentLevel.Value, store.GetInt(KeyMaxLevel, 1)));
+                if (_disposed || _disposing) throw new ObjectDisposedException(nameof(ProgressionService));
+                _loadFailed = true;
+                var store = Store;
+                if (store != null)
+                {
+                    int current = Math.Max(1, ReadLevel(store, KeyCurrentLevel));
+                    int maximum = Math.Max(current, ReadLevel(store, KeyMaxLevel));
+                    _maxUnlockedLevel.SetByService(maximum);
+                    _currentLevel.SetByService(current);
+                }
+                _loadFailed = false;
+                _currentLevel.OnChanged(OnLevelChanged);
+                _maxUnlockedLevel.OnChanged(OnLevelChanged);
             }
-
-            _currentLevel.OnChanged(OnLevelChanged);
-            _maxUnlockedLevel.OnChanged(OnLevelChanged);
-
             return default;
+        }
+
+        private static int ReadLevel(IPlayerPrefsService store, string key)
+        {
+            var status = store.TryGetString(key, out _);
+            if (status == StorageReadStatus.Unreadable)
+                throw new IOException($"[Progression] Saved level '{key}' is unreadable. Restore the data and retry initialization.");
+            if (status == StorageReadStatus.Absent && !store.HasKey(key)) return 1;
+            int value = store.GetInt(key, int.MinValue);
+            if (value == int.MinValue && store.GetInt(key, int.MaxValue) != int.MinValue)
+                throw new IOException($"[Progression] Saved level '{key}' cannot be decoded. Restore the data and retry initialization.");
+            return value;
+        }
+
+        private void RequireLoadedLocked()
+        {
+            if (_disposed || _disposing) throw new ObjectDisposedException(nameof(ProgressionService));
+            if (_loadFailed)
+                throw new IOException("[Progression] Saved levels are unavailable. Restore the data and retry initialization.");
         }
 
         // Named handler so Dispose can remove EXACTLY this subscription — anonymous
@@ -93,7 +122,7 @@ namespace Nexus.Core.Services
         {
             lock (_levelLock)
             {
-                if (_updateDepth == 0) SchedulePersist();
+                if (!_disposed && !_disposing && !_loadFailed && _updateDepth == 0) SchedulePersist();
             }
         }
 
@@ -106,27 +135,38 @@ namespace Nexus.Core.Services
 
         private void PersistNow()
         {
-            var store = Store;
-            if (store == null) return;
-            store.SetInt(KeyCurrentLevel, _currentLevel.Value);
-            store.SetInt(KeyMaxLevel, _maxUnlockedLevel.Value);
-            store.Save();
-        }
-
-        public void CompleteCurrentLevel()
-        {
             lock (_levelLock)
             {
-                if (_currentLevel.Value == int.MaxValue) return;
-                SetLevelLocked(_currentLevel.Value + 1);
+                if (_disposed || _disposing || _loadFailed) return;
+                var store = Store;
+                if (store == null) return;
+                store.SetInt(KeyCurrentLevel, _currentLevel.Value);
+                store.SetInt(KeyMaxLevel, _maxUnlockedLevel.Value);
+                store.Save();
             }
         }
 
-        public void SetLevel(int levelIndex)
+        public void CompleteCurrentLevel() => UpdateLevel(null);
+
+        public void SetLevel(int levelIndex) => UpdateLevel(Math.Max(1, levelIndex));
+
+        private void UpdateLevel(int? requestedLevel)
         {
-            lock (_levelLock)
+            bool finishDispose = false;
+            try
             {
-                SetLevelLocked(Math.Max(1, levelIndex));
+                lock (_levelLock)
+                {
+                    RequireLoadedLocked();
+                    if (!requestedLevel.HasValue && _currentLevel.Value == int.MaxValue) return;
+                    try { SetLevelLocked(requestedLevel ?? _currentLevel.Value + 1); }
+                    finally { finishDispose = _disposing && _updateDepth == 0; }
+                }
+            }
+            finally
+            {
+                // Only the outermost accepted update can finish observer-requested teardown.
+                if (finishDispose) FinishDispose(persist: true);
             }
         }
 
@@ -143,7 +183,7 @@ namespace Nexus.Core.Services
             }
             finally
             {
-                if (--_updateDepth == 0) SchedulePersist();
+                if (--_updateDepth == 0 && !_disposing) SchedulePersist();
             }
         }
 
@@ -175,16 +215,51 @@ namespace Nexus.Core.Services
 
         public override void Dispose()
         {
-            // Flush any pending throttled save BEFORE clearing observers so the final
-            // level values survive teardown even if SaveThrottler disposes after this
-            // service. Mirrors EconomyService.Dispose() for the same reason.
-            if (SaveThrottler != null)
+            lock (_levelLock)
             {
-                try { SaveThrottler.ForceSave(SaveOwner, PersistNow); }
-                catch (Exception ex) { NexusLog.WarnAlways($"[Progression] Final persist failed on dispose: {ex.Message}"); }
+                if (_disposed || _disposing) return;
+                _disposing = true;
+                // An observer can request teardown between the two accepted property writes.
+                // The outermost update owns its final flush, including without a throttler.
+                if (_updateDepth != 0) return;
             }
-            _currentLevel.RemoveOnChanged(OnLevelChanged);
-            _maxUnlockedLevel.RemoveOnChanged(OnLevelChanged);
+            FinishDispose(persist: SaveThrottler != null);
+        }
+
+        private void FinishDispose(bool persist)
+        {
+            try
+            {
+                IPlayerPrefsService store = null;
+                int current = 0, maximum = 0;
+                lock (_levelLock)
+                {
+                    if (_disposed || !_disposing || _updateDepth != 0) return;
+                    try
+                    {
+                        if (persist && !_loadFailed)
+                        {
+                            store = Store;
+                            current = _currentLevel.Value;
+                            maximum = _maxUnlockedLevel.Value;
+                        }
+                    }
+                    finally
+                    {
+                        _disposed = true;
+                        _disposing = false;
+                        _currentLevel.RemoveOnChanged(OnLevelChanged);
+                        _maxUnlockedLevel.RemoveOnChanged(OnLevelChanged);
+                    }
+                }
+                // The owner is closed and the tuple fixed. External I/O must not hold
+                // _levelLock: a store's in-flight callback may need it to observe shutdown.
+                if (store == null) return;
+                store.SetInt(KeyCurrentLevel, current);
+                store.SetInt(KeyMaxLevel, maximum);
+                store.Save();
+            }
+            catch (Exception ex) { NexusLog.WarnAlways($"[Progression] Final persist failed on dispose: {ex.Message}"); }
         }
     }
 }

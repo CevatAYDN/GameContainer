@@ -121,6 +121,7 @@ namespace Nexus.Core
 
         private readonly ContextLifecycleOrchestrator _orchestrator = new();
         private IContextLifecycle[] _configuredLifecycles = Array.Empty<IContextLifecycle>();
+        private List<IContextLifecycle> _ownedLifecycles;
         private List<IPostContextLifecycle> _postContextLifecycles = new();
         private int _postContextState;
 
@@ -407,6 +408,15 @@ namespace Nexus.Core
                 {
                     _configuredLifecycles = lifecyclesArray;
                     _postContextLifecycles = postList;
+                    // A failed attempt can be retried, but its lifecycle cleanup still belongs to this context.
+                    if (lifecyclesArray.Length > 0) _ownedLifecycles ??= new List<IContextLifecycle>();
+                    foreach (var lifecycle in lifecyclesArray)
+                    {
+                        bool owned = false;
+                        for (int i = 0; i < _ownedLifecycles.Count; i++)
+                            if (ReferenceEquals(_ownedLifecycles[i], lifecycle)) { owned = true; break; }
+                        if (!owned) _ownedLifecycles.Add(lifecycle);
+                    }
                 }
 
                 // Now invoke lifecycle OnConfigure outside the lock — handlers should not
@@ -1024,11 +1034,17 @@ namespace Nexus.Core
                 }
             }
 
-            if (_configuredLifecycles.Length > 0)
+            IContextLifecycle[] lifecycles;
+            lock (_configureLock)
             {
-                for (int i = _configuredLifecycles.Length - 1; i >= 0; i--)
+                lifecycles = _ownedLifecycles?.ToArray() ?? Array.Empty<IContextLifecycle>();
+                _ownedLifecycles = null;
+            }
+            if (lifecycles.Length > 0)
+            {
+                for (int i = lifecycles.Length - 1; i >= 0; i--)
                 {
-                    try { _configuredLifecycles[i].OnDispose(); }
+                    try { lifecycles[i].OnDispose(); }
                     catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
                 }
             }
