@@ -1,3 +1,5 @@
+// #412's controls are removed at compile time from release assemblies.
+#pragma warning disable UAC0009
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -115,6 +117,16 @@ namespace Nexus.Ads.Unity
                 if (receipt.HasValue) GUILayout.Label("pending reward: " + receipt.Value.Id + " (" + receipt.Value.Placement + ")");
                 if (GUILayout.Button("Open the mediation's test suite")) controller.OpenTestSuite();
             }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (_bootstrap.Provider is IRewardFaultDebug debug)
+            {
+                GUILayout.Label("Reward faults (next show; received SDK rewards only)");
+                if (GUILayout.Button("Delay reward 3s after close")) FaultCommand(debug, "delay:3");
+                if (GUILayout.Button("Deliver A's reward when B opens")) FaultCommand(debug, "next");
+                if (GUILayout.Button("Replay last received reward")) FaultCommand(debug, "replay");
+                if (GUILayout.Button("Reset and deliver held reward")) FaultCommand(debug, "reset");
+            }
+#endif
             GUILayout.Label("violations:");
             foreach (var v in _violations) GUILayout.Label("  " + v);
             GUILayout.Label("events:");
@@ -124,5 +136,12 @@ namespace Nexus.Ads.Unity
             GUILayout.EndArea();
             GUI.matrix = Matrix4x4.identity;
         }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        private static void FaultCommand(IRewardFaultDebug debug, string command)
+        {
+            try { RewardFaultCommands.Execute(debug, command); }
+            catch (System.Exception error) { Debug.LogWarning("[Nexus Ads Fault] " + error.Message); }
+        }
+#endif
     }
 }

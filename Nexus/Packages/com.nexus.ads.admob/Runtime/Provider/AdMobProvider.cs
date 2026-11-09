@@ -1,3 +1,5 @@
+// #412 requires compile-time exclusion from release players, not only a runtime debug check.
+#pragma warning disable UAC0009
 using System;
 using System.Collections.Generic;
 using GoogleMobileAds.Api;
@@ -24,7 +26,16 @@ namespace Nexus.Ads.AdMob
     /// keeps that asset equal to the settings tab.
     /// </summary>
     public sealed class AdMobProvider : IAdProvider, IConsentFlow, IRewardedShowProvider, IDisposable
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        , IRewardFaultDebug
+#endif
     {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        private RewardFaultInjection _rewardFaults;
+        public RewardFaultInjection RewardFaults => _rewardFaults ??= new RewardFaultInjection(ProviderName);
+        public AdMobProvider(ProviderConfig config, IAdScheduler scheduler) : this(config)
+            => _rewardFaults = new RewardFaultInjection(ProviderName, scheduler);
+#endif
         public const string ProviderName = "admob";
 
         /// <summary>
@@ -74,6 +85,9 @@ namespace Nexus.Ads.AdMob
             public readonly Action<AdResult> OnResult;
             public readonly Action OnRewardEarned;
             public bool Rewarded, Done;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            public RewardFaultInjection.Show Fault;
+#endif
 
             public ShowState(AdState ad, string placement, Action<AdResult> result, Action earned)
             {
@@ -275,9 +289,13 @@ namespace Nexus.Ads.AdMob
             var ad = format == AdFormat.Rewarded ? _rewardedState : _interstitialState;
             var show = _show = new ShowState(ad, placement, onResult, onRewardEarned);
             ad.Show = show;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (format == AdFormat.Rewarded)
+                show.Fault = RewardFaults.BeginShow(placement, () => OnRewarded(show), () => ad.Released);
+#endif
             try
             {
-                if (format == AdFormat.Rewarded) _rewarded.Show(_ => OnMain(() => OnRewarded(show)));
+                if (format == AdFormat.Rewarded) _rewarded.Show(_ => OnMain(() => ReceiveReward(show)));
                 else _interstitial.Show();
             }
             catch { Retire(ad); throw; }
@@ -286,7 +304,22 @@ namespace Nexus.Ads.AdMob
         private void OnOpened(AdState ad)
         {
             if (!_disposed && !ad.Released && ad.Show != null && !ad.Show.Done && ReferenceEquals(_show, ad.Show))
+            {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (ad.Format == AdFormat.Rewarded) _rewardFaults?.Opened(ad.Show.Fault);
+#endif
                 Opened?.Invoke(ad.Format);
+            }
+        }
+
+        private void ReceiveReward(ShowState show)
+        {
+            if (_disposed) return;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            RewardFaults.Receive(show.Fault);
+#else
+            OnRewarded(show);
+#endif
         }
 
         private void OnRewarded(ShowState show)
@@ -301,6 +334,9 @@ namespace Nexus.Ads.AdMob
         {
             if (_disposed || show == null || show.Done) return;
             show.Done = true;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            _rewardFaults?.Closed(show.Fault);
+#endif
             if (ReferenceEquals(_show, show)) _show = null;
             if (reason != null) Debug.LogWarning("[Nexus Ads] AdMob " + show.Ad.Format + " failed to show: " + reason);
             try { Release(show.Ad); }
@@ -347,6 +383,9 @@ namespace Nexus.Ads.AdMob
         {
             if (_disposed) return;
             _disposed = true;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            _rewardFaults?.Dispose();
+#endif
             _sdkStarted = false;
             if (_show != null) _show.Done = true;
             _show = null;
@@ -396,7 +435,11 @@ namespace Nexus.Ads.AdMob
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Register()
         {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            AdsBootstrap.RegisterProvider(AdProviderKind.AdMob, (scheduler, config) => new AdMobProvider(config, scheduler));
+#else
             AdsBootstrap.RegisterProvider(AdProviderKind.AdMob, (scheduler, config) => new AdMobProvider(config));
+#endif
             AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GoogleUmp, config => new UmpConsentFlow(config.UnderAgeOfConsent, debugAllowed: UmpConsentFlow.DebugAllowedFor(config)));
         }
     }

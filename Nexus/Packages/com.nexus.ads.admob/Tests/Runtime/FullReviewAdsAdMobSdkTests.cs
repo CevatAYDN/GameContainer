@@ -17,6 +17,46 @@ namespace Nexus.Editor.Tests
 {
     public sealed class FullReviewAdsAdMobSdkTests
     {
+        [TestCase(false)]
+        [TestCase(true)]
+        public void FaultHook_ReceivedRewardSurvivesDestroyAndKeepsItsShow(bool duringNext)
+        {
+            using var sdk = new SdkScope();
+            using var rig = new Rig(sdk);
+            if (duringNext) rig.Provider.RewardFaults.DebugDeliverRewardDuringNextShow();
+            else rig.Provider.RewardFaults.DebugDelayReward(TimeSpan.FromSeconds(3));
+            AdResult? first = null, second = null;
+            rig.Controller.Show("first", result => first = result);
+            var original = sdk.Factory.Rewarded[0];
+            original.RewardQueued();
+            original.CloseQueued();
+            Assert.That(first, Is.EqualTo(AdResult.Closed));
+            Assert.That(original.DestroyCalls, Is.EqualTo(1));
+            Assert.That(rig.Controller.PendingReward, Is.Null);
+            rig.Controller.Show("second", result => second = result);
+            if (!duringNext) Assert.That(rig.Scheduler.RunNext(), Is.True);
+            Assert.That(rig.Controller.PendingReward?.Placement, Is.EqualTo("first"));
+            Assert.That(second, Is.Null);
+            rig.Controller.AcknowledgeReward(rig.Controller.PendingReward.Value.Id);
+            Assert.That(rig.Provider.RewardFaults.DebugReplayLastReward(), Is.True);
+            Assert.That(rig.Controller.PendingReward, Is.Null);
+        }
+
+        [Test]
+        public void FaultHook_DisposeCancelsHeldSdkReward()
+        {
+            using var sdk = new SdkScope();
+            using var rig = new Rig(sdk);
+            rig.Provider.RewardFaults.DebugDelayReward(TimeSpan.FromSeconds(3));
+            rig.Controller.Show("first", _ => { });
+            sdk.Factory.Rewarded[0].RewardQueued();
+            sdk.Factory.Rewarded[0].CloseQueued();
+            ((IDisposable)rig.Provider).Dispose();
+            rig.Scheduler.RunNext();
+            Assert.That(rig.Controller.PendingReward, Is.Null);
+            Assert.That(rig.Provider.RewardFaults.DebugReplayLastReward(), Is.False);
+        }
+
         [Test]
         public void A03_RewardQueuedAfterCloseKeepsTheOriginalShowReceipt()
         {
@@ -151,7 +191,7 @@ namespace Nexus.Editor.Tests
                 var clock = new Clock();
                 Scheduler = new Scheduler(clock);
                 var config = Config();
-                Provider = new AdMobProvider(config.Provider);
+                Provider = new AdMobProvider(config.Provider, Scheduler);
                 Controller = new AdController(config, Provider, clock, Visibility, new MainThread(),
                     Scheduler, new Store(), new Telemetry());
                 Controller.Start();

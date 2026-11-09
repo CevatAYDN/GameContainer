@@ -100,6 +100,13 @@ Duplicate earning notifications do not recreate an acknowledged receipt. No coll
 SDK ads is retained. These controlled callback guarantees do not establish that the native SDK
 delivers a callback after its handle is destroyed; that device/provider boundary remains open.
 
+Editor/development builds expose `provider.RewardFaults` (#412): delay a received
+reward after close, replay it, or deliver A's reward when B opens. The Ads debug
+panel and Android `nexus.ads.rewardFault` intent extra use these same controls.
+See [provider reward fault testing](../../../docs/ADS_FAULT_TESTING.md) for commands,
+evidence boundaries and consumer scenarios. All hook types and entry points are
+compiled out of release players.
+
 The controller borrows its provider/consent ports. Bootstrap disposes a separate consent flow
 created by its factory, while a directly constructed flow remains its caller's responsibility.
 

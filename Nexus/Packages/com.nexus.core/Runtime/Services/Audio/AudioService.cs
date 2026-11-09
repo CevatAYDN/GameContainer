@@ -103,9 +103,13 @@ namespace Nexus.Core.Services
         private bool _ownsAudioRoot; // created here because no provider supplied one
         private AudioSource _bgmSourceActive;
         private AudioSource _bgmSourceFade;
-        private readonly List<AudioSource> _sfxPool = new();
-        // Keep per-play gain separate so a channel can go through zero and restore the same effect (#366).
-        private readonly Dictionary<AudioSource, float> _sfxBaseVolumes = new();
+        // Gain belongs to the voice: no second collection growing on first playback (#411).
+        private readonly List<SfxVoice> _sfxPool = new();
+        private struct SfxVoice
+        {
+            public AudioSource Source;
+            public float Gain;
+        }
 
         // Coroutine host for BGM fades: the audio root is a plain GameObject, so a tiny
         // runner component is added on demand (same pattern as ObjectPoolService's
@@ -306,15 +310,17 @@ namespace Nexus.Core.Services
         private void UpdateSfxVolumes()
         {
             float effective = EffectiveSfxVolume;
-            foreach (var voice in _sfxBaseVolumes)
-                if (voice.Key != null) voice.Key.volume = voice.Value * effective;
+            foreach (var voice in _sfxPool)
+                if (voice.Source != null) voice.Source.volume = voice.Gain * effective;
         }
 
-        private void SetSfxVolume(AudioSource source, float volume)
+        private AudioSource SetSfxVolume(int index, float volume)
         {
-            float perPlay = Mathf.Clamp01(volume);
-            _sfxBaseVolumes[source] = perPlay;
-            source.volume = perPlay * EffectiveSfxVolume;
+            var voice = _sfxPool[index];
+            voice.Gain = Mathf.Clamp01(volume);
+            _sfxPool[index] = voice;
+            voice.Source.volume = voice.Gain * EffectiveSfxVolume;
+            return voice.Source;
         }
 
         public void PlayBgm(AudioClip clip, bool loop = true, float fadeDuration = 0f)
@@ -464,10 +470,10 @@ namespace Nexus.Core.Services
             // FeedbackService.PlayCustom swap so inverted pitch ranges never crash.
             if (pitchMin > pitchMax) (pitchMin, pitchMax) = (pitchMax, pitchMin);
 
-            var source = TakeSfxSource(clip);
-            if (source == null) return;
+            int index = TakeSfxSource(clip);
+            if (index < 0) return;
+            var source = SetSfxVolume(index, volume);
             source.spatialBlend = 0f; // 2D sound
-            SetSfxVolume(source, volume);
             source.pitch = UnityEngine.Random.Range(pitchMin, pitchMax);
             source.PlayOneShot(clip);
         }
@@ -476,11 +482,11 @@ namespace Nexus.Core.Services
         {
             if (clip == null || SfxMuted) return;
 
-            var source = TakeSfxSource(clip);
-            if (source == null) return;
+            int index = TakeSfxSource(clip);
+            if (index < 0) return;
+            var source = SetSfxVolume(index, volume);
             source.transform.position = position;
             source.spatialBlend = 1f; // 3D spatial sound
-            SetSfxVolume(source, volume);
             source.pitch = 1f;
             source.PlayOneShot(clip);
         }
@@ -491,22 +497,22 @@ namespace Nexus.Core.Services
         // cursor spreads the scan and finds an idle source in ~O(1) amortized.
         private int _sfxScanCursor;
 
-        // Null when the clip is inside its minimum interval; only an effect that gets a source restarts the interval (#161).
-        private AudioSource TakeSfxSource(AudioClip clip)
+        // -1 when throttled; only an effect that gets a source restarts the interval (#161).
+        private int TakeSfxSource(AudioClip clip)
         {
             SfxThrottle throttle = null;
             float now = 0f;
             if (_sfxThrottles != null && _sfxThrottles.Count > 0 && _sfxThrottles.TryGetValue(clip, out throttle))
             {
                 now = Time.realtimeSinceStartup;
-                if (now - throttle.LastPlayed < throttle.Interval) return null;
+                if (now - throttle.LastPlayed < throttle.Interval) return -1;
             }
-            var source = GetAvailableSfxSource();
-            if (source != null && throttle != null) throttle.LastPlayed = now;
-            return source;
+            int index = GetAvailableSfxSource();
+            if (index >= 0 && throttle != null) throttle.LastPlayed = now;
+            return index;
         }
 
-        private AudioSource GetAvailableSfxSource()
+        private int GetAvailableSfxSource()
         {
             // Sources above a lowered limit are not used again (#161).
             int count = Math.Min(_sfxPool.Count, _maxSfxVoices);
@@ -516,10 +522,10 @@ namespace Nexus.Core.Services
                 for (int i = 0; i < count; i++)
                 {
                     int idx = (start + i) % count;
-                    if (!_sfxPool[idx].isPlaying)
+                    if (!_sfxPool[idx].Source.isPlaying)
                     {
                         _sfxScanCursor = idx + 1;
-                        return _sfxPool[idx];
+                        return idx;
                     }
                 }
             }
@@ -529,10 +535,10 @@ namespace Nexus.Core.Services
                 // Pool exhausted — steal the channel at the cursor (round-robin), so
                 // steals cycle fairly instead of starving index 0.
                 int stealIdx = _sfxScanCursor % count;
-                var stolen = _sfxPool[stealIdx];
+                var stolen = _sfxPool[stealIdx].Source;
                 stolen.Stop();
                 _sfxScanCursor = stealIdx + 1;
-                return stolen;
+                return stealIdx;
             }
 
             if (_audioRoot == null)
@@ -545,15 +551,15 @@ namespace Nexus.Core.Services
                     NexusLog.WarnAlways("[AudioService] An effect was played before InitializeAsync or after Dispose: no effect plays " +
                         "until the service is started (this is logged once).");
                 }
-                return null;
+                return -1;
             }
 
             var newSourceGo = new GameObject($"SFXSource_{_sfxPool.Count}");
             newSourceGo.transform.SetParent(_audioRoot.transform, false);
             var source = newSourceGo.AddComponent<AudioSource>();
             source.playOnAwake = false;
-            _sfxPool.Add(source);
-            return source;
+            _sfxPool.Add(new SfxVoice { Source = source });
+            return _sfxPool.Count - 1;
         }
 
         public override void Dispose()
@@ -583,14 +589,13 @@ namespace Nexus.Core.Services
             // Destroy pooled AudioSource GameObjects to avoid leaking editor/play-mode objects
             for (int i = 0; i < _sfxPool.Count; i++)
             {
-                var src = _sfxPool[i];
+                var src = _sfxPool[i].Source;
                 if (src != null)
                 {
                     SafeDestroyUtility.SafeDestroy(src.gameObject);
                 }
             }
             _sfxPool.Clear();
-            _sfxBaseVolumes.Clear();
         }
 
         private class AudioFadeRunner : MonoBehaviour { }

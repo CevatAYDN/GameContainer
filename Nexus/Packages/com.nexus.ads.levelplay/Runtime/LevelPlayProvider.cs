@@ -1,4 +1,6 @@
 #if NEXUS_LEVELPLAY
+// #412 requires compile-time exclusion from release players, not only a runtime debug check.
+#pragma warning disable UAC0009
 using System;
 using System.Collections.Generic;
 using Nexus.Ads.Unity;
@@ -28,7 +30,14 @@ namespace Nexus.Ads.LevelPlay
     /// the SDK answers Init from its cached response and every load of the session ends in 509 (issue #125).
     /// </summary>
     public sealed class LevelPlayProvider : IAdProvider, IConsentFlow, IRewardedShowProvider, IDisposable
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        , IRewardFaultDebug
+#endif
     {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        private RewardFaultInjection _rewardFaults;
+        public RewardFaultInjection RewardFaults => _rewardFaults ??= new RewardFaultInjection(ProviderName, _scheduler);
+#endif
         public const string ProviderName = "levelplay";
         public const double RewardGraceSeconds = 1.5;
         public const double NetworkPollSeconds = 2;
@@ -76,6 +85,9 @@ namespace Nexus.Ads.LevelPlay
             public readonly Action OnRewardEarned;
             public bool Rewarded, Closed, Done;
             public IDisposable Grace;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            public RewardFaultInjection.Show Fault;
+#endif
 
             public ShowState(AdState ad, string placement, Action<AdResult> result, Action earned)
             {
@@ -172,7 +184,7 @@ namespace Nexus.Ads.LevelPlay
             ad.OnAdLoadFailed += error => OnMain(() => { if (!state.Released) LoadFailed?.Invoke(state.Format, Describe(error)); });
             ad.OnAdDisplayed += _ => OnMain(() => OnOpened(state));
             ad.OnAdDisplayFailed += (_, error) => OnMain(() => ShowFailed(state, error));
-            ad.OnAdRewarded += (_, __) => OnMain(() => OnRewarded(state.Show));
+            ad.OnAdRewarded += (_, __) => OnMain(() => ReceiveReward(state.Show));
             ad.OnAdClosed += _ => OnMain(() => OnClosed(state.Show));
             ad.OnAdImpressionDataReady += data => OnMain(() => OnImpression(state.Format, data, state.Show?.Placement));
         }
@@ -259,6 +271,10 @@ namespace Nexus.Ads.LevelPlay
             var ad = format == AdFormat.Rewarded ? _rewardedState : _interstitialState;
             var show = _show = new ShowState(ad, placement, onResult, onRewardEarned);
             ad.Show = show;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (format == AdFormat.Rewarded)
+                show.Fault = RewardFaults.BeginShow(placement, () => OnRewarded(show), () => ad.Released);
+#endif
             try { if (format == AdFormat.Rewarded) _rewarded.ShowAd(placement); else _interstitial.ShowAd(placement); }
             catch { Retire(ad); throw; }
         }
@@ -266,7 +282,21 @@ namespace Nexus.Ads.LevelPlay
         private void OnOpened(AdState ad)
         {
             if (!ad.Released && ad.Show != null && !ad.Show.Done && ReferenceEquals(_show, ad.Show))
+            {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (ad.Format == AdFormat.Rewarded) _rewardFaults?.Opened(ad.Show.Fault);
+#endif
                 Opened?.Invoke(ad.Format);
+            }
+        }
+
+        private void ReceiveReward(ShowState show)
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (show != null) RewardFaults.Receive(show.Fault);
+#else
+            OnRewarded(show);
+#endif
         }
 
         private void OnRewarded(ShowState show)
@@ -281,6 +311,9 @@ namespace Nexus.Ads.LevelPlay
         {
             if (show == null || show.Done || show.Closed) return;
             show.Closed = true;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            _rewardFaults?.Closed(show.Fault);
+#endif
             if (show.Ad.Format != AdFormat.Rewarded) { Finish(show, AdResult.Closed); return; }
             if (show.Rewarded) { Finish(show, AdResult.Rewarded); return; }
             show.Grace = _scheduler.Schedule(RewardGraceSeconds, () => Finish(show, show.Rewarded ? AdResult.Rewarded : AdResult.Closed));
@@ -396,6 +429,9 @@ namespace Nexus.Ads.LevelPlay
         {
             if (_disposed) return;
             _disposed = true;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            _rewardFaults?.Dispose();
+#endif
             _initialized = false;
             var wait = _networkWait;
             _networkWait = null;

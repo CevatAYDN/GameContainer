@@ -109,6 +109,36 @@ namespace Nexus.Tests.Runtime
             => ExistingEffectIsSilenced(audio => audio.IsSfxMuted = true, audio => audio.IsSfxMuted = false,
                 "spatial effects mute", spatial: true);
 
+        [TestCase(false)]
+        [TestCase(true)]
+        public void FirstPlayOnAnAllocatedVoice_DoesNotAllocateGainBookkeeping(bool spatial)
+        {
+            var clip = CreateTrack("FirstVoiceAllocation");
+            var control = CreateAudioService();
+            if (spatial) control.PlaySfxAtPosition(clip, Vector3.zero);
+            else control.PlaySfx(clip);
+
+            var audio = CreateAudioService();
+            // Separate native voice creation (which allocates) from first playback, the #411 regression.
+            typeof(AudioService).GetMethod("GetAvailableSfxSource",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(audio, null);
+            var voice = Array.FindLast(_provider.Root.GetComponentsInChildren<AudioSource>(),
+                source => source.gameObject.name == "SFXSource_0");
+            Assert.That(voice, Is.Not.Null);
+            long allocated;
+            using (var probe = new Nexus.Core.GcAllocationProbe())
+            {
+                if (spatial) audio.PlaySfxAtPosition(clip, Vector3.zero, 0.75f);
+                else audio.PlaySfx(clip, 0.75f);
+                allocated = probe.Stop();
+            }
+
+            Assert.That(allocated, Is.Zero, "First playback on an allocated voice must not grow a gain dictionary (#411).");
+            audio.IsSfxMuted = true;
+            audio.IsSfxMuted = false;
+            Assert.That(voice.volume, Is.EqualTo(0.75f).Within(0.0001f), "Keep the live-gain fix from #366.");
+        }
+
         private IEnumerator ExistingEffectIsSilenced(Action<IAudioService> change, Action<IAudioService> restore,
             string setting, bool spatial = false)
         {

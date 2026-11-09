@@ -17,6 +17,43 @@ namespace Nexus.Editor.Tests
 {
     public sealed class FullReviewAdsLevelPlaySdkTests
     {
+        [TestCase(false)]
+        [TestCase(true)]
+        public void FaultHook_RealSdkRewardSurvivesDestroyAndCannotRewardTheNextShow(bool duringNext)
+        {
+            using var rig = new Rig();
+            if (duringNext) rig.Provider.RewardFaults.DebugDeliverRewardDuringNextShow();
+            else rig.Provider.RewardFaults.DebugDelayReward(TimeSpan.FromSeconds(3));
+            AdResult? first = null, second = null;
+            rig.Controller.Show("first", result => first = result);
+            // Real pinned editor SDK emits its own reward. No event replacement in this test.
+            rig.CloseMockRewarded();
+            rig.Scheduler.Advance(2);
+            Assert.That(first, Is.EqualTo(AdResult.Closed));
+            Assert.That(rig.Controller.PendingReward, Is.Null);
+            rig.Controller.Show("second", result => second = result);
+            if (!duringNext) rig.Scheduler.Advance(2);
+            Assert.That(rig.Controller.PendingReward?.Placement, Is.EqualTo("first"));
+            Assert.That(second, Is.Null);
+            rig.Controller.AcknowledgeReward(rig.Controller.PendingReward.Value.Id);
+            Assert.That(rig.Provider.RewardFaults.DebugReplayLastReward(), Is.True);
+            Assert.That(rig.Controller.PendingReward, Is.Null);
+            Assert.That(rig.OwnedPrefabs().Count(item => item.GetType().Name == "RewardedPrefab"), Is.EqualTo(1));
+        }
+
+        [Test]
+        public void FaultHook_DisposeCancelsHeldRealSdkReward()
+        {
+            using var rig = new Rig();
+            rig.Provider.RewardFaults.DebugDelayReward(TimeSpan.FromSeconds(3));
+            rig.Controller.Show("first", _ => { });
+            rig.CloseMockRewarded();
+            rig.Provider.Dispose();
+            rig.Scheduler.Advance(5);
+            Assert.That(rig.Controller.PendingReward, Is.Null);
+            Assert.That(rig.Provider.RewardFaults.DebugReplayLastReward(), Is.False);
+        }
+
         [Test]
         public void A03_LevelPlayRewardBeyondCloseGraceRemainsRecoverable()
         {
@@ -80,8 +117,8 @@ namespace Nexus.Editor.Tests
                 Assert.Inconclusive("The locked SDK's editor mock requires an Android or iOS build target.");
 #endif
                 var package = PackageInfo.FindForAssembly(typeof(LevelPlayRewardedAd).Assembly);
-                if (package == null || package.version != "9.6.0")
-                    Assert.Inconclusive("This fixture requires the locked com.unity.services.levelplay 9.6.0 package.");
+                if (package == null || (package.version != "9.6.0" && package.version != "9.5.1"))
+                    Assert.Inconclusive("This fixture requires com.unity.services.levelplay 9.5.1 or 9.6.0 with the source hashes below.");
                 SourceIdentity(package.resolvedPath, "Runtime/Api/LevelPlaySdkProvider.cs",
                     "CF9C75B1100F60C8BAF78B034882C2C7B5B6C8B01FA1D67C1F1D0D8C91967B97");
                 SourceIdentity(package.resolvedPath, "Runtime/Platforms/Editor/EditorLevelPlaySdk.cs",

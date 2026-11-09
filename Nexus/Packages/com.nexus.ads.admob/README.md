@@ -2,6 +2,13 @@
 
 > **Who this is for:** level 3, shipping a game with Google AdMob.
 
+Editor/development builds expose `provider.RewardFaults` (#412) for delaying a
+received SDK reward after close, replaying it, or delivering it during the next
+rewarded show. The debug panel and Android intent commands are documented in
+[provider reward fault testing](../../../docs/ADS_FAULT_TESTING.md). Release
+players compile out the hooks; fault injection does not prove native delivery
+after SDK handle destruction.
+
 `AdMobProvider` and `UmpConsentFlow` in the assembly `Nexus.Ads.AdMob` (`Runtime/Provider`), the ad
 family's `IAdProvider` over `com.nexus.ads`, and `UmpAnalyticsConsent` in `Nexus.Ads.AdMob.Firebase`
 (`Runtime/Firebase`), the analytics consent `com.nexus.firebase` reads; changes go to the family's

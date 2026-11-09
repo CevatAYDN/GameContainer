@@ -181,6 +181,40 @@ binder/build validation and, for ChipCrisis, actual offline-clock consumer paths
 
 ## Closure Status
 
+### Formatron follow-up: #411 and #412
+
+- **#411:** Source and per-play gain now share one value-type pool entry. There
+  is no gain dictionary to allocate/grow on first playback. The Unity positive-
+  controlled `GcAllocationProbe` fails both 2D and spatial first-play tests before
+  the fix and passes afterwards. Eight targeted audio cases preserve the #366
+  mute/volume behavior. This is framework evidence; Formatron must re-pin and
+  re-run its unchanged first-draw budget (9).
+- **#412:** Development-only provider reward fault controls for LevelPlay and
+  AdMob, the existing panel, and Android Intent commands. Captured real rewards
+  retain their show identity through delay/replay/next-show injection. See
+  [commands and evidence boundary](ADS_FAULT_TESTING.md). No game sources/pins were
+  changed. Consumer device acceptance stays in Formatron#10 and ChipCrisis#16.
+- Verification: full native EditMode **1005 passed / 0 failed / 1 skipped**;
+  PlayMode **321 passed / 0 failed / 2 skipped**. Same configuration skips as the
+  preceding run. Host suite and four engine-module compilation variants passed.
+- Pinned SDK wrappers: LevelPlay C# package **9.6.0 and 9.5.1: 5/5 each**;
+  Google Mobile Ads **11.6.0: 8/8**. The LevelPlay fixture checks the same five SDK
+  source hashes for both versions; 9.7.0 in Formatron's report is the native SDK
+  version, not its C# package version.
+- Android player-script compilation and metadata inspection passed for both
+  providers in development and release: the fault types/API exist only in the
+  development assemblies. Unity's UAC0009 deprecation is locally suppressed with
+  rationale: replacing the gate with `Debug.isDebugBuild` would leave the API in
+  release, contrary to #412. This is a compilation/metadata check, not device ad
+  delivery evidence.
+- Evidence: `framework-closure-20261109/issue411-red-recorder.*`,
+  `issue411-green.*`, `issues411-412-final-*`, and
+  `framework-full-review-20261109/issue412-{levelplay,admob}/` under
+  `Nexus/artifacts/`. The first GC measurement used an inert Unity byte counter
+  and is not accepted evidence. Initial build-check helper failures and two
+  signal timing failures during concurrent compiler load remain recorded; the
+  final serial full suites passed without changing their thresholds.
+
 The full-review fixes #354-#409 are closed except #384:
 #382 and #391 were resolved in a follow-up with red/green evidence, and #410 was
 attributed to the Unity engine. Overall #353 remains open while #384's native
