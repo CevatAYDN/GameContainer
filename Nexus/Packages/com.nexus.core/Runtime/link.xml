@@ -38,6 +38,16 @@
          EntryPointNotFoundException (#113). Harness CG8 requires this for every such implementation. -->
     <type fullname="Nexus.Core.ContextBuilder" preserve="all"/>
 
+    <!-- #417: namespace preservation of concrete services does not keep inherited
+         non-public injection accessors on these generic bases in Nexus.Core. -->
+    <type fullname="Nexus.Core.NexusService`1" preserve="nothing">
+      <property name="Context" accessors="all"/>
+      <property name="SignalBus" accessors="all"/>
+    </type>
+    <type fullname="Nexus.Core.Mediator`1" preserve="nothing">
+      <property name="SignalBus" accessors="all"/>
+    </type>
+
     <!-- The services a game binds and the reflection path constructs. A game's generated link.xml lists
          no package type (#110), so the package preserves them here. -->
     <namespace fullname="Nexus.Core.Services" preserve="all"/>

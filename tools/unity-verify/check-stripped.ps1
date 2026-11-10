@@ -26,6 +26,16 @@ try {
     foreach ($file in $assemblies) {
         $module = [Mono.Cecil.ModuleDefinition]::ReadModule($file.FullName, $readerParameters)
         foreach ($type in $module.GetTypes()) {
+            # #417: include abstract/generic bases. A kept property/getter with a stripped
+            # non-public setter makes DI metadata reject the service before resolution.
+            foreach ($property in $type.Properties) {
+                $injected = @($property.CustomAttributes | Where-Object {
+                    $_.AttributeType.FullName -in @('Nexus.Core.InjectAttribute', 'Nexus.Core.OptionalInjectAttribute')
+                }).Count -gt 0
+                if ($injected -and -not $property.SetMethod) {
+                    $missing.Add("$($file.Name): $($type.FullName).$($property.Name) has an injection attribute but no setter")
+                }
+            }
             if ($type.IsInterface -or $type.IsAbstract) { continue }
             $classes++
             $methods = New-Object System.Collections.Generic.List[object]

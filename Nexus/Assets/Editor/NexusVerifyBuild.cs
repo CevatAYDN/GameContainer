@@ -21,7 +21,8 @@ namespace NexusVerify
     public static class NexusVerifyBuild
     {
         private static void Build(string targetName, BuildTargetGroup group, BuildTarget target, ScriptingImplementation backend,
-            BuildOptions buildOptions = BuildOptions.None, ManagedStrippingLevel? stripping = null, string[] defines = null, bool minify = false)
+            BuildOptions buildOptions = BuildOptions.None, ManagedStrippingLevel? stripping = null, string[] defines = null, bool minify = false,
+            bool optimizeSize = false)
         {
             // Restore the pre-existing backend when the batch finishes (a stripping build still leaves
             // its previous level written explicitly; see the finally block). NamedBuildTarget is the
@@ -42,10 +43,12 @@ namespace NexusVerify
             var previousTarget = EditorUserBuildSettings.activeBuildTarget;
             var previousGroup = BuildPipeline.GetBuildTargetGroup(previousTarget);
             var previousStripping = PlayerSettings.GetManagedStrippingLevel(namedTarget);
+            var previousCodeGeneration = PlayerSettings.GetIl2CppCodeGeneration(namedTarget);
             bool previousMinify = PlayerSettings.Android.minifyDebug;
             PlayerSettings.SetScriptingBackend(namedTarget, backend);
             if (minify) PlayerSettings.Android.minifyDebug = true;
             if (stripping.HasValue) PlayerSettings.SetManagedStrippingLevel(namedTarget, stripping.Value);
+            if (optimizeSize) PlayerSettings.SetIl2CppCodeGeneration(namedTarget, Il2CppCodeGeneration.OptimizeSize);
             try
             {
                 var options = new BuildPlayerOptions
@@ -84,6 +87,7 @@ namespace NexusVerify
                 PlayerSettings.SetScriptingBackend(namedTarget, previous);
                 // No API unsets the level: after a stripping build, ProjectSettings.asset holds the previous level explicitly.
                 if (stripping.HasValue) PlayerSettings.SetManagedStrippingLevel(namedTarget, previousStripping);
+                PlayerSettings.SetIl2CppCodeGeneration(namedTarget, previousCodeGeneration);
                 PlayerSettings.Android.minifyDebug = previousMinify;
                 // The build saved the settings with its backend; without this a failed build exits with it on disk (issue #102).
                 AssetDatabase.SaveAssets();
@@ -147,6 +151,35 @@ namespace NexusVerify
         public static void BuildAndroidIL2CPP()
         {
             Build("android-il2cpp", BuildTargetGroup.Android, BuildTarget.Android, ScriptingImplementation.IL2CPP);
+        }
+
+        /// <summary>#417: actual non-development High/OptimizeSize player; the probe forces reflection injection.</summary>
+        public static void BuildAndroidReleaseInjectionProbe()
+        {
+            if (Type.GetType("Nexus.Generated.NexusGeneratedBinder, Assembly-CSharp") != null)
+                throw new InvalidOperationException("Park the generated binder and disable reload autogeneration before this reflection-only stripping probe.");
+            Build("android-release-injection.apk", BuildTargetGroup.Android, BuildTarget.Android,
+                ScriptingImplementation.IL2CPP, BuildOptions.None, ManagedStrippingLevel.High,
+                new[] { "NEXUS_RELEASE_DI_PROBE" }, optimizeSize: true);
+        }
+
+        public static void DisableProbeAutoGeneration()
+        {
+            System.IO.File.WriteAllText("Library/Nexus/probe-autogen.txt", Nexus.Editor.NexusCodeGenerator.AutoGenerateEnabled.ToString());
+            Nexus.Editor.NexusCodeGenerator.AutoGenerateEnabled = false;
+        }
+
+        public static void RestoreProbeAutoGeneration()
+        {
+            Nexus.Editor.NexusCodeGenerator.AutoGenerateEnabled = bool.Parse(System.IO.File.ReadAllText("Library/Nexus/probe-autogen.txt"));
+        }
+
+        /// <summary>#100: isolated, repeated encrypted writes measured on the Android class library.</summary>
+        public static void BuildAndroidStorageProbe()
+        {
+            Build("android-storage-probe.apk", BuildTargetGroup.Android, BuildTarget.Android,
+                ScriptingImplementation.IL2CPP, BuildOptions.Development, ManagedStrippingLevel.High,
+                new[] { "NEXUS_STORAGE_PROBE" });
         }
 
         /// <summary>
