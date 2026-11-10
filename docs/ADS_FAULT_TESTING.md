@@ -80,15 +80,22 @@ UnityPlayerActivity versus UnityPlayerGameActivity:
 ```powershell
 $package = 'your.game.package'
 $activity = (adb shell cmd package resolve-activity --brief $package | Select-Object -Last 1).Trim()
+adb shell input keyevent KEYCODE_HOME
 adb shell am start -n $activity --es nexus.ads.rewardFault delay:3
 # Arm before A; deliver A during B:
+adb shell input keyevent KEYCODE_HOME
 adb shell am start -n $activity --es nexus.ads.rewardFault next
+adb shell input keyevent KEYCODE_HOME
 adb shell am start -n $activity --es nexus.ads.rewardFault replay
+adb shell input keyevent KEYCODE_HOME
 adb shell am start -n $activity --es nexus.ads.rewardFault reset
 adb logcat -d -v threadtime -s Unity
 ```
 
-The extra is removed when consumed; each new command needs a new intent. Accepted
-delay range: 0–120 seconds. Commands never start an ad or change consent. Test
+The extra is removed when consumed; each new command needs a new intent. The
+commands are read at startup and focus gain (#416), with no idle JNI polling.
+For an already-foreground player, send HOME before `am start` as above; do not
+force-stop it, because a held SDK reward lives in that process.
+Accepted delay range: 0–120 seconds. Commands never start an ad or change consent. Test
 devices, provider gate and test units remain the application's normal setup.
 `NoFill` means no captured reward and is not a successful late-reward test.

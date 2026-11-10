@@ -30,17 +30,23 @@ namespace Nexus.Ads.Unity
     }
 
 #if UNITY_ANDROID && !UNITY_EDITOR
-    // Poll currentActivity's current Intent so both a cold start and an onNewIntent work without a custom Activity.
+    // #416: read only on startup/focus gain. Idle development captures must not pay
+    // for periodic JNI reflection. For a foreground adb command, HOME then am start
+    // produces the focus transition without killing a held reward (see the guide).
     // The extra is consumed once and removed before execution; repeated user commands need a new am start.
     public sealed class RewardFaultIntent : MonoBehaviour
     {
-        private float _nextRead;
         private const string Extra = "nexus.ads.rewardFault";
 
-        private void Update()
+        private void Start() => ReadIntent();
+
+        private void OnApplicationFocus(bool focused)
         {
-            if (Time.unscaledTime < _nextRead) return;
-            _nextRead = Time.unscaledTime + 0.5f;
+            if (focused) ReadIntent();
+        }
+
+        private void ReadIntent()
+        {
             var bootstrap = AdsBootstrap.Instance;
             if (bootstrap == null || !(bootstrap.Provider is IRewardFaultDebug provider)) return;
             try

@@ -12,6 +12,14 @@ namespace NexusVerify
     public static class RewardFaultBuildCheck
     {
         public static void Run()
+            => RunChecks(requireProviders: true);
+
+        // The development project has no live SDK installed; provider proofs keep
+        // using Run, while #416 verifies the Unity Intent reader itself here.
+        public static void RunIntentOnly()
+            => RunChecks(requireProviders: false);
+
+        private static void RunChecks(bool requireProviders)
         {
             try
             {
@@ -31,7 +39,7 @@ namespace NexusVerify
                     }, folder);
                     if (result.assemblies == null || result.assemblies.Count == 0)
                         throw new InvalidOperationException("Player assembly compilation failed.");
-                    int ads = 0, providers = 0;
+                    int ads = 0, providers = 0, intents = 0;
                     foreach (string file in Directory.GetFiles(folder, "Nexus.Ads.*.dll"))
                     {
                         using var assembly = (IDisposable)read.Invoke(null, new object[] { file });
@@ -41,6 +49,14 @@ namespace NexusVerify
                         {
                             string name = (string)type.GetType().GetProperty("FullName").GetValue(type);
                             if (name == "Nexus.Ads.Unity.RewardFaultInjection") ads++;
+                            if (name == "Nexus.Ads.Unity.RewardFaultIntent")
+                            {
+                                intents++;
+                                var intentMethods = (System.Collections.IEnumerable)type.GetType().GetProperty("Methods").GetValue(type);
+                                var names = intentMethods.Cast<object>().Select(m => (string)m.GetType().GetProperty("Name").GetValue(m)).ToArray();
+                                if (names.Contains("Update") || !names.Contains("Start") || !names.Contains("OnApplicationFocus"))
+                                    throw new InvalidOperationException("Fault intent must use lifecycle notifications, never idle polling (#416).");
+                            }
                             if (!development && (name.Contains("RewardFault") || name.Contains("IRewardFault")))
                                 throw new InvalidOperationException("Release contains fault type: " + name);
                             if (name == "Nexus.Ads.LevelPlay.LevelPlayProvider" || name == "Nexus.Ads.AdMob.AdMobProvider")
@@ -52,7 +68,7 @@ namespace NexusVerify
                             }
                         }
                     }
-                    if (ads != (development ? 1 : 0) || providers == 0)
+                    if (ads != (development ? 1 : 0) || intents != (development ? 1 : 0) || (requireProviders && providers == 0))
                         throw new InvalidOperationException("Missing ads/provider assembly coverage.");
                     Debug.Log($"[RewardFaultBuildCheck] {(development ? "development" : "release")} passed; providers={providers}");
                 }
