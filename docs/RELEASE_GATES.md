@@ -49,6 +49,9 @@ Remaining game/SDK frame attribution stays in ChipCrisis#20 and its release gate
 
 Consumer evidence: `ChipCrisis/artifacts/nexus-hotfix20/{device.log,perf-log.txt,summary.json}`;
 APK SHA256 `4FA894D984067DFE791B33950E2E100F09240429FD11D98FF787E9A88BBB12FF`.
+Consumer commit `f045846` publishes the re-pin/probe: EditMode764/0/12, graphics
+PlayMode124/2/0. Both failures are the game's four-preference-button count including
+its extra privacy row (TR/EN), tracked at ChipCrisis#21; full game acceptance is partial.
 Framework #100 covers the now-removed redundant allocation sources and the confirmed
 storage improvement and was closed with these claim limits; reopen it with a new
 storage-attributed over-budget capture.

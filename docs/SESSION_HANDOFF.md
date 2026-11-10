@@ -21,6 +21,13 @@ overall game frames still have spikes. Consumer acceptance details stay in ChipC
 ChipCrisis has a #20 re-pin and isolated test tools from this session; inspect that repo's
 status before editing. Wickling/Gigawatt had unrelated work and were not repinned here.
 
+ChipCrisis follow-up is committed/pushed as `f045846`, with a clean tree: all eight
+Nexus packages at74c36655; EditMode764/0/12. Its graphics PlayMode124/2 found two
+factory-settings assertions expecting four buttons although the game includes a privacy
+row. This game-specific mismatch is tracked in ChipCrisis#21, not a new framework issue.
+ChipCrisis#20 stays open for full game/original-save acceptance. The initial headless UI
+run was rejected for RenderTexture failures. No subagents were used in this follow-up.
+
 Refresh GitHub before resuming; the older checkpoint below describes the earlier state.
 
 ## Resume point — 2026-11-10
