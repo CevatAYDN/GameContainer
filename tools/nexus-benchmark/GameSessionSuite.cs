@@ -440,15 +440,21 @@ namespace NexusBench
             string detail;
             try
             {
-                // Player was away 2 hours. A real 2h gap advances BOTH the wall clock AND the
-                // hardware monotonic tick, so the simulation must move them consistently —
-                // otherwise the A8 monotonic anti-cheat clamps the reward to the real elapsed
-                // time (~0) and correctly reports tampering.
+                // #419: use the calculator's clock. Within two hours of boot a same-boot
+                // two-hour absence is impossible; model a previous boot with a larger
+                // positive saved tick instead of writing an invalid negative counter.
+                OfflineTimeCalculator.RecordQuitTimestamp(prefs);
+                long monotonic = prefs.GetLong("NT_LastQuitMonotonicMs");
+                const long gapMs = 7200L * 1000L;
                 long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 prefs.SetLong("NT_LastQuitTimestamp", now - 7200);
-                prefs.SetLong("NT_LastQuitMonotonicMs", Environment.TickCount64 - (7200L * 1000L));
+                prefs.SetLong("NT_LastQuitMonotonicMs", monotonic >= gapMs
+                    ? monotonic - gapMs : monotonic + gapMs);
 
-                long offlineSeconds = OfflineTimeCalculator.CalculateOfflineSeconds(prefs);
+                // Keep the exact two-hour assertion independent of a UTC second rollover.
+                long offlineSeconds = OfflineTimeCalculator.CalculateOfflineSeconds(prefs, 7200);
+                if (offlineSeconds != 7200)
+                    throw new InvalidOperationException($"Expected 7200 offline seconds, got {offlineSeconds}; recorded monotonic={monotonic} ms.");
                 long offlineGold = offlineSeconds * OfflineGoldRatePerSecond;
 
                 ctx.Resolve<EconomyService>().Earn("gold", offlineGold);

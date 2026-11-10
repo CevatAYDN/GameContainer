@@ -4,6 +4,9 @@ Nexus is an open-source Unity 6 MVCS framework (`com.nexus.core`) meant to be us
 foundation of several games and by developers of every level. Everything in this repository
 must be current, consistent and verifiable. Read this file before changing code or documents.
 
+For continuation after a terminal/session restart, read [docs/SESSION_HANDOFF.md](docs/SESSION_HANDOFF.md),
+then refresh the live GitHub issue state. Test evidence remains canonical in `docs/RELEASE_GATES.md`.
+
 ## Map
 
 | Path | Role |
