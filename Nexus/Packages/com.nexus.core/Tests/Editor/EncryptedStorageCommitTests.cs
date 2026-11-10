@@ -22,6 +22,60 @@ namespace Nexus.Editor.Tests
 #if UNITY_EDITOR
         [Test]
 #endif
+        public void RepeatedLargeThenSmallWrites_UseFreshIVs_AndDoNotPersistBufferTails()
+        {
+            using var files = new Files();
+            var store = files.Open();
+            string value = new string('\u20ac', 32768);
+            store.SetString("value", value);
+            Require(store.TrySave(), "large payload must commit");
+            byte[] first = File.ReadAllBytes(Files.PathFor(store, "value"));
+            string exported = store.ExportEncryptedSaveData("value");
+            byte[] second = Convert.FromBase64String(exported);
+            bool differentIV = false;
+            for (int i = 1; i <= 16; i++) differentIV |= first[i] != second[i];
+            Require(differentIV, "reusing encryption resources must still generate a fresh IV per payload");
+            Require(files.Open().GetString("value") == value, "multi-byte UTF8 payload must round-trip");
+            store.SetString("value", "x");
+            Require(store.TrySave(), "small replacement must commit");
+            Require(File.ReadAllBytes(Files.PathFor(store, "value")).Length == 65,
+                "the small file must contain one padded block, never the previous large buffer tail");
+            Require(files.Open().GetString("value") == "x", "small replacement must reopen");
+            Require(store.ImportEncryptedSaveData("value", exported), "export must survive subsequent buffer reuse");
+            Require(files.Open().GetString("value") == value, "large export must retain its original contents");
+            store.SetString("value", "");
+            Require(store.TrySave() && files.Open().GetString("value", null) == "", "empty payload must round-trip");
+        }
+
+        // Unity's thread allocation counter is inert on the supported editor/player.
+        // Run this byte budget in the host; StorageWriteProbe measures actual Android frames.
+#if !UNITY_EDITOR
+        public void WarmedWrites_DoNotAllocateMultiplePayloadCopies()
+        {
+            using var files = new Files();
+            var store = files.Open();
+            const int size = 32768, writes = 16;
+            string a = new string('a', size), b = new string('b', size);
+            store.SetString("allocation", a);
+            Require(store.TrySave(), "warmup must commit");
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            GC.KeepAlive(new byte[4096]);
+            Require(GC.GetAllocatedBytesForCurrentThread() - before >= 4096, "allocation counter must be live");
+            before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < writes; i++)
+            {
+                store.SetString("allocation", (i & 1) == 0 ? b : a);
+                Require(store.TrySave(), "measured write must commit");
+            }
+            long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+            Require(bytes < (long)size * writes * 3, $"warmed writes allocated {bytes / writes} B/write; budget < {size * 3}");
+            Require(files.Open().GetString("allocation") == a, "allocation optimization must preserve durable readback");
+        }
+#endif
+
+#if UNITY_EDITOR
+        [Test]
+#endif
         public void MixedSuccessfulAndFailedKeys_NeverConfirmTheBatch()
         {
             using var files = new Files();

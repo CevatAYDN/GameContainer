@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -107,6 +108,15 @@ namespace Nexus.Core.Services
         // (not _lock) keeps slow file I/O out of the cache/dirty-set critical section
         // (the B1 invariant) while making concurrent writes to one key atomic.
         private readonly object _writeLock = new();
+        // #100: writes share crypto setup, but never share an in-flight payload. Reads
+        // keep independent decryptors; no filesystem work holds this lock or _lock.
+        private readonly object _encodeLock = new();
+        private Aes _writeAes;
+        private HMACSHA256 _writeHmac;
+        private RandomNumberGenerator _writeRandom;
+        private readonly byte[] _writeIV = new byte[16];
+        private readonly Dictionary<string, byte[]> _encodedKeyNames = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, (string Temp, string Backup)> _writePaths = new(StringComparer.Ordinal);
 
         private long BumpKeyVersionLocked(string key)
         {
@@ -412,6 +422,16 @@ namespace Nexus.Core.Services
                     _dirtyKeys.CopyTo(unsaved);
                     _disposed = true;
                     _disposing = false;
+                }
+                lock (_encodeLock)
+                {
+                    _writeAes?.Dispose();
+                    _writeHmac?.Dispose();
+                    _writeRandom?.Dispose();
+                    _writeAes = null;
+                    _writeHmac = null;
+                    _writeRandom = null;
+                    _encodedKeyNames.Clear();
                 }
                 // The final save is the last chance to write them: dropping them without a word lost a player's data (issue #166).
                 if (unsaved.Length > 0)
@@ -864,9 +884,10 @@ namespace Nexus.Core.Services
         private bool SaveKeyToDisk(string key, string value)
         {
             string filePath = GetFilePath(key);
+            byte[] finalBuffer = null;
             try
             {
-                byte[] finalBuffer = EncodeCurrentFormat(key, value);
+                finalBuffer = EncodeCurrentFormat(key, value, out int length);
 
                 // Atomic write: stage to temp, then overwrite-rename (single operation on
                 // the same volume). Never Delete-then-Move — the pre-fix data-loss window.
@@ -874,7 +895,7 @@ namespace Nexus.Core.Services
                 // REPLACE_EXISTING) and Unix (rename). The File.Move(src, dst, overwrite)
                 // overload used before is .NET Core 3.0+ only and does not exist in
                 // Unity's .NET Standard 2.1 reference profile.
-                WriteRawDataAtomically(filePath, finalBuffer);
+                WriteRawDataAtomically(filePath, finalBuffer, length);
                 return true;
             }
             catch (Exception ex)
@@ -882,28 +903,47 @@ namespace Nexus.Core.Services
                 NexusLog.WarnAlways($"[EncryptedStorage] Save write failed for key '{key}': {ex.Message}");
                 return false;
             }
+            finally { if (finalBuffer != null) ArrayPool<byte>.Shared.Return(finalBuffer, clearArray: true); }
         }
 
-        private byte[] EncodeCurrentFormat(string key, string value)
+        // Caller owns the rental and returns it after write/export, even on failure.
+        private byte[] EncodeCurrentFormat(string key, string value, out int length)
         {
-            byte[] plainBytes = Encoding.UTF8.GetBytes(value ?? string.Empty);
-            using var aes = Aes.Create();
-            aes.Key = _encryptionKey;
-            aes.GenerateIV();
-
-            using var encryptor = aes.CreateEncryptor();
-            byte[] cipherText = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
-            // v3: bind the key name into the HMAC so a payload copied under another
-            // key's filename fails verification on read.
-            byte[] hmac = ComputeHmac(cipherText, aes.IV, key);
-
-            // VERSION(1) + IV(16) + HMAC(32) + cipherText
-            byte[] finalBuffer = new byte[HeaderSize + cipherText.Length];
-            finalBuffer[0] = CurrentFormatVersion;
-            Buffer.BlockCopy(aes.IV, 0, finalBuffer, 1, 16);
-            Buffer.BlockCopy(hmac, 0, finalBuffer, 17, 32);
-            Buffer.BlockCopy(cipherText, 0, finalBuffer, HeaderSize, cipherText.Length);
-            return finalBuffer;
+            lock (_encodeLock)
+            {
+                if (_disposed) throw new ObjectDisposedException(nameof(EncryptedStorageService));
+                _writeAes ??= Aes.Create();
+                _writeHmac ??= new HMACSHA256(_hmacKey);
+                _writeRandom ??= RandomNumberGenerator.Create();
+                value ??= string.Empty;
+                int count = Encoding.UTF8.GetByteCount(value);
+                byte[] plain = ArrayPool<byte>.Shared.Rent(Math.Max(1, count));
+                try
+                {
+                    Encoding.UTF8.GetBytes(value, 0, value.Length, plain, 0);
+                    _writeRandom.GetBytes(_writeIV); // never reuse an IV when reusing the algorithm
+                    using var encryptor = _writeAes.CreateEncryptor(_encryptionKey, _writeIV);
+                    byte[] cipher = encryptor.TransformFinalBlock(plain, 0, count);
+                    if (!_encodedKeyNames.TryGetValue(key, out byte[] keyBytes))
+                        _encodedKeyNames[key] = keyBytes = Encoding.UTF8.GetBytes(key);
+                    _writeHmac.Initialize();
+                    _writeHmac.TransformBlock(_writeIV, 0, _writeIV.Length, null, 0);
+                    _writeHmac.TransformBlock(keyBytes, 0, keyBytes.Length, null, 0);
+                    _writeHmac.TransformBlock(cipher, 0, cipher.Length, null, 0);
+                    // TransformFinalBlock returns a COPY of its input; finalize empty
+                    // rather than duplicating the entire ciphertext solely for the HMAC.
+                    _writeHmac.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+                    byte[] hmac = _writeHmac.Hash;
+                    length = HeaderSize + cipher.Length;
+                    byte[] result = ArrayPool<byte>.Shared.Rent(length);
+                    result[0] = CurrentFormatVersion;
+                    Buffer.BlockCopy(_writeIV, 0, result, 1, 16);
+                    Buffer.BlockCopy(hmac, 0, result, 17, 32);
+                    Buffer.BlockCopy(cipher, 0, result, HeaderSize, cipher.Length);
+                    return result;
+                }
+                finally { ArrayPool<byte>.Shared.Return(plain, clearArray: true); }
+            }
         }
 
         public string ExportEncryptedSaveData(string key) => ExportEncryptedSaveData(key, out _);
@@ -930,9 +970,14 @@ namespace Nexus.Core.Services
             }
             try
             {
-                string payload = Convert.ToBase64String(EncodeCurrentFormat(key, value));
-                failure = null;
-                return payload;
+                byte[] encoded = EncodeCurrentFormat(key, value, out int length);
+                try
+                {
+                    string payload = Convert.ToBase64String(encoded, 0, length);
+                    failure = null;
+                    return payload;
+                }
+                finally { ArrayPool<byte>.Shared.Return(encoded, clearArray: true); }
             }
             catch (Exception ex)
             {
@@ -1033,7 +1078,7 @@ namespace Nexus.Core.Services
             return false;
         }
 
-        private void WriteRawDataAtomically(string filePath, byte[] rawData)
+        private void WriteRawDataAtomically(string filePath, byte[] rawData, int length = -1)
         {
             // The whole stage-to-temp + replace sequence is one critical section.
             // Without this, concurrent callers (AutoSave on a worker thread + Save() on
@@ -1043,9 +1088,14 @@ namespace Nexus.Core.Services
             // keeping the fast cache path (_lock) independent.
             lock (_writeLock)
             {
-                string tempPath = filePath + ".tmp";
-                string backupPath = filePath + ".bak";
-                File.WriteAllBytes(tempPath, rawData);
+                if (!_writePaths.TryGetValue(filePath, out var paths))
+                    _writePaths[filePath] = paths = (filePath + ".tmp", filePath + ".bak");
+                string tempPath = paths.Temp;
+                string backupPath = paths.Backup;
+                // One complete payload is already buffered. Avoid File.WriteAllBytes'
+                // extra stream buffer, and write only the used part of a pooled array.
+                using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 1))
+                    stream.Write(rawData, 0, length < 0 ? rawData.Length : length);
 
                 const int maxAttempts = 3;
                 for (int attempt = 0; ; attempt++)
@@ -1393,7 +1443,8 @@ namespace Nexus.Core.Services
             hmac.TransformBlock(iv, 0, iv.Length, null, 0);
             byte[] keyBytes = Encoding.UTF8.GetBytes(key ?? string.Empty);
             hmac.TransformBlock(keyBytes, 0, keyBytes.Length, null, 0);
-            hmac.TransformFinalBlock(data, 0, data.Length);
+            hmac.TransformBlock(data, 0, data.Length, null, 0);
+            hmac.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
             return hmac.Hash; // Full 32-byte HMAC-SHA256 output
         }
 
@@ -1404,7 +1455,8 @@ namespace Nexus.Core.Services
         {
             using var hmac = new HMACSHA256(key);
             hmac.TransformBlock(iv, 0, iv.Length, null, 0);
-            hmac.TransformFinalBlock(data, 0, data.Length);
+            hmac.TransformBlock(data, 0, data.Length, null, 0);
+            hmac.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
             return hmac.Hash; // Full 32-byte HMAC-SHA256 output
         }
 
