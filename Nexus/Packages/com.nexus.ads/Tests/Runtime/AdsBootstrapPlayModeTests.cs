@@ -490,6 +490,39 @@ namespace Nexus.Ads.Tests.Runtime
         }
 
         [UnityTest]
+        public IEnumerator ReusableTimer_ResetCancelAndCallbackRearm_AllocateNothingAfterCreation()
+        {
+            var go = new GameObject("reusable-scheduler");
+            try
+            {
+                var scheduler = go.AddComponent<UnityAdScheduler>();
+                int calls = 0;
+                IAdTimer timer = null;
+                timer = scheduler.CreateTimer(() => { calls++; if (calls == 1) timer.Reset(0); });
+                timer.Reset(60);
+                timer.Cancel();
+                using var recorder = global::Unity.Profiling.ProfilerRecorder.StartNew(global::Unity.Profiling.ProfilerCategory.Internal,
+                    "GC.Alloc", 1000, global::Unity.Profiling.ProfilerRecorderOptions.CollectOnlyOnCurrentThread);
+                System.GC.KeepAlive(new byte[4096]);
+                recorder.Stop();
+                Assert.IsTrue(recorder.Valid && recorder.Count > 0);
+                recorder.Reset(); recorder.Start();
+                for (int i = 0; i < 100; i++) { timer.Reset(60); timer.Cancel(); }
+                recorder.Stop();
+                Assert.AreEqual(0, recorder.Count);
+                timer.Reset(0);
+                yield return new WaitForSecondsRealtime(0.1f);
+                Assert.AreEqual(2, calls);
+                timer.Reset(0); timer.Cancel();
+                yield return null;
+                Assert.AreEqual(2, calls);
+                timer.Dispose(); timer.Dispose();
+                Assert.Throws<System.ObjectDisposedException>(() => timer.Reset(0));
+            }
+            finally { Object.Destroy(go); }
+        }
+
+        [UnityTest]
         public IEnumerator OnGUI_RunsOnlyWhileThePanelIsOpenOrAShowIsOpen()
         {
             // issue #83: an enabled OnGUI allocates every frame even when it returns at once (61,824 B in 168 frames on a phone)

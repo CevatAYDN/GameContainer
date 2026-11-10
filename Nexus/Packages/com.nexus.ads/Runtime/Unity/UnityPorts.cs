@@ -93,12 +93,24 @@ namespace Nexus.Ads.Unity
     [DisallowMultipleComponent]
     public sealed class UnityAdScheduler : MonoBehaviour, IAdScheduler
     {
-        private sealed class Handle : IDisposable
+        private sealed class Handle : IAdTimer
         {
             public UnityAdScheduler Owner;
             public Action Action;
             public double Due;
             public int CreatedFrame;
+            public bool Active, Listed, Reusable;
+            public void Reset(double seconds)
+            {
+                if (Owner == null) throw new ObjectDisposedException(nameof(Handle));
+                if (double.IsNaN(seconds)) throw new ArgumentOutOfRangeException(nameof(seconds));
+                if (!Owner.isActiveAndEnabled) throw new InvalidOperationException("The scheduler must be active.");
+                Due = Time.realtimeSinceStartupAsDouble + Math.Max(0, seconds);
+                CreatedFrame = Time.frameCount;
+                Active = true;
+                if (!Listed) { Owner._pending.Add(this); Listed = true; }
+            }
+            public void Cancel() => Active = false;
             public void Dispose() { Owner = null; Action = null; }
         }
 
@@ -111,10 +123,15 @@ namespace Nexus.Ads.Unity
             if (!isActiveAndEnabled) throw new InvalidOperationException("The scheduler must be active.");
             // A unique token is intentional: pooling an escaped IDisposable lets a
             // caller's old token cancel somebody else's new wait (#418).
-            var handle = new Handle { Owner = this, Action = action,
-                Due = Time.realtimeSinceStartupAsDouble + Math.Max(0, seconds), CreatedFrame = Time.frameCount };
-            _pending.Add(handle);
+            var handle = new Handle { Owner = this, Action = action };
+            handle.Reset(seconds);
             return handle;
+        }
+
+        public IAdTimer CreateTimer(Action action)
+        {
+            if (action == null) throw new ArgumentNullException(nameof(action));
+            return new Handle { Owner = this, Action = action, Reusable = true };
         }
 
         private void Update()
@@ -124,22 +141,33 @@ namespace Nexus.Ads.Unity
             for (int i = 0; i < count && i < _pending.Count && isActiveAndEnabled; i++)
             {
                 var handle = _pending[i];
-                if (handle.Owner == null || handle.CreatedFrame >= frame || handle.Due > now) continue;
+                if (handle.Owner == null || !handle.Active || handle.CreatedFrame >= frame || handle.Due > now) continue;
                 var action = handle.Action;
-                handle.Dispose(); // complete before invoking user code (cancel/reschedule/disable may reenter)
+                handle.Active = false;
+                if (!handle.Reusable) handle.Dispose();
                 try { action(); }
                 catch (Exception error) { Debug.LogException(error); }
             }
             // Stable in-place compaction, including cancellations made by callbacks.
             int live = 0;
             for (int i = 0; i < _pending.Count; i++)
-                if (_pending[i].Owner != null) _pending[live++] = _pending[i];
+            {
+                var handle = _pending[i];
+                if (handle.Owner != null && handle.Active) _pending[live++] = handle;
+                else handle.Listed = false;
+            }
             if (live < _pending.Count) _pending.RemoveRange(live, _pending.Count - live);
         }
 
         private void OnDisable()
         {
-            for (int i = 0; i < _pending.Count; i++) _pending[i].Dispose();
+            for (int i = 0; i < _pending.Count; i++)
+            {
+                var handle = _pending[i];
+                handle.Cancel();
+                handle.Listed = false;
+                if (!handle.Reusable) handle.Dispose();
+            }
             _pending.Clear();
         }
     }

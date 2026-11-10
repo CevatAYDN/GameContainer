@@ -1,6 +1,5 @@
 // A runtime Debug.isDebugBuild check would leave the reward fault API in release assemblies (#412).
-#pragma warning disable UAC0009
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
 using System;
 using System.Globalization;
 using UnityEngine;

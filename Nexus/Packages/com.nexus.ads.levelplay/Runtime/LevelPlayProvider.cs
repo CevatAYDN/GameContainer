@@ -1,6 +1,5 @@
 #if NEXUS_LEVELPLAY
 // #412 requires compile-time exclusion from release players, not only a runtime debug check.
-#pragma warning disable UAC0009
 using System;
 using System.Collections.Generic;
 using Nexus.Ads.Unity;
@@ -30,11 +29,11 @@ namespace Nexus.Ads.LevelPlay
     /// the SDK answers Init from its cached response and every load of the session ends in 509 (issue #125).
     /// </summary>
     public sealed class LevelPlayProvider : IAdProvider, IConsentFlow, IRewardedShowProvider, IDisposable
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
         , IRewardFaultDebug
 #endif
     {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
         private RewardFaultInjection _rewardFaults;
         public RewardFaultInjection RewardFaults => _rewardFaults ??= new RewardFaultInjection(ProviderName, _scheduler);
 #endif
@@ -46,7 +45,8 @@ namespace Nexus.Ads.LevelPlay
         private readonly Func<bool> _networkReachable;
         private readonly Action<string, string> _setMetaData;
         private readonly UnityMainThread _main = new UnityMainThread();
-        private IDisposable _networkWait;
+        private readonly IAdTimer _networkWait;
+        private string _waitingAppKey;
         private readonly Dictionary<AdFormat, string> _units = new Dictionary<AdFormat, string>();
         private LevelPlayRewardedAd _rewarded;
         private LevelPlayInterstitialAd _interstitial;
@@ -85,7 +85,7 @@ namespace Nexus.Ads.LevelPlay
             public readonly Action OnRewardEarned;
             public bool Rewarded, Closed, Done;
             public IDisposable Grace;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
             public RewardFaultInjection.Show Fault;
 #endif
 
@@ -107,6 +107,7 @@ namespace Nexus.Ads.LevelPlay
             _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
             _networkReachable = networkReachable ?? throw new ArgumentNullException(nameof(networkReachable));
             _setMetaData = setMetaData ?? ((key, value) => global::Unity.Services.LevelPlay.LevelPlay.SetMetaData(key, value));
+            _networkWait = scheduler.CreateTimer(() => InitWhenReachable(_waitingAppKey));
         }
 
         // ----- IAdProvider
@@ -142,7 +143,8 @@ namespace Nexus.Ads.LevelPlay
                 _setMetaData("is_test_suite", "enable");
                 global::Unity.Services.LevelPlay.LevelPlay.SetAdaptersDebug(true);
             }
-            _networkWait?.Dispose();
+            _networkWait.Cancel();
+            _waitingAppKey = config.AppKey;
             if (!_networkReachable()) Debug.Log("[Nexus Ads] LevelPlay init waits for a network");
             InitWhenReachable(config.AppKey);
         }
@@ -152,9 +154,8 @@ namespace Nexus.Ads.LevelPlay
         // shortcut: reachability means a network, not the internet; a captive portal or a SIM without data still takes the cached path. Upgrade when a game sees it.
         private void InitWhenReachable(string appKey)
         {
-            _networkWait = null;
             if (_disposed) return;
-            if (!_networkReachable()) { _networkWait = _scheduler.Schedule(NetworkPollSeconds, () => InitWhenReachable(appKey)); return; }
+            if (!_networkReachable()) { _networkWait.Reset(NetworkPollSeconds); return; }
             global::Unity.Services.LevelPlay.LevelPlay.OnInitSuccess += OnInitSuccess;
             global::Unity.Services.LevelPlay.LevelPlay.OnInitFailed += OnInitFailed;
             global::Unity.Services.LevelPlay.LevelPlay.Init(appKey); // the editor platform answers only on an Android or iOS build target; elsewhere the SDK is absent and nothing fires
@@ -271,7 +272,7 @@ namespace Nexus.Ads.LevelPlay
             var ad = format == AdFormat.Rewarded ? _rewardedState : _interstitialState;
             var show = _show = new ShowState(ad, placement, onResult, onRewardEarned);
             ad.Show = show;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
             if (format == AdFormat.Rewarded)
                 show.Fault = RewardFaults.BeginShow(placement, () => OnRewarded(show), () => ad.Released);
 #endif
@@ -283,7 +284,7 @@ namespace Nexus.Ads.LevelPlay
         {
             if (!ad.Released && ad.Show != null && !ad.Show.Done && ReferenceEquals(_show, ad.Show))
             {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
                 if (ad.Format == AdFormat.Rewarded) _rewardFaults?.Opened(ad.Show.Fault);
 #endif
                 Opened?.Invoke(ad.Format);
@@ -292,7 +293,7 @@ namespace Nexus.Ads.LevelPlay
 
         private void ReceiveReward(ShowState show)
         {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
             if (show != null) RewardFaults.Receive(show.Fault);
 #else
             OnRewarded(show);
@@ -311,7 +312,7 @@ namespace Nexus.Ads.LevelPlay
         {
             if (show == null || show.Done || show.Closed) return;
             show.Closed = true;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
             _rewardFaults?.Closed(show.Fault);
 #endif
             if (show.Ad.Format != AdFormat.Rewarded) { Finish(show, AdResult.Closed); return; }
@@ -429,12 +430,11 @@ namespace Nexus.Ads.LevelPlay
         {
             if (_disposed) return;
             _disposed = true;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
             _rewardFaults?.Dispose();
 #endif
             _initialized = false;
             var wait = _networkWait;
-            _networkWait = null;
             global::Unity.Services.LevelPlay.LevelPlay.OnInitSuccess -= OnInitSuccess;
             global::Unity.Services.LevelPlay.LevelPlay.OnInitFailed -= OnInitFailed;
             _onReady = null;

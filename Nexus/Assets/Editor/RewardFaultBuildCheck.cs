@@ -35,7 +35,10 @@ namespace NexusVerify
                     var result = PlayerBuildInterface.CompilePlayerScripts(new ScriptCompilationSettings
                     {
                         target = BuildTarget.Android, group = BuildTargetGroup.Android,
-                        options = development ? ScriptCompilationOptions.DevelopmentBuild : ScriptCompilationOptions.None
+                        // Deliberately omit DevelopmentBuild: this proves the package-owned
+                        // define works without Unity's deprecated DEVELOPMENT_BUILD symbol.
+                        options = ScriptCompilationOptions.None,
+                        extraScriptingDefines = development ? new[] { Nexus.Ads.Editor.AdsFaultBuildSymbols.Symbol } : Array.Empty<string>()
                     }, folder);
                     if (result.assemblies == null || result.assemblies.Count == 0)
                         throw new InvalidOperationException("Player assembly compilation failed.");

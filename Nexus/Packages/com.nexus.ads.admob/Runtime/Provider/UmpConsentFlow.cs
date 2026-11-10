@@ -45,7 +45,7 @@ namespace Nexus.Ads.AdMob
         private readonly UnityMainThread _main = new UnityMainThread();
         private bool _requested, _answered, _offlineLogged, _disposed;
         private Action _onAnswered;
-        private IDisposable _networkWait;
+        private IAdTimer _networkWait;
 
         /// <summary>Create on the Unity main thread. <paramref name="debugAllowed"/>: the debug devices and geography may apply (never in a release build).</summary>
         public UmpConsentFlow(bool underAgeOfConsent, bool debugAllowed)
@@ -139,14 +139,15 @@ namespace Nexus.Ads.AdMob
         private void AskAgainWhenReachable(IAdScheduler scheduler)
         {
             if (_disposed) return;
-            _networkWait?.Dispose();
-            _networkWait = scheduler.Schedule(NetworkPollSeconds, () =>
-            {
-                _networkWait = null;
-                if (_disposed || _answered) return;
-                if (NetworkReachable) UpdateConsent();
-                else AskAgainWhenReachable(scheduler);
-            });
+            _networkWait ??= scheduler.CreateTimer(OnNetworkWait);
+            _networkWait.Reset(NetworkPollSeconds);
+        }
+
+        private void OnNetworkWait()
+        {
+            if (_disposed || _answered) return;
+            if (NetworkReachable) UpdateConsent();
+            else _networkWait.Reset(NetworkPollSeconds);
         }
 
         public void ShowPrivacyOptions(Action onClosed)

@@ -48,6 +48,17 @@ namespace NexusVerify.Device
             yield return null;
             bool passed = control && allocations == 1 && calls == before + 1;
             Debug.Log($"[AdsSchedulerProbe] {(passed ? "PASS" : "FAIL")} scheduleAllocations={allocations} positiveControl={control} callbacks={calls} staleTokenSafe={calls == before + 1}");
+            using var timer = scheduler.CreateTimer(callback);
+            timer.Reset(60); timer.Cancel();
+            recorder.Reset(); recorder.Start();
+            for (int i = 0; i < 100; i++) { timer.Reset(60); timer.Cancel(); }
+            recorder.Stop();
+            long resetAllocations = recorder.Count;
+            timer.Reset(0);
+            before = calls;
+            yield return null;
+            yield return null;
+            Debug.Log($"[AdsSchedulerProbe] {(control && resetAllocations == 0 && calls == before + 1 ? "PASS" : "FAIL")} reusableResets=100 allocations={resetAllocations} fired={calls == before + 1}");
         }
     }
 }

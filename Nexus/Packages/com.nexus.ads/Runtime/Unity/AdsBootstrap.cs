@@ -1,5 +1,4 @@
 // #412's intent reader is removed at compile time from release assemblies.
-#pragma warning disable UAC0009
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -260,7 +259,7 @@ namespace Nexus.Ads.Unity
             if (!UnityTouchInput.ReadsPointer) WarnTouchWaitUnread();
             Controller.Start(); // an idle host (ad-free, blocked, consent flow or provider missing) stays Stopped: its provider is NoAdsProvider
             if (Build != BuildKind.Release && _debugPanel) gameObject.AddComponent<AdsDebugPanel>().Bind(this);
-#if DEVELOPMENT_BUILD && UNITY_ANDROID && !UNITY_EDITOR
+#if NEXUS_ADS_FAULT_TESTS && UNITY_ANDROID && !UNITY_EDITOR
             if (Build != BuildKind.Release && Provider is IRewardFaultDebug)
                 gameObject.AddComponent<RewardFaultIntent>();
 #endif

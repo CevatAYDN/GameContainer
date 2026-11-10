@@ -1,5 +1,32 @@
 # Release gates
 
+## Closure follow-up — #418 and #420
+
+Evidence root: `Nexus/artifacts/closure-100-418-420/`, Unity 6000.6.8f1.
+`host-final.log`: 651 checks / 0 failures. `editmode-final.xml`: 1029 total,
+1027 passed / 0 failed / 2 skipped; `playmode-final.xml`: 328 total,
+326 passed / 0 failed / 2 skipped.
+
+- #418: owner-held `IAdTimer` avoids repeated token/delegate construction for controller
+  pacing/retry/answer/show timers and LevelPlay/UMP network waits. Actual Android IL2CPP
+  High probe (`scheduler-device.log`) reports `reusableResets=100 allocations=0 fired=True`,
+  with a live allocation positive control. Existing one-shot handles still allocate once
+  and cannot cancel a later wait. Custom schedulers use the compatible default adapter.
+  This is a scheduler bookkeeping claim, not a zero-allocation claim for SDK or game callbacks.
+- #420: the family uses `NEXUS_ADS_FAULT_TESTS`, automatically selected by actual player
+  build options; no runtime family file uses `DEVELOPMENT_BUILD` or UAC0009 suppression.
+  `fault-compile.log` proves inclusion using ScriptCompilationOptions.None plus only the
+  family symbol, and release exclusion with no symbol. Real consecutive development and
+  release Android builds also preserve four fault types then strip all of them. This tests
+  absence of reliance on the retired symbol on 6000.6.8f1, not a run of Unity 6.8.
+- Provider SDK proof projects on the Android editor target: LevelPlay 9.6.0 **47/47**,
+  AdMob 11.6.0 **45/45**, both zero failures/skips. An initial LevelPlay run on Win64 failed
+  because that SDK mock answers initialization only on Android; it is retained as a rejected
+  environment run, not counted as production red evidence.
+
+Development APK SHA256: `C09FF4AF2638E0F4A4004C21FA82CC2EDB8C0B3A5F4B0AA3942DC3AE283EFE48`.
+Release APK SHA256: `0C91D76DEF544FABC903757E35E6A22530BA6FFA857C5EDB4F429626389A6544`.
+
 ## Consumer hotfix verification — 2026-11-10 (#100, #415–#418)
 
 Source baseline: `6935d7953b07a4216413a425ba7da1805bc4f37b` plus the issue fixes

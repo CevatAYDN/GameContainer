@@ -19,7 +19,8 @@ namespace Nexus.Ads
         {
             public SlotState State;
             public int Failures;
-            public IDisposable Retry;
+            public IAdTimer Retry;
+            public IAdTimer Timer;
         }
 
         public enum Phase { Stopped, AwaitingConsent, Initializing, Running, ConsentRefused, InitFailed }
@@ -29,7 +30,6 @@ namespace Nexus.Ads
         private readonly IAdClock _clock;
         private readonly IAppVisibility _visibility;
         private readonly IMainThread _mainThread;
-        private readonly IAdScheduler _scheduler;
         private readonly IAdTelemetry _telemetry;
         private readonly IConsentFlow _consent;
         private IAdFreeEntitlement _adFree;
@@ -42,12 +42,12 @@ namespace Nexus.Ads
         private int _rewardSequence;
         private bool _fullScreenOpen, _killSwitch, _disposed, _lockHeld;
         private int _initFailures;
-        private IDisposable _initRetry;
+        private IAdTimer _initRetry;
         // A UI that polls IsReady every frame (an OnGUI button asks twice) instead of following ReadyChanged would cross
         // into the SDK each time, which logs every IsAdReady in test mode: an answer is reused this long; Show and Preload ask live.
         private const double ProviderReadyWindowSeconds = 0.1;
         // A time rule of the guard that runs out changes readiness with no provider or app event, so a wake raises ReadyChanged then.
-        private IDisposable _pacingWake;
+        private IAdTimer _pacingWake;
         private double _pacingWakeAt;
         private long _pacingDay;
         // the wake waits this much past the window's end: a timer that resumes a hair early would find the guard still blocking
@@ -60,7 +60,10 @@ namespace Nexus.Ads
         private Action<string> _expireOpenShow; // ends the open show as failed; null when no show is open
         private AdFormat _openShowFormat;
         private bool _openShowOpened, _openShowLeftFocus;
-        private IDisposable _showDeadline, _answerWait;
+        private IAdTimer _showDeadline, _answerWait;
+        private readonly IAdTimer _initTimer, _pacingTimer, _showTimer, _answerTimer;
+        private Phase _answerPhase;
+        private string _answerDetail;
 
         /// <summary>How long a show may go unanswered while the app is visible before it is ended as failed (issue #180).</summary>
         public const double ShowAnswerSeconds = 10;
@@ -87,7 +90,7 @@ namespace Nexus.Ads
             _clock = clock ?? throw new ArgumentNullException(nameof(clock));
             _visibility = visibility ?? throw new ArgumentNullException(nameof(visibility));
             _mainThread = mainThread ?? throw new ArgumentNullException(nameof(mainThread));
-            _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
+            if (scheduler == null) throw new ArgumentNullException(nameof(scheduler));
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _telemetry = telemetry ?? throw new ArgumentNullException(nameof(telemetry));
             _consent = consent;
@@ -97,7 +100,34 @@ namespace Nexus.Ads
             Guard = new PolicyGuard(config, config.Policy, visibility, _session, touch);
             if (config.Uses(AdFormat.Rewarded)) _slots[AdFormat.Rewarded] = new Slot();
             if (config.Uses(AdFormat.Interstitial)) _slots[AdFormat.Interstitial] = new Slot();
+            _initTimer = scheduler.CreateTimer(() => { if (!_disposed && State == Phase.InitFailed) InitializeProvider(); });
+            _pacingTimer = scheduler.CreateTimer(OnPacingWake);
+            _showTimer = scheduler.CreateTimer(() =>
+            {
+                _showDeadline = null;
+                _expireOpenShow?.Invoke("no answer from the provider in " + ShowAnswerSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + " s with the app visible: ended as failed");
+            });
+            _answerTimer = scheduler.CreateTimer(() =>
+            {
+                _answerWait = null;
+                if (!_disposed && State == _answerPhase)
+                    _telemetry.Record(new AdEvent(AdEventKind.Unanswered, AdFormat.Interstitial, "",
+                        string.Format(System.Globalization.CultureInfo.InvariantCulture, _answerDetail, AnswerWaitSeconds)));
+            });
+            foreach (var pair in _slots)
+            {
+                var slot = pair.Value;
+                var format = pair.Key;
+                slot.Timer = scheduler.CreateTimer(() =>
+                {
+                    slot.Retry = null;
+                    if (!_disposed && slot.State == SlotState.Retrying) { slot.State = SlotState.Idle; Preload(format); }
+                });
+            }
         }
+
+        private static IAdTimer Schedule(IAdTimer timer, double seconds) { timer.Reset(seconds); return timer; }
 
         /// <summary>Takes the mediation lock, runs consent, starts the SDK and preloads. Safe to call once.</summary>
         public void Start()
@@ -238,7 +268,7 @@ namespace Nexus.Ads
                 }
                 answered = true;
                 _expireOpenShow = null;
-                _showDeadline?.Dispose();
+                _showDeadline?.Cancel();
                 _showDeadline = null;
                 _fullScreenOpen = false;
                 slot.State = SlotState.Idle;
@@ -306,15 +336,10 @@ namespace Nexus.Ads
         // controller may be one; gate 12 runs Android only). Add a long cap when a device shows one.
         private void ArmShowDeadline()
         {
-            _showDeadline?.Dispose();
+            _showDeadline?.Cancel();
             _showDeadline = null;
             if (_expireOpenShow == null || !_visibility.Visible || (_openShowOpened && !_openShowLeftFocus)) return;
-            _showDeadline = _scheduler.Schedule(ShowAnswerSeconds, () =>
-            {
-                _showDeadline = null;
-                _expireOpenShow?.Invoke("no answer from the provider in " + ShowAnswerSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                    + " s with the app visible: ended as failed");
-            });
+            _showDeadline = Schedule(_showTimer, ShowAnswerSeconds);
         }
 
         public void HideBanner() => _provider.HideBanner();
@@ -438,13 +463,13 @@ namespace Nexus.Ads
             if (_consent != null) _consent.Changed -= OnConsentChanged;
             if (_adFree != null) _adFree.Changed -= OnAdFreeChanged;
             if (_remote != null) _remote.Changed -= OnRemoteChanged;
-            foreach (var slot in _slots.Values) { slot.Retry?.Dispose(); slot.Retry = null; }
-            _initRetry?.Dispose();
-            _pacingWake?.Dispose();
+            foreach (var slot in _slots.Values) { slot.Timer.Dispose(); slot.Retry = null; }
+            _initTimer.Dispose();
+            _pacingTimer.Dispose();
             _pacingWake = null;
-            _showDeadline?.Dispose();
+            _showTimer.Dispose();
             _showDeadline = null;
-            _answerWait?.Dispose();
+            _answerTimer.Dispose();
             _answerWait = null;
             if (_lockHeld) MediationLock.Release(_provider.Name);
             State = Phase.Stopped;
@@ -467,7 +492,7 @@ namespace Nexus.Ads
         private void OnConsentCompleted()
         {
             if (_disposed) return;
-            _answerWait?.Dispose();
+            _answerWait?.Cancel();
             _answerWait = null;
             if (_consent.CanRequestAds) InitializeProvider();
             else RefuseConsent();
@@ -483,7 +508,7 @@ namespace Nexus.Ads
             foreach (var slot in _slots.Values)
             {
                 if (slot.State == SlotState.Showing) continue;
-                slot.Retry?.Dispose();
+                slot.Retry?.Cancel();
                 slot.Retry = null;
                 slot.State = SlotState.Idle;
             }
@@ -495,15 +520,10 @@ namespace Nexus.Ads
         /// <see cref="AnswerWaitSeconds"/>; the wait itself goes on (issue #180).</summary>
         private void WaitForAnswer(string detail)
         {
-            _answerWait?.Dispose();
-            var phase = State;
-            _answerWait = _scheduler.Schedule(AnswerWaitSeconds, () =>
-            {
-                _answerWait = null;
-                if (!_disposed && State == phase)
-                    _telemetry.Record(new AdEvent(AdEventKind.Unanswered, AdFormat.Interstitial, "",
-                        string.Format(System.Globalization.CultureInfo.InvariantCulture, detail, AnswerWaitSeconds)));
-            });
+            _answerWait?.Cancel();
+            _answerPhase = State;
+            _answerDetail = detail;
+            _answerWait = Schedule(_answerTimer, AnswerWaitSeconds);
         }
 
         private void InitializeProvider()
@@ -519,7 +539,7 @@ namespace Nexus.Ads
         private void OnInitAnswered(bool ok, string thrown)
         {
             if (_disposed) return;
-            _answerWait?.Dispose();
+            _answerWait?.Cancel();
             _answerWait = null;
             // consent withdrawn in the privacy options while the start was out: no ad loads and no start is retried until the
             // player grants again, whose start a provider already started answers at once (issue #328)
@@ -537,8 +557,8 @@ namespace Nexus.Ads
                 _initFailures++;
                 double delay = RetryPolicy.DelaySeconds(_initFailures);
                 _telemetry.Record(new AdEvent(AdEventKind.InitFailed, AdFormat.Interstitial, "", (thrown != null ? thrown + "; " : "") + "attempt " + _initFailures + ", retry in " + delay.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " s"));
-                _initRetry?.Dispose();
-                _initRetry = _scheduler.Schedule(delay, () => { if (!_disposed && State == Phase.InitFailed) InitializeProvider(); });
+                _initRetry?.Cancel();
+                _initRetry = Schedule(_initTimer, delay);
             }
             RaiseReadyChanged();
         }
@@ -551,7 +571,7 @@ namespace Nexus.Ads
             var slot = _slots[format];
             if (slot.State == SlotState.Loading || slot.State == SlotState.Ready || slot.State == SlotState.Showing) return;
             if (!_visibility.Visible) { slot.State = SlotState.Retrying; return; } // picked up when the app returns
-            slot.Retry?.Dispose();
+            slot.Retry?.Cancel();
             slot.Retry = null;
             if (ProviderReadyLive(format)) { slot.State = SlotState.Ready; RaiseReadyChanged(); return; }
             slot.State = SlotState.Loading;
@@ -577,9 +597,9 @@ namespace Nexus.Ads
             slot.State = SlotState.Retrying;
             bool noFill = reason != null && reason.IndexOf("no fill", StringComparison.OrdinalIgnoreCase) >= 0;
             _telemetry.Record(new AdEvent(noFill ? AdEventKind.NoFill : AdEventKind.LoadFailed, format, "", reason));
-            slot.Retry?.Dispose();
+            slot.Retry?.Cancel();
             slot.Retry = _visibility.Visible
-                ? _scheduler.Schedule(RetryPolicy.DelaySeconds(slot.Failures), () => { slot.Retry = null; if (slot.State == SlotState.Retrying) { slot.State = SlotState.Idle; Preload(format); } })
+                ? Schedule(slot.Timer, RetryPolicy.DelaySeconds(slot.Failures))
                 : null;
             RaiseReadyChanged();
         });
@@ -595,7 +615,7 @@ namespace Nexus.Ads
             }
             if (!visible)
             {
-                foreach (var slot in _slots.Values) { slot.Retry?.Dispose(); slot.Retry = null; }
+                foreach (var slot in _slots.Values) { slot.Retry?.Cancel(); slot.Retry = null; }
                 return;
             }
             foreach (var pair in _slots)
@@ -698,7 +718,7 @@ namespace Nexus.Ads
         // out: a load, a close, visibility, the kill switch, the ad-free entitlement and a new session raise ReadyChanged themselves.
         private void ArmPacingWake()
         {
-            _pacingWake?.Dispose();
+            _pacingWake?.Cancel();
             _pacingWake = null;
             if (_disposed || State != Phase.Running || _killSwitch || _fullScreenOpen || !_visibility.Visible) return;
             double soonest = double.PositiveInfinity;
@@ -717,7 +737,7 @@ namespace Nexus.Ads
             if (double.IsPositiveInfinity(soonest) && !dayCapped) return;
             _pacingWakeAt = _clock.Seconds + soonest + PacingWakeMarginSeconds;
             _pacingDay = dayCapped ? _clock.UtcDay : long.MinValue; // a day change matters only to a wake armed for a day cap
-            _pacingWake = _scheduler.Schedule(Math.Min(soonest + PacingWakeMarginSeconds, dayCapped ? DayCapCheckSeconds : double.PositiveInfinity), OnPacingWake);
+            _pacingWake = Schedule(_pacingTimer, Math.Min(soonest + PacingWakeMarginSeconds, dayCapped ? DayCapCheckSeconds : double.PositiveInfinity));
         }
 
         // The touch wait is the one time rule that starts at no event of the controller's, so no wake was armed for its end:

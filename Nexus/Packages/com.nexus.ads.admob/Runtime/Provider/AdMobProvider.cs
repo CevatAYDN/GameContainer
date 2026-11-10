@@ -1,5 +1,4 @@
 // #412 requires compile-time exclusion from release players, not only a runtime debug check.
-#pragma warning disable UAC0009
 using System;
 using System.Collections.Generic;
 using GoogleMobileAds.Api;
@@ -26,11 +25,11 @@ namespace Nexus.Ads.AdMob
     /// keeps that asset equal to the settings tab.
     /// </summary>
     public sealed class AdMobProvider : IAdProvider, IConsentFlow, IRewardedShowProvider, IDisposable
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
         , IRewardFaultDebug
 #endif
     {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
         private RewardFaultInjection _rewardFaults;
         public RewardFaultInjection RewardFaults => _rewardFaults ??= new RewardFaultInjection(ProviderName);
         public AdMobProvider(ProviderConfig config, IAdScheduler scheduler) : this(config)
@@ -85,7 +84,7 @@ namespace Nexus.Ads.AdMob
             public readonly Action<AdResult> OnResult;
             public readonly Action OnRewardEarned;
             public bool Rewarded, Done;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
             public RewardFaultInjection.Show Fault;
 #endif
 
@@ -289,7 +288,7 @@ namespace Nexus.Ads.AdMob
             var ad = format == AdFormat.Rewarded ? _rewardedState : _interstitialState;
             var show = _show = new ShowState(ad, placement, onResult, onRewardEarned);
             ad.Show = show;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
             if (format == AdFormat.Rewarded)
                 show.Fault = RewardFaults.BeginShow(placement, () => OnRewarded(show), () => ad.Released);
 #endif
@@ -305,7 +304,7 @@ namespace Nexus.Ads.AdMob
         {
             if (!_disposed && !ad.Released && ad.Show != null && !ad.Show.Done && ReferenceEquals(_show, ad.Show))
             {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
                 if (ad.Format == AdFormat.Rewarded) _rewardFaults?.Opened(ad.Show.Fault);
 #endif
                 Opened?.Invoke(ad.Format);
@@ -315,7 +314,7 @@ namespace Nexus.Ads.AdMob
         private void ReceiveReward(ShowState show)
         {
             if (_disposed) return;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
             RewardFaults.Receive(show.Fault);
 #else
             OnRewarded(show);
@@ -334,7 +333,7 @@ namespace Nexus.Ads.AdMob
         {
             if (_disposed || show == null || show.Done) return;
             show.Done = true;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
             _rewardFaults?.Closed(show.Fault);
 #endif
             if (ReferenceEquals(_show, show)) _show = null;
@@ -383,7 +382,7 @@ namespace Nexus.Ads.AdMob
         {
             if (_disposed) return;
             _disposed = true;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
             _rewardFaults?.Dispose();
 #endif
             _sdkStarted = false;
@@ -435,7 +434,7 @@ namespace Nexus.Ads.AdMob
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Register()
         {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+#if UNITY_EDITOR || NEXUS_ADS_FAULT_TESTS
             AdsBootstrap.RegisterProvider(AdProviderKind.AdMob, (scheduler, config) => new AdMobProvider(config, scheduler));
 #else
             AdsBootstrap.RegisterProvider(AdProviderKind.AdMob, (scheduler, config) => new AdMobProvider(config));

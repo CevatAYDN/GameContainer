@@ -77,6 +77,13 @@ The Android development player also accepts an Intent string extra, independent
 of whether the panel is visible. Resolve the real launch activity; do not assume
 UnityPlayerActivity versus UnityPlayerGameActivity:
 
+The package's `AdsFaultBuildSymbols` hook sets `NEXUS_ADS_FAULT_TESTS` from the
+actual `BuildOptions.Development` flag and removes it for release (#420). This
+works for normal player builds without editing a game's define list. Custom
+`PlayerBuildInterface.CompilePlayerScripts` tooling does not run player build
+callbacks: pass that symbol explicitly only for a development compilation.
+Do not force the symbol through release `extraScriptingDefines`.
+
 ```powershell
 $package = 'your.game.package'
 $activity = (adb shell cmd package resolve-activity --brief $package | Select-Object -Last 1).Trim()

@@ -40,6 +40,35 @@ namespace Nexus.Ads
     public interface IAdScheduler
     {
         IDisposable Schedule(double seconds, Action action);
+
+        /// <summary>Owner-held recurring timer. Reset replaces its pending deadline; Cancel keeps it reusable.</summary>
+        IAdTimer CreateTimer(Action action) => new ScheduledAdTimer(this, action);
+    }
+
+    /// <summary>An owner-held main-thread timer. Dispose permanently ends it; Cancel permits a later Reset.</summary>
+    public interface IAdTimer : IDisposable
+    {
+        void Reset(double seconds);
+        void Cancel();
+    }
+
+    // Compatibility for custom/host schedulers; Unity overrides with an allocation-free reset.
+    internal sealed class ScheduledAdTimer : IAdTimer
+    {
+        private readonly IAdScheduler _scheduler;
+        private readonly Action _action;
+        private IDisposable _pending;
+        private bool _disposed;
+        public ScheduledAdTimer(IAdScheduler scheduler, Action action)
+        { _scheduler = scheduler; _action = action ?? throw new ArgumentNullException(nameof(action)); }
+        public void Reset(double seconds)
+        {
+            if (_disposed) throw new ObjectDisposedException(nameof(ScheduledAdTimer));
+            Cancel();
+            _pending = _scheduler.Schedule(seconds, _action);
+        }
+        public void Cancel() { _pending?.Dispose(); _pending = null; }
+        public void Dispose() { Cancel(); _disposed = true; }
     }
 
     /// <summary>Durable string storage for the pacing counters that survive a restart (per-day caps).</summary>
