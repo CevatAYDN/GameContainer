@@ -12,6 +12,26 @@ backends.
 
 ## Prerequisites
 
+### Release injection regression (#417)
+
+`pwsh tools/unity-verify/release-injection-probe.ps1 -AdbSerial <serial>` builds
+and runs a **non-development Android IL2CPP High/OptimizeSize** player. It parks
+the generated binder and disables reload autogeneration for the build, restoring
+both afterwards: a generated binder's reflection references can accidentally keep
+the missing base setters alive and hide this bug. The probe resolves eight real
+services and checks their inherited Context/SignalBus plus a mediator's private
+SignalBus setter. `check-stripped.ps1` also rejects injected properties whose
+setters disappeared, including abstract generic bases. Evidence goes in a fresh
+`Nexus/artifacts/release-injection-<id>/`. The starter scene may separately report
+its model constructor missing without its binder; that is not this probe's verdict.
+
+`NexusVerify.NexusVerifyBuild.BuildAndroidStorageProbe` builds the isolated #100
+device workload: 40 two-key saves at 64/4096/32768 characters, positive-controlled
+whole-frame allocated bytes (including setup/readback, an upper bound per save),
+mean synchronous save duration and fresh-store readback. A 1 MiB positive control
+rejects inert counters; IL2CPP's thread-allocation API can return zero.
+It uses dedicated storage salts and deletes only its two fixture keys afterwards.
+
 - Unity **6000.6.8f1** (matches `Nexus/ProjectSettings/ProjectVersion.txt`),
   installed via Unity Hub, with the **Windows Build Support** module.
   - Optional: **Android Build Support** (SDK + NDK) if you want the Android

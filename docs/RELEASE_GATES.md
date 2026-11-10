@@ -1,5 +1,81 @@
 # Release gates
 
+## Consumer hotfix verification — 2026-11-10 (#100, #415–#418)
+
+Source baseline: `6935d7953b07a4216413a425ba7da1805bc4f37b` plus the issue fixes
+published on main through **`0a2eb4274211ff9dcdea4ddea3a25eddbd81aa0d`**:
+`385391e9` (#417), `6d3514bd` (#100), `a430ad83` (#416), `0a2eb427` (#418/#415 proof).
+Local evidence: `Nexus/artifacts/issues-417-100-416/`.
+Unity 6000.6.8f1, Windows 11; phone POCO X6 Pro/2311DRK48G, Android 16, ARM64 IL2CPP.
+This is a scoped hotfix cycle; earlier release gates below are not relabelled.
+
+- **#417:** non-development High/OptimizeSize player, generated binder parked.
+  `release-nobinder-before-device.log` fails with the issue's get-only Context error;
+  `stripped-before.json` reports both missing service setters. After package preservation,
+  `release-after-capture.log` and the repeatable runner's `release-runner-verified.log`
+  pass 8/8 services, 16/16 inherited Context/SignalBus assignments and 1/1 mediator.
+  `stripped-after.json`: 11 assemblies, 537 concrete classes, zero missing implementations/setters.
+  An earlier binder-present player passed before the fix and is explicitly not red evidence.
+- **#100:** `host-storage-red.log` fails the warmed 32 KiB allocation regression at
+  133,320 B/write; `host-storage-green.log` passes it and the full host run (651/0).
+  Existing encrypted migration, integrity, failed-write, reentry and disposal tests pass.
+  `editmode-final.xml`: 1,028 total / 1,026 passed / 0 failed / 2 skipped;
+  `playmode.xml`: 325 total / 323 passed / 0 failed / 2 skipped (before #418).
+- **#415:** the real static Ads facade and PlayerPrefs recover a corrupt row, then a simulator-earned
+  receipt survives process death, is acknowledged on restart, and stays absent on the next restart.
+  `quarantine-arm.log`, `quarantine-recover.log`, `quarantine-verify.log` each pass in a different PID.
+  The raw quarantine value survives both restarts. The added facade PlayMode test also passes.
+- **#416:** `fault-intent-compile.log` checks real Android development and release assemblies:
+  the development reader has Start/focus callbacks and no Update; all fault types are absent in release.
+  This project's provider count is zero; it does not claim a fresh native SDK callback test.
+- **#418:** `scheduler-red.xml` observes 4 allocation samples per warmed Schedule
+  where the regression permits only its unique cancellation token (2 passed / 1 failed).
+  After replacing coroutine waits with deadlines, `playmode-final.xml` reports
+  327 total / 325 passed / 0 failed / 2 skipped, including unscaled timing, cancellation,
+  stale handles, callback reentry and disabled-host cleanup. `scheduler-device.log`
+  passes on IL2CPP High: one Schedule allocation, positive control true, three expected
+  callbacks and stale-token isolation. One new IDisposable token remains per Schedule;
+  this does not establish an unconditional 0 B/frame game budget. Caller closures and
+  list-capacity growth also remain outside the allocation-free wait/dispatch claim.
+
+Storage device comparison (`StorageWriteProbe`, 40 synchronous two-key saves per row):
+
+| Characters per value | Before frame bytes / save (upper bound) | After | Reduction | Before mean ms/save | After |
+|---|---:|---:|---:|---:|---:|
+| 64 | 60,990 | 47,091 | 22.8% | 1.413 | 1.345 |
+| 4,096 | 95,867 | 63,144 | 34.1% | 1.665 | 1.543 |
+| 32,768 | 343,786 | 135,659 | 60.5% | 3.319 | 3.271 |
+
+`storage-frame-before-run2.log` and `storage-after-device.log` use the same probe and
+1,048,608-byte positive control. Whole-frame counts include setup, warmup and fresh-reader
+verification; they are upper bounds, not isolated writer costs. Timing covers just the
+40-save loop; it is not ChipCrisis's full save-frame/p99 acceptance. Unity's thread allocation
+counter was inert (0 positive control), so those rejected runs are not evidence.
+Remaining framework/Mono file API and ciphertext allocations are not claimed as zero.
+
+Frozen APK SHA256:
+- Release red: `8392D7F66144908E66C510FB9C9F6B55EFB0F1BF651B97060C80BAABC769013B`
+- Release green: `E75AA08AC10E1686FE5ACAC2466F294FD1C9915530B3E9925FC2539DF12F89FE`
+- Storage before: `7F0021ABC7DA342095C1BD7BFD135914FC8538A1A10976B9D4B39473591CAAB1`
+- Storage after / quarantine: `4093A7A212930C8521A352B27550449140B45FF4C07DAB86E4A67CA79C668BCB`
+
+Dependency check: `versions.log` records seven GitHub HTTP 403 rate-limit failures and a newer
+Pipeline prerelease (1.0.0-pre.1 versus installed 0.10.0-exp.1). Dependencies are unchanged in
+this bugfix cycle; the newest-version gate remains partial for those rows.
+
+Gate-11 hotfix handoff (new target, not completed consumer acceptance):
+[Formatron#13](https://github.com/CevatAYDN/Formatron/issues/13),
+[ChipCrisis#20](https://github.com/CevatAYDN/ChipCrisis/issues/20),
+[Wickling#10](https://github.com/CevatAYDN/Wickling/issues/10),
+[Gigawatt#7](https://github.com/CevatAYDN/Gigawatt/issues/7),
+[Pixel-Flow-Clone#3](https://github.com/CevatAYDN/Pixel-Flow-Clone/issues/3),
+[IdleProject#2](https://github.com/CevatAYDN/IdleProject/issues/2),
+[PuzzleGame#2](https://github.com/CevatAYDN/PuzzleGame/issues/2),
+[RingFlow#7](https://github.com/CevatAYDN/RingFlow/issues/7).
+Each names the published full pin, required game changes and new-device acceptance.
+Storage #100 and scheduling #418 remain open for the reporting games' performance
+acceptance: measured reductions do not prove their original frame budgets.
+
 A package version is tagged only when every gate below is green on the commit being tagged.
 Each gate names its command and its latest measured result; a gate without a fresh result on
 the release commit is red. Numbers here are replaced, never accumulated: earlier results are in this file's git history, and
