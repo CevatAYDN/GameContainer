@@ -27,6 +27,32 @@ Evidence root: `Nexus/artifacts/closure-100-418-420/`, Unity 6000.6.8f1.
 Development APK SHA256: `C09FF4AF2638E0F4A4004C21FA82CC2EDB8C0B3A5F4B0AA3942DC3AE283EFE48`.
 Release APK SHA256: `0C91D76DEF544FABC903757E35E6A22530BA6FFA857C5EDB4F429626389A6544`.
 
+Published follow-up pin: **`74c36655816014ed30e38ea77d526db0c9549be0`**.
+Framework #418/#420 were closed with evidence; all eight consumer migration issues
+listed below were updated with this pin. Game-specific acceptance remains in those issues.
+
+### #100 consumer save-path acceptance
+
+ChipCrisis at `4f927f5` plus its #20 re-pin/probe was built with core hotfix pin
+`0a2eb427` (the storage source is identical at `74c36655`). The phone had a
+non-debuggable Play install, so its save backup was refused and no production data
+was touched. A separate `com.fiftythreestudio.chipcrisis.nexushotfix` APK ran the
+real game, unlocked-zone/RamCrisis fixture, wallet flush, serialization and blob writes.
+It is a generated test fixture, not the owner's original save.
+
+On POCO X6 Pro/Android16, Unity6000.6.8f1 IL2CPP, 48 forced real SaveService.Save calls
+over 240 seconds measured **2.537 ms minimum / 4.550 ms median / 6.306 ms maximum**.
+The plain capture has 15,612 post-warmup frames; its overall worst frame is 41.5 ms,
+with five one-second windows over 33.3 ms. Thus storage calls meet the 16.7 ms call
+budget on this workload; the run is not an all-game 60FPS or zero-GC acceptance.
+Remaining game/SDK frame attribution stays in ChipCrisis#20 and its release gates.
+
+Consumer evidence: `ChipCrisis/artifacts/nexus-hotfix20/{device.log,perf-log.txt,summary.json}`;
+APK SHA256 `4FA894D984067DFE791B33950E2E100F09240429FD11D98FF787E9A88BBB12FF`.
+Framework #100 covers the now-removed redundant allocation sources and the confirmed
+storage improvement and was closed with these claim limits; reopen it with a new
+storage-attributed over-budget capture.
+
 ## Consumer hotfix verification — 2026-11-10 (#100, #415–#418)
 
 Source baseline: `6935d7953b07a4216413a425ba7da1805bc4f37b` plus the issue fixes

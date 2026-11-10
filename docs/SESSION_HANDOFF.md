@@ -1,5 +1,28 @@
 # Session handoff
 
+## Current continuation — closure follow-up
+
+**Framework issue state:** #100, #418 and #420 were closed with scoped evidence comments;
+the final GitHub open-issue query returned an empty list. All eight existing consumer
+migration issues received the new pin and follow-up instructions. Game release/performance
+acceptance remains tracked in those game issues; it is not claimed complete here.
+
+The owner asked to complete and close every open framework issue. New #420 was included.
+Published code pin is now `74c36655816014ed30e38ea77d526db0c9549be0`:
+reusable recurring ads timers (#418) and package-owned development build symbol (#420).
+Evidence is canonical in `RELEASE_GATES.md`, “Closure follow-up”; raw artifacts under
+`Nexus/artifacts/closure-100-418-420/`. Host651/0, EditMode1027/0/2, PlayMode326/0/2;
+LevelPlay47/47 and AdMob45/45 on Android editor target. Device100 timer resets/cancels0alloc.
+
+#100 additionally ran ChipCrisis's real save path in an isolated application: 48 calls,
+median4.550ms/max6.306ms; Play-installed owner data was inaccessible to backup and left
+untouched. This is a generated unlocked-zone/RamCrisis fixture, not the original save;
+overall game frames still have spikes. Consumer acceptance details stay in ChipCrisis#20.
+ChipCrisis has a #20 re-pin and isolated test tools from this session; inspect that repo's
+status before editing. Wickling/Gigawatt had unrelated work and were not repinned here.
+
+Refresh GitHub before resuming; the older checkpoint below describes the earlier state.
+
 ## Resume point — 2026-11-10
 
 The owner asked to fix consumer-reported framework issues individually with evidence,
