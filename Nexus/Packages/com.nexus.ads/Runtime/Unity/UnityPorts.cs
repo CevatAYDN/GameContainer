@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Threading;
 using UnityEngine;
@@ -90,31 +89,58 @@ namespace Nexus.Ads.Unity
         }
     }
 
-    /// <summary>Delays as coroutines on unscaled time, so a paused game (time scale 0 during an ad) still retries.</summary>
+    /// <summary>Unscaled main-thread deadlines. Disabling the host cancels its pending work.</summary>
     [DisallowMultipleComponent]
     public sealed class UnityAdScheduler : MonoBehaviour, IAdScheduler
     {
         private sealed class Handle : IDisposable
         {
-            public Coroutine Routine;
             public UnityAdScheduler Owner;
-            public bool Done;
-            public void Dispose() { if (!Done && Owner != null && Routine != null) Owner.StopCoroutine(Routine); Done = true; }
+            public Action Action;
+            public double Due;
+            public int CreatedFrame;
+            public void Dispose() { Owner = null; Action = null; }
         }
+
+        private readonly List<Handle> _pending = new List<Handle>(8);
 
         public IDisposable Schedule(double seconds, Action action)
         {
-            var handle = new Handle { Owner = this };
-            handle.Routine = StartCoroutine(Wait(handle, (float)seconds, action));
+            if (action == null) throw new ArgumentNullException(nameof(action));
+            if (double.IsNaN(seconds)) throw new ArgumentOutOfRangeException(nameof(seconds));
+            if (!isActiveAndEnabled) throw new InvalidOperationException("The scheduler must be active.");
+            // A unique token is intentional: pooling an escaped IDisposable lets a
+            // caller's old token cancel somebody else's new wait (#418).
+            var handle = new Handle { Owner = this, Action = action,
+                Due = Time.realtimeSinceStartupAsDouble + Math.Max(0, seconds), CreatedFrame = Time.frameCount };
+            _pending.Add(handle);
             return handle;
         }
 
-        private static IEnumerator Wait(Handle handle, float seconds, Action action)
+        private void Update()
         {
-            yield return new WaitForSecondsRealtime(seconds);
-            if (handle.Done) yield break;
-            handle.Done = true;
-            action();
+            double now = Time.realtimeSinceStartupAsDouble;
+            int count = _pending.Count, frame = Time.frameCount;
+            for (int i = 0; i < count && i < _pending.Count && isActiveAndEnabled; i++)
+            {
+                var handle = _pending[i];
+                if (handle.Owner == null || handle.CreatedFrame >= frame || handle.Due > now) continue;
+                var action = handle.Action;
+                handle.Dispose(); // complete before invoking user code (cancel/reschedule/disable may reenter)
+                try { action(); }
+                catch (Exception error) { Debug.LogException(error); }
+            }
+            // Stable in-place compaction, including cancellations made by callbacks.
+            int live = 0;
+            for (int i = 0; i < _pending.Count; i++)
+                if (_pending[i].Owner != null) _pending[live++] = _pending[i];
+            if (live < _pending.Count) _pending.RemoveRange(live, _pending.Count - live);
+        }
+
+        private void OnDisable()
+        {
+            for (int i = 0; i < _pending.Count; i++) _pending[i].Dispose();
+            _pending.Clear();
         }
     }
 

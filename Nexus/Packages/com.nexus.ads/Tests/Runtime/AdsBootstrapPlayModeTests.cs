@@ -34,6 +34,7 @@ namespace Nexus.Ads.Tests.Runtime
 
         // RewardReceipts' row in PlayerPrefs: a test that pays a reward leaves its receipt, so each test starts and ends without one
         private const string ReceiptRow = "nexus.ads.reward.pending";
+        private readonly List<string> _quarantined = new List<string>();
 
         [SetUp]
         public void SetUp() => PlayerPrefs.DeleteKey(ReceiptRow);
@@ -42,6 +43,8 @@ namespace Nexus.Ads.Tests.Runtime
         public void TearDown()
         {
             PlayerPrefs.DeleteKey(ReceiptRow);
+            foreach (string key in _quarantined) PlayerPrefs.DeleteKey(key);
+            _quarantined.Clear();
             if (_root != null) Object.Destroy(_root);
             if (_settings != null) Object.Destroy(_settings);
             Time.timeScale = 1f;
@@ -182,6 +185,37 @@ namespace Nexus.Ads.Tests.Runtime
             Assert.AreEqual("offer-before-show", pending.Context);
             Nexus.Ads.Unity.Ads.AcknowledgeReward(pending.Id);
             Assert.IsFalse(Nexus.Ads.Unity.Ads.PendingReward.HasValue);
+        }
+
+        [UnityTest]
+        public IEnumerator CorruptReceipt_FacadeQuarantinesBeforeBoot_AndEarnedRewardSurvivesBootstrapRestart()
+        {
+            const string raw = "NXRQ3\n!!notbase64|x|-";
+            PlayerPrefs.SetString(ReceiptRow, raw);
+            PlayerPrefs.Save();
+            Assert.Throws<System.IO.InvalidDataException>(() => _ = Nexus.Ads.Unity.Ads.PendingReward);
+            string key = Nexus.Ads.Unity.Ads.QuarantineUnreadableRewards();
+            _quarantined.Add(key);
+            Assert.AreEqual(raw, PlayerPrefs.GetString(key));
+            Assert.IsNull(Nexus.Ads.Unity.Ads.PendingReward);
+            Assert.IsNull(Nexus.Ads.Unity.Ads.QuarantineUnreadableRewards());
+            yield return Boot(SimulatorScenario.Normal, simulatorOverlay: false, debugPanel: false);
+            string earned = null;
+            Nexus.Ads.Unity.Ads.Show("shop_refill", "quarantine-offer", result =>
+            {
+                Assert.AreEqual(AdResult.Rewarded, result);
+                earned = Nexus.Ads.Unity.Ads.DeliveringReward?.Id;
+            });
+            Assert.IsTrue(_bootstrap.Simulator.CompleteShow(AdResult.Rewarded));
+            Assert.IsNotNull(earned);
+            Object.Destroy(_root);
+            yield return null;
+            Assert.IsNull(AdsBootstrap.Instance);
+            Assert.AreEqual(earned, Nexus.Ads.Unity.Ads.PendingReward?.Id);
+            Assert.AreEqual("quarantine-offer", Nexus.Ads.Unity.Ads.PendingReward?.Context);
+            Nexus.Ads.Unity.Ads.AcknowledgeReward(earned);
+            Assert.IsNull(Nexus.Ads.Unity.Ads.PendingReward);
+            Assert.AreEqual(raw, PlayerPrefs.GetString(key));
         }
 
         [UnityTest]
@@ -387,6 +421,72 @@ namespace Nexus.Ads.Tests.Runtime
                 Time.timeScale = 1f;
                 Object.Destroy(go);
             }
+        }
+
+        [UnityTest]
+        public IEnumerator Scheduler_AllocatesOnlyItsCancellationToken_AndOldTokensCannotCancelNewWaits()
+        {
+            var go = new GameObject("scheduler-allocation");
+            try
+            {
+                var scheduler = go.AddComponent<UnityAdScheduler>();
+                int fired = 0;
+                System.Action callback = () => fired++;
+                scheduler.Schedule(0, callback);
+                yield return null;
+                yield return null;
+                using var recorder = global::Unity.Profiling.ProfilerRecorder.StartNew(global::Unity.Profiling.ProfilerCategory.Internal,
+                    "GC.Alloc", 1000, global::Unity.Profiling.ProfilerRecorderOptions.CollectOnlyOnCurrentThread);
+                Assert.IsTrue(recorder.Valid);
+                System.GC.KeepAlive(new byte[4096]);
+                recorder.Stop();
+                Assert.Greater(recorder.Count, 0, "allocation positive control");
+                recorder.Reset();
+                recorder.Start();
+                var old = scheduler.Schedule(0, callback);
+                recorder.Stop();
+                Assert.AreEqual(1, recorder.Count, "only the unique cancellation token; no iterator, yield object or Coroutine wrapper");
+                yield return null;
+                yield return null;
+                int before = fired;
+                scheduler.Schedule(0, callback);
+                old.Dispose(); // A retired handle must never cancel a reused/new timer.
+                old.Dispose();
+                yield return null;
+                yield return null;
+                Assert.AreEqual(before + 1, fired);
+            }
+            finally { Object.Destroy(go); }
+        }
+
+        [UnityTest]
+        public IEnumerator Scheduler_ReentrantZeroDelayWaitIsDeferred_AndDisableDropsPendingWork()
+        {
+            var go = new GameObject("scheduler-reentry");
+            try
+            {
+                var scheduler = go.AddComponent<UnityAdScheduler>();
+                int outerFrame = -1, innerFrame = -1, cancelled = 0;
+                System.IDisposable other = null;
+                scheduler.Schedule(0, () =>
+                {
+                    outerFrame = Time.frameCount;
+                    other.Dispose();
+                    scheduler.Schedule(0, () => innerFrame = Time.frameCount);
+                });
+                other = scheduler.Schedule(0, () => cancelled++);
+                yield return new WaitForSecondsRealtime(0.1f);
+                Assert.GreaterOrEqual(outerFrame, 0);
+                Assert.Greater(innerFrame, outerFrame, "new zero-delay work waits for a later frame");
+                Assert.AreEqual(0, cancelled, "callback cancellation applies before the next timer executes");
+                scheduler.Schedule(0.05, () => cancelled++);
+                go.SetActive(false);
+                yield return new WaitForSecondsRealtime(0.1f);
+                go.SetActive(true);
+                yield return new WaitForSecondsRealtime(0.1f);
+                Assert.AreEqual(0, cancelled, "disabled host must not resurrect old work");
+            }
+            finally { Object.Destroy(go); }
         }
 
         [UnityTest]

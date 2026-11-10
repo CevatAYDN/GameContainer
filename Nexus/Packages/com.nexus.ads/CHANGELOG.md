@@ -50,6 +50,7 @@ packages (`com.nexus.ads.levelplay`, the `Nexus.Ads.AdMob` and `Nexus.Ads.AdMob.
 ## [Unreleased]
 
 ### Fixed
+- **Scheduled-wait coroutine allocations** (#418): `UnityAdScheduler` uses an unscaled deadline list instead of creating an iterator, yield object and Coroutine per wait. Waiting/dispatch bookkeeping allocates nothing after list capacity is warmed; `Schedule` retains one unique cancellation-token allocation so a stale `IDisposable` cannot cancel a later wait. Reentrant zero-delay work waits until a later frame; cancellation, disabled-host cleanup and time-scale-zero behavior are covered.
 - **Idle development JNI allocations** (#416): reward fault Intent commands read at startup and focus gain instead of polling twice a second. Foreground adb users send HOME before `am start`; held rewards stay in the same process. Release assemblies still exclude the entire fault API.
 
 ### Added
