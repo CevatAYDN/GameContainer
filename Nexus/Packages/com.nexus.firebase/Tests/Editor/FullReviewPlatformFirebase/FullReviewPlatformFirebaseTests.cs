@@ -203,6 +203,29 @@ namespace Nexus.Editor.Tests
             Assert.That(io.CollectionChanges[io.CollectionChanges.Count - 1], Is.True);
         }
 
+        // Issue #424: the SDK logging an error while the held non-fatals were flushed (OnLog → RecordNonFatal) changed the queue
+        // being walked; InitializeAsync threw and the reporter never opened
+        [Test]
+        public async Task CrashReporterReady_SdkRecordingDuringTheFlush_OpensAndDeliversEveryHeldNonFatal()
+        {
+            var io = new CrashIo();
+            io.Consent.Set(ConsentState.NotRequired, AnalyticsChoice.Unknown);
+            io.Service.ExceptionSink = exception =>
+            {
+                io.Calls.Add("exception:" + exception.Message);
+                io.Service.RecordNonFatal(new InvalidOperationException("from sdk"));
+            };
+            using var test = Bind(io.Service, io.Consent);
+            io.Service.RecordNonFatal(new InvalidOperationException("a"));
+            io.Service.RecordNonFatal(new InvalidOperationException("b"));
+
+            await test.InitializeAsync();
+            io.Service.RecordNonFatal(new InvalidOperationException("after"));
+
+            CollectionAssert.AreEqual(new[] { "exception:a", "exception:b", "exception:after" }, io.Calls,
+                "the held ones arrive, the recursion guard drops the SDK's own, and later ones go straight through");
+        }
+
         [Test]
         public async Task P08_RemovedAndReaddedKey_NotifiesAndUsesFallbackBetweenFetches()
         {
