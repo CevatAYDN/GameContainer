@@ -72,15 +72,20 @@ namespace Nexus.Firebase.Crash
         {
             lock (_gate)
             {
-                foreach (var pair in _keys ?? new Dictionary<string, string>()) setKey(pair.Key, pair.Value);
-                foreach (var line in _lines ?? new Queue<string>()) log(line);
-                foreach (var exception in _nonFatals ?? new Queue<Exception>()) record(exception);
+                // The lock is re-entrant: open first, so a delegate that calls back during the flush reaches the reporter
+                // instead of changing the collection being walked (#424).
+                var keys = _keys;
+                var lines = _lines;
+                var nonFatals = _nonFatals;
                 _keys = null;
                 _lines = null;
                 _nonFatals = null;
                 _setKey = setKey;
                 _log = log;
                 _record = record;
+                if (keys != null) foreach (var pair in keys) setKey(pair.Key, pair.Value);
+                if (lines != null) foreach (var line in lines) log(line);
+                if (nonFatals != null) foreach (var exception in nonFatals) record(exception);
             }
         }
 

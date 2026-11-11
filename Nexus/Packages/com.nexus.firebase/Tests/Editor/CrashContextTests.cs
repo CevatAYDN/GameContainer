@@ -76,5 +76,30 @@ namespace Nexus.Firebase.Tests
             closed.Open((key, value) => { }, _ => { }, e => reached.Add(e.Message));
             CollectionAssert.IsEmpty(reached, "an unavailable SDK drops what was held");
         }
+
+        // Issue #424: a delegate that called back during Open's flush (the SDK logging an error that OnLog records) changed the
+        // collection being walked; Open threw and the context stayed unopened
+        [Test]
+        public void ADelegateCallingBackDuringTheFlush_ReachesTheReporter_AndEverythingHeldStillArrives()
+        {
+            var context = new CrashContext();
+            context.SetCustomKey("level", "1");
+            context.Log("boot");
+            context.Log("menu");
+            context.RecordNonFatal(new System.InvalidOperationException("a"));
+            context.RecordNonFatal(new System.InvalidOperationException("b"));
+
+            var keys = new List<string>();
+            var lines = new List<string>();
+            var recorded = new List<string>();
+            context.Open(
+                (key, value) => { keys.Add(key); if (key == "level") context.SetCustomKey("from key", "x"); },
+                line => { lines.Add(line); if (line == "boot") context.Log("from log"); },
+                e => { recorded.Add(e.Message); if (e.Message == "a") context.RecordNonFatal(new System.InvalidOperationException("from sdk")); });
+
+            CollectionAssert.AreEqual(new[] { "level", "from key" }, keys);
+            CollectionAssert.AreEqual(new[] { "boot", "from log", "menu" }, lines);
+            CollectionAssert.AreEqual(new[] { "a", "from sdk", "b" }, recorded);
+        }
     }
 }
