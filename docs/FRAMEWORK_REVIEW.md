@@ -323,7 +323,7 @@ Pre-existing owner files remain byte-identical:
 
 - `Nexus/ProjectSettings/ProjectAuditorSettings.asset`:
   `4071EBDD9BCF64A42402E7B284D62E29D6DDBEA18549FDBE92EF78D1AFC4F37A`
-- `docs/CODE_REVIEW_AUDIT.md`:
+- `docs/archive/CODE-REVIEW-AUDIT-2026-11-08.md` (moved from `docs/CODE_REVIEW_AUDIT.md` in #425):
   `AE3CCA573718B96F88A5FA8C80F862EC6C691E5BDD831E6276BD73964D16952E`
 
 No game repository sources/pins were edited, and no game data was uninstalled or reset.
