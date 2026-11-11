@@ -122,5 +122,36 @@ namespace Nexus.Editor.Tests
             }
             finally { old.ExitRelease.TrySetResult(true); }
         }
+
+        private sealed class Held : IGameState
+        {
+            public readonly TaskCompletionSource<bool> EnterRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            public int Exits;
+            public async ValueTask OnEnterAsync(object args, CancellationToken ct) => await EnterRelease.Task;
+            public ValueTask OnExitAsync(CancellationToken ct) { Exits++; return default; }
+            public void OnTick(float deltaTime) { }
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public async Task PreCancelledChange_LeavesTheRunningTransitionAlone()
+        {
+            using var machine = new GameStateMachine();
+            var held = new Held();
+            var next = new Ready();
+            machine.RegisterState(held);
+            machine.RegisterState(next);
+            var running = machine.ChangeStateAsync<Held>();
+            try
+            {
+                await Within(machine.ChangeStateAsync(typeof(Ready), new CancellationToken(true)));
+                held.EnterRelease.SetResult(true);
+                await Within(running);
+                Require(machine.CurrentState == held && held.Exits == 0 && next.Enters == 0,
+                    "a change whose token was already cancelled must not cancel the transition in progress (#423)");
+            }
+            finally { held.EnterRelease.TrySetResult(true); }
+        }
     }
 }

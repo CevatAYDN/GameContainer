@@ -64,6 +64,8 @@ namespace NexusBench
                 () => fsm.DisposeDuringLateFailure_ExitsOnce_AndLeavesNoCurrentState().GetAwaiter().GetResult());
             Check(nameof(fsm.LateFailureExit_IsAwaited_BeforeTheNewestStateEnters),
                 () => fsm.LateFailureExit_IsAwaited_BeforeTheNewestStateEnters().GetAwaiter().GetResult());
+            Check(nameof(fsm.PreCancelledChange_LeavesTheRunningTransitionAlone),
+                () => fsm.PreCancelledChange_LeavesTheRunningTransitionAlone().GetAwaiter().GetResult());
             var saves = new SaveThrottlerRetentionTests();
             Check(nameof(saves.TickThenDispose_ReleasesCapturedOwner_WithoutAnotherTick),
                 saves.TickThenDispose_ReleasesCapturedOwner_WithoutAnotherTick);

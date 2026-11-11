@@ -207,6 +207,8 @@ namespace Nexus.Core.FSM
             // Interlocked.Exchange publishes the new token and grabs the old one in a
             // single indivisible step; cancelling the superseded source afterwards is
             // safe because the superseded flow disposes its OWN source in its finally.
+            // A caller already cancelled asks for nothing: it must not supersede the transition in progress (#423).
+            if (ct.IsCancellationRequested) return;
             long mySequence = System.Threading.Interlocked.Increment(ref _transitionSequence);
             var myCts = ct != CancellationToken.None
                 ? CancellationTokenSource.CreateLinkedTokenSource(ct)
