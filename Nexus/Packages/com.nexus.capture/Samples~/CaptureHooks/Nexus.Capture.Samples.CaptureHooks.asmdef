@@ -1,0 +1,19 @@
+{
+    "name": "Nexus.Capture.Samples.CaptureHooks",
+    "rootNamespace": "Nexus.Capture.Samples",
+    "references": [
+        "com.nexus.core",
+        "com.nexus.capture"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

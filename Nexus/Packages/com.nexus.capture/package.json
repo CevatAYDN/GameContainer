@@ -12,5 +12,12 @@
     "com.unity.recorder": "5.1.8"
   },
   "keywords": [ "nexus", "capture", "video", "promo", "editor" ],
-  "author": { "name": "Cevat Aydın", "url": "https://github.com/CevatAYDN/GameContainer" }
+  "author": { "name": "Cevat Aydın", "url": "https://github.com/CevatAYDN/GameContainer" },
+  "samples": [
+    {
+      "displayName": "Capture Hooks",
+      "description": "Reference ICaptureHooks implementation demonstrating god mode, level jumping, and scenario presets.",
+      "path": "Samples~/CaptureHooks"
+    }
+  ]
 }
