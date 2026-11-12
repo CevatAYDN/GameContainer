@@ -13,6 +13,7 @@ everything under Unreleased is in the repository but not yet in a tagged package
 ## [Unreleased]
 
 ### Added
+- **Capture Mode markers** (issue #428). `Nexus.Capture.CaptureKeepVisible` keeps a Canvas or UIDocument on screen when Capture Mode hides the UI, and `Nexus.Capture.CaptureHide` deactivates a world object while it is hidden. Both are empty components with no logic: they sit on scene objects, so they live in the core runtime, while the editor-only `com.nexus.capture` package that reads them never reaches a player.
 - **Receipt-keyed, confirmed economy earnings** (issue #350).
   - `IEconomyService.EarnOnce` and `EarnBigOnce` persist the balance and retained per-currency receipt ids in one `NT_EcoWallet_<id>` payload. Duplicate retries confirm again; failed/unconfirmed writes throw. Normal mutation, promotion, throttling and economy-store overrides preserve the ledger.
   - Legacy balances migrate on first use; a present but unreadable wallet never falls back to stale legacy keys. The migration is one-way. Custom economies default to `NotSupportedException` until they implement receipt semantics.
