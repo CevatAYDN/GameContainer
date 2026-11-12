@@ -150,6 +150,63 @@ namespace Nexus.Capture.Tests
             Assert.That(hooks.GodModeEnabled, Is.False);
         }
 
+        [Test]
+        public void Overlay_IsHiddenWhileRecording_AndShownAfter()
+        {
+            CaptureModeService.Open();
+
+            UIDocument overlayDoc = null;
+            foreach (var item in CaptureModeService.Own)
+            {
+                if (item is UIDocument doc)
+                {
+                    overlayDoc = doc;
+                    break;
+                }
+            }
+
+            Assert.That(overlayDoc, Is.Not.Null, "Overlay UIDocument must be registered in CaptureModeService.Own.");
+            Assert.That(overlayDoc.rootVisualElement, Is.Not.Null, "Overlay rootVisualElement must exist.");
+            Assert.That(overlayDoc.rootVisualElement.style.display.value, Is.EqualTo(DisplayStyle.Flex), "Overlay must be visible initially.");
+
+            // SetRecording flips the state the way the recorder does, without starting a real Recorder.
+            CaptureModeService.SetRecording(true);
+            Assert.That(CaptureModeService.IsRecording, Is.True);
+            Assert.That(overlayDoc.rootVisualElement.style.display.value, Is.EqualTo(DisplayStyle.None), "Overlay must be hidden while recording.");
+
+            CaptureModeService.SetRecording(false);
+            Assert.That(CaptureModeService.IsRecording, Is.False);
+            Assert.That(overlayDoc.rootVisualElement.style.display.value, Is.EqualTo(DisplayStyle.Flex), "Overlay must be shown again when recording stops.");
+
+            CaptureModeService.Close();
+        }
+
+        [UnityTest]
+        public IEnumerator Close_DestroysOverlay()
+        {
+            CaptureModeService.Open();
+
+            UIDocument overlayDoc = null;
+            foreach (var item in CaptureModeService.Own)
+            {
+                if (item is UIDocument doc)
+                {
+                    overlayDoc = doc;
+                    break;
+                }
+            }
+
+            Assert.That(overlayDoc, Is.Not.Null, "Overlay UIDocument must be registered in CaptureModeService.Own on Open.");
+            var overlayGo = overlayDoc.gameObject;
+
+            CaptureModeService.Close();
+            yield return null;
+
+            Assert.That(overlayGo == null || overlayGo.Equals(null), Is.True, "Overlay GameObject must be destroyed after Close.");
+            Assert.That(CaptureModeService.Own, Has.No.Member(overlayDoc), "Overlay UIDocument must be removed from Own collection.");
+            Assert.That(CaptureModeService.Own, Has.No.Member(overlayGo), "Overlay GameObject must be removed from Own collection.");
+        }
+
         private sealed class FakeHooks : ICaptureHooks
         {
             public string GameName => "TestGame";

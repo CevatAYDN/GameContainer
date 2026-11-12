@@ -4,7 +4,10 @@
     "references": [
         "com.nexus.capture",
         "com.nexus.core",
-        "com.nexus.core.editor"
+        "com.nexus.core.editor",
+        "Unity.InputSystem",
+        "Unity.Recorder",
+        "Unity.Recorder.Editor"
     ],
     "includePlatforms": [
         "Editor"

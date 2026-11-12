@@ -603,6 +603,40 @@ namespace Nexus.Editor
 
             s_strings["gamemanager_open_wizard"] = "Open Context Wizard";
 
+            // Capture Mode plugin (#428)
+            s_strings["capture_tab_title"] = "Capture";
+            s_strings["capture_toolbar"] = "CAPTURE MODE";
+            s_strings["capture_playmode_hint"] = "Capture Mode is designed for recording promo videos during Play Mode.";
+            s_strings["capture_shortcuts_title"] = "Shortcuts";
+            s_strings["capture_shortcut_toggle"] = "Toggle Capture Mode";
+            s_strings["capture_shortcut_record"] = "Toggle Recording";
+            s_strings["capture_shortcut_hide_ui"] = "Toggle UI";
+            s_strings["capture_shortcut_slower"] = "Slower";
+            s_strings["capture_shortcut_faster"] = "Faster";
+            s_strings["capture_shortcut_pause"] = "Pause / Resume";
+            s_strings["capture_shortcut_step"] = "Step Frame";
+            s_strings["capture_shortcut_free_cam"] = "Free Camera";
+            s_strings["capture_shortcut_god_mode"] = "God Mode";
+            s_strings["capture_select_settings"] = "Select Settings Asset";
+            s_strings["capture_create_settings"] = "Create Settings Asset";
+            s_strings["capture_open"] = "Open Capture Mode";
+            s_strings["capture_close"] = "Close Capture Mode";
+            s_strings["capture_record"] = "Record";
+            s_strings["capture_stop_record"] = "Stop Recording";
+            s_strings["capture_resolution"] = "Resolution Preset";
+            s_strings["capture_speed"] = "Speed: {0:0.##}x";
+            s_strings["capture_slower"] = "Slower";
+            s_strings["capture_faster"] = "Faster";
+            s_strings["capture_pause"] = "Pause";
+            s_strings["capture_resume"] = "Resume";
+            s_strings["capture_step"] = "Step Frame";
+            s_strings["capture_hide_ui"] = "Hide UI";
+            s_strings["capture_free_camera"] = "Free Camera";
+            s_strings["capture_god_mode"] = "God Mode";
+            s_strings["capture_level"] = "Jump to Level";
+            s_strings["capture_presets"] = "Presets";
+            s_strings["capture_no_hooks_hint"] = "Register ICaptureHooks for god mode, levels and presets.";
+
 
         }
 

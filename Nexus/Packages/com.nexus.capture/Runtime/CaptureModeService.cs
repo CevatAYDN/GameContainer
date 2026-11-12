@@ -88,6 +88,7 @@ namespace Nexus.Capture
 
             if (IsOpen) return;
 
+            CaptureOverlay.EnsureSubscribed();
             IsOpen = true;
             CaptureOriginalTime();
             OpenChanged?.Invoke(true);
@@ -296,6 +297,14 @@ namespace Nexus.Capture
             Hooks.ApplyPreset(index);
         }
 
+        /// <summary>Sets the recording state without raising RecordToggleRequested: the recorder reports a failed start, tests flip it without a real recorder.</summary>
+        internal static void SetRecording(bool isRecording)
+        {
+            if (s_isRecording == isRecording) return;
+            s_isRecording = isRecording;
+            StateChanged?.Invoke();
+        }
+
         /// <summary>Requests toggling video recording state.</summary>
         public static void RequestRecordToggle()
         {
@@ -376,6 +385,7 @@ namespace Nexus.Capture
             {
                 s_isRecording = false;
                 RecordToggleRequested?.Invoke(false);
+                StateChanged?.Invoke();
             }
         }
 

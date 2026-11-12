@@ -213,6 +213,7 @@ One row per dependency (#138; the rule is in `CLAUDE.md`, Dependencies). Minimum
 | `com.unity.ide.rider` (development project) | none | 3.1.0 (6000.6.7f1 took it at the first open) | 3.1.0 (2026-09-07) | |
 | `com.unity.ide.visualstudio` (development project) | none | 2.0.29 (`devpackages-20261031`) | 2.0.29 (2026-10-28) | |
 | `com.unity.render-pipelines.universal` | 17.6.0 (`com.nexus.capture` runtime asmdef `versionDefines`, `NEXUS_URP`, #428) | 17.6.0, the editor's built-in package, in the development project (17.5.0 on 6000.5.6f1); `com.nexus.capture` PlayMode 10 / 10 / 0 / 0 (`playmode-428.xml`) | set by the editor | |
+| `com.unity.recorder` | 5.1.8 (`com.nexus.capture` `package.json`, #428) | 5.1.8 (development project, where `com.nexus.capture` is embedded: its editor assembly compiles against it, PlayMode 10 / 10 / 0 / 0, `playmode-428.xml`; no recording made by a test) | 5.1.8 | The editor 6000.6.8f1 bundles 5.1.7; the package asks for 5.1.8 |
 | `com.unity.cinemachine` | 3.1.7 (`com.nexus.capture` runtime asmdef `versionDefines`, `NEXUS_CINEMACHINE`, #428) | none yet: the development project has no Cinemachine; a proof project on 3.1.7 (Wickling) and 6.6.0 (Formatron, Gigawatt, ChipCrisis) is open in #428 | 3.1.7 (registry); 6.6.0 is the editor's built-in package | |
 | `com.unity.test-framework` | 1.8.0 (core editor asmdef: the filter that keeps a test run out of the Error Dashboard compiles with it, #193) | 1.8.0, the editor's built-in package (1.7.0 on 6000.5.6f1) | set by the editor | |
 

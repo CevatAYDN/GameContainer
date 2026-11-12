@@ -12,6 +12,8 @@ using Nexus.Core;
 [assembly: InternalsVisibleTo("com.nexus.fsm.editor")]
 // com.nexus.ads lists its validator on the Status tab with the window's strings when the core is installed (#193).
 [assembly: InternalsVisibleTo("Nexus.Ads.Editor.Nexus")]
+// The Capture Mode tab (com.nexus.capture, #428) uses the window's strings and styles.
+[assembly: InternalsVisibleTo("com.nexus.capture.editor")]
 
 namespace Nexus.Editor
 {
