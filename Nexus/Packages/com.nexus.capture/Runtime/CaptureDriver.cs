@@ -30,6 +30,9 @@ namespace Nexus.Capture
 
         private void Update()
         {
+#if NEXUS_ADS
+            CaptureAdSuppression.Tick();
+#endif
             // StepFrame resolution: re-pauses on the next Update after a single frame step.
             if (CaptureModeService.IsSteppingFrame)
             {
