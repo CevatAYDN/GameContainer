@@ -50,6 +50,15 @@
         "com.nexus.ads": "0.1.0"
       }
     },
+    "com.nexus.capture": {
+      "version": "file:com.nexus.capture",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.nexus.core": "0.6.0",
+        "com.unity.inputsystem": "1.20.0"
+      }
+    },
     "com.nexus.core": {
       "version": "file:com.nexus.core",
       "depth": 0,

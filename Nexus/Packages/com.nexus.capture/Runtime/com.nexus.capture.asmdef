@@ -1,0 +1,19 @@
+{
+    "name": "com.nexus.capture",
+    "rootNamespace": "Nexus.Capture",
+    "references": [
+        "com.nexus.core",
+        "Unity.InputSystem"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_EDITOR"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

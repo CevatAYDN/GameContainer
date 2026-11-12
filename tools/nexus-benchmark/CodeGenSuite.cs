@@ -1037,6 +1037,8 @@ public sealed class SdkLocalIntegration { [Inject] public CodeGenDep Dep; }
                         || (root.TryGetProperty("references", out var refs)
                             && refs.EnumerateArray().Any(r => r.GetString() == "com.nexus.core" || r.GetString() == "GUID:" + coreGuid));
                     if (!referencesCore) continue;
+                    // An assembly constrained to UNITY_EDITOR never reaches a player, so no linker reads a link.xml for it (com.nexus.capture, #428).
+                    if (root.TryGetProperty("defineConstraints", out var constraints) && constraints.EnumerateArray().Any(c => c.GetString() == "UNITY_EDITOR")) continue;
 
                     string package = Path.Combine(packages, Path.GetRelativePath(packages, asmdef).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0]);
                     var elements = LinkerAssemblyElements(package).Where(e => (string)e.Attribute("fullname") == assembly).ToList();
