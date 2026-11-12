@@ -4,7 +4,7 @@
 
 Nexus Capture provides an editor-only Capture Mode that controls game playback, pauses and steps frames, hides user interface layers, navigates via a free camera, suppresses advertisements, and records constant-framerate MP4 video through Unity Recorder.
 
-Nothing in this package reaches a player build. Every Capture runtime and test assembly carries `defineConstraints: UNITY_EDITOR` (`com.nexus.capture.asmdef`, `com.nexus.capture.tests.asmdef`), and the editor assembly is editor-only (`com.nexus.capture.editor.asmdef`). The marker components `CaptureKeepVisible` and `CaptureHide` live in `com.nexus.core` (`Nexus.Capture`) as empty components without logic so scenes and prefabs carry them without missing scripts and without runtime game code ever referencing Capture.
+Nothing in this package reaches a player build. Every Capture runtime and test assembly carries `defineConstraints: UNITY_EDITOR` (`com.nexus.capture.asmdef`, `com.nexus.capture.tests.asmdef`), and the editor assembly is editor-only (`com.nexus.capture.editor.asmdef`). The one exception is the dependency `com.unity.recorder`: its two small runtime assemblies (`Unity.Recorder`, `Unity.Recorder.Base`) are copied into a Mono player; an IL2CPP player's linker strips them. The marker components `CaptureKeepVisible` and `CaptureHide` live in `com.nexus.core` (`Nexus.Capture`) as empty components without logic so scenes and prefabs carry them without missing scripts and without runtime game code ever referencing Capture.
 
 Capture Mode operates only while in Play Mode. Calling `CaptureModeService.Open()` outside Play Mode logs a warning and does nothing. On close and upon exiting Play Mode, all modifications (time scale, fixed delta time, UI visibility, camera, ad suppression, and god mode) are idempotently restored.
 
@@ -85,7 +85,7 @@ Pressing `C` toggles an unconstrained free camera:
   - **Mouse Scroll Wheel**: Adjusts base movement speed between `0.5f` and `50f` (default `5f`, step `±1f`).
   - Movement and look damping use exponential decay against `Time.unscaledDeltaTime`, ensuring responsive and smooth camera motion even when playback is slowed or paused.
 
-On close or toggle off, the free camera GameObject is destroyed and the main camera component is re-enabled.
+On close or toggle off, the free camera GameObject is destroyed; on the fallback path the main camera component Capture disabled is enabled again (the Cinemachine path never disables it).
 
 ## Recording
 
