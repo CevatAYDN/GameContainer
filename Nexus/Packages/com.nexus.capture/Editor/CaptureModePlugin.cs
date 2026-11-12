@@ -186,6 +186,13 @@ namespace Nexus.Capture.Editor
             openBtn.style.marginBottom = 8;
             card.Add(openBtn);
 
+            if (!CaptureModeService.IsOpen)
+            {
+                _content.Add(card);
+                if (_statusBar != null) _statusBar.text = NexusLang.Get("capture_status_closed");
+                return;
+            }
+
             // Record/Stop row with preset dropdown
             var recordRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 8 } };
             var recordBtn = NexusEditorStyles.CreateButton(
@@ -207,7 +214,7 @@ namespace Nexus.Capture.Editor
             }
             else
             {
-                presetNames.Add("Vertical (1080x1920)");
+                presetNames.Add(NexusLang.Get("capture_resolution_default"));
             }
 
             int selectedIndex = Math.Max(0, Math.Min(CaptureRecorder.SelectedPreset, presetNames.Count - 1));
@@ -297,7 +304,7 @@ namespace Nexus.Capture.Editor
                     var levelChoices = new List<string>(hooks.LevelCount);
                     for (int i = 0; i < hooks.LevelCount; i++)
                     {
-                        levelChoices.Add($"Level {i + 1}");
+                        levelChoices.Add(string.Format(NexusLang.Get("capture_level_item"), i + 1));
                     }
                     var levelDropdown = new DropdownField(NexusLang.Get("capture_level"), levelChoices, 0);
                     levelDropdown.style.marginBottom = 8;
@@ -332,9 +339,7 @@ namespace Nexus.Capture.Editor
 
             if (_statusBar != null)
             {
-                _statusBar.text = CaptureModeService.IsOpen
-                    ? $"[Nexus Capture] OPEN | Speed: {CaptureModeService.Speed:0.##}x"
-                    : "[Nexus Capture] CLOSED";
+                _statusBar.text = string.Format(NexusLang.Get("capture_status_open"), CaptureModeService.Speed);
             }
         }
 

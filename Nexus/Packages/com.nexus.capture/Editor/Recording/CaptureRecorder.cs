@@ -74,48 +74,60 @@ namespace Nexus.Capture.Editor
                 : Application.productName;
             string gameName = SanitizeFileName(rawGameName);
 
-            DirectoryInfo projectDir = Directory.GetParent(Application.dataPath);
-            string projectRoot = projectDir != null ? projectDir.FullName : Application.dataPath;
-            string targetDir = Path.Combine(projectRoot, outputFolder, gameName);
-
-            if (!Directory.Exists(targetDir))
+            string outputBase = null;
+            bool started;
+            try
             {
-                Directory.CreateDirectory(targetDir);
+                DirectoryInfo projectDir = Directory.GetParent(Application.dataPath);
+                string projectRoot = projectDir != null ? projectDir.FullName : Application.dataPath;
+                string targetDir = Path.Combine(projectRoot, outputFolder, gameName);
+
+                if (!Directory.Exists(targetDir))
+                {
+                    Directory.CreateDirectory(targetDir);
+                }
+
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                outputBase = Path.Combine(targetDir, timestamp);
+
+                var controllerSettings = ScriptableObject.CreateInstance<RecorderControllerSettings>();
+                var movieSettings = ScriptableObject.CreateInstance<MovieRecorderSettings>();
+                movieSettings.name = "NexusCaptureMovie";
+                movieSettings.Enabled = true;
+                movieSettings.OutputFile = outputBase;
+
+                movieSettings.ImageInputSettings = new GameViewInputSettings
+                {
+                    OutputWidth = width,
+                    OutputHeight = height
+                };
+
+                movieSettings.AudioInputSettings.PreserveAudio = true;
+
+                movieSettings.EncoderSettings = new CoreEncoderSettings
+                {
+                    Codec = CoreEncoderSettings.OutputCodec.MP4,
+                    EncodingQuality = CoreEncoderSettings.VideoEncodingQuality.High
+                };
+
+                controllerSettings.AddRecorderSettings(movieSettings);
+                controllerSettings.SetRecordModeToManual();
+                controllerSettings.FrameRate = frameRate;
+                controllerSettings.FrameRatePlayback = FrameRatePlayback.Constant;
+                controllerSettings.CapFrameRate = true;
+
+                s_controller = new RecorderController(controllerSettings);
+                s_controller.PrepareRecording();
+                started = s_controller.StartRecording();
+            }
+            catch (Exception e)
+            {
+                // A folder that cannot be created or a Recorder that throws must not leave IsRecording true with nothing recording.
+                NexusLog.WarnAlways($"[Nexus Capture] Unity Recorder did not start: {e.Message}");
+                started = false;
             }
 
-            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            string outputBase = Path.Combine(targetDir, timestamp);
-
-            var controllerSettings = ScriptableObject.CreateInstance<RecorderControllerSettings>();
-            var movieSettings = ScriptableObject.CreateInstance<MovieRecorderSettings>();
-            movieSettings.name = "NexusCaptureMovie";
-            movieSettings.Enabled = true;
-            movieSettings.OutputFile = outputBase;
-
-            movieSettings.ImageInputSettings = new GameViewInputSettings
-            {
-                OutputWidth = width,
-                OutputHeight = height
-            };
-
-            movieSettings.AudioInputSettings.PreserveAudio = true;
-
-            movieSettings.EncoderSettings = new CoreEncoderSettings
-            {
-                Codec = CoreEncoderSettings.OutputCodec.MP4,
-                EncodingQuality = CoreEncoderSettings.VideoEncodingQuality.High
-            };
-
-            controllerSettings.AddRecorderSettings(movieSettings);
-            controllerSettings.SetRecordModeToManual();
-            controllerSettings.FrameRate = frameRate;
-            controllerSettings.FrameRatePlayback = FrameRatePlayback.Constant;
-            controllerSettings.CapFrameRate = true;
-
-            s_controller = new RecorderController(controllerSettings);
-            s_controller.PrepareRecording();
-
-            if (s_controller.StartRecording())
+            if (started)
             {
                 s_recordingPath = outputBase + ".mp4";
                 NexusLog.WarnAlways($"[Nexus Capture] Recording to {s_recordingPath}");

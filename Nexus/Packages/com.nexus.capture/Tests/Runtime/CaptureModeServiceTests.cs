@@ -40,6 +40,24 @@ namespace Nexus.Capture.Tests
         }
 
         [Test]
+        public void WhileClosed_SpeedPauseUiAndRecording_DoNothing()
+        {
+            float initialTimeScale = Time.timeScale;
+            var canvas = Track(new GameObject("CanvasWhileClosed")).AddComponent<Canvas>();
+
+            CaptureModeService.Slower();
+            CaptureModeService.TogglePause();
+            CaptureModeService.HideUi();
+            CaptureModeService.RequestRecordToggle();
+
+            Assert.That(Time.timeScale, Is.EqualTo(initialTimeScale), "Nothing restores a change made while Capture Mode is closed.");
+            Assert.That(CaptureModeService.Paused, Is.False);
+            Assert.That(CaptureModeService.UiHidden, Is.False);
+            Assert.That(canvas.enabled, Is.True);
+            Assert.That(CaptureModeService.IsRecording, Is.False);
+        }
+
+        [Test]
         public void Close_RestoresTimeScaleAndFixedDeltaTime_AfterSlowMotionAndPause()
         {
             float initialTimeScale = Time.timeScale;
@@ -74,6 +92,7 @@ namespace Nexus.Capture.Tests
             var goDoc = Track(new GameObject("UIDocumentNormal"));
             var uiDoc = goDoc.AddComponent<UIDocument>();
             var panelSettings = Track(ScriptableObject.CreateInstance<PanelSettings>());
+            panelSettings.themeStyleSheet = UnityEditor.AssetDatabase.LoadAssetAtPath<ThemeStyleSheet>(CaptureOverlay.ThemePath); // no "No Theme Style Sheet" warning
             uiDoc.panelSettings = panelSettings;
 
             var goHide = Track(new GameObject("CaptureHideTarget"));
@@ -87,6 +106,7 @@ namespace Nexus.Capture.Tests
 
             yield return null;
 
+            CaptureModeService.Open();
             CaptureModeService.HideUi();
 
             Assert.That(canvas.enabled, Is.False, "Normal canvas must be disabled.");
@@ -107,6 +127,7 @@ namespace Nexus.Capture.Tests
             var canvasB = goB.AddComponent<Canvas>();
             canvasB.enabled = false;
 
+            CaptureModeService.Open();
             CaptureModeService.HideUi();
 
             Assert.That(canvasA.enabled, Is.False);
@@ -124,6 +145,7 @@ namespace Nexus.Capture.Tests
             CaptureModeService.RegisterHooks(null);
             Assert.That(CaptureModeService.HasHooks, Is.False);
 
+            CaptureModeService.Open();
             CaptureModeService.ToggleGodMode();
             CaptureModeService.JumpToLevel(1);
             CaptureModeService.ApplyPreset(0);
@@ -167,6 +189,7 @@ namespace Nexus.Capture.Tests
 
             Assert.That(overlayDoc, Is.Not.Null, "Overlay UIDocument must be registered in CaptureModeService.Own.");
             Assert.That(overlayDoc.rootVisualElement, Is.Not.Null, "Overlay rootVisualElement must exist.");
+            Assert.That(overlayDoc.panelSettings.themeStyleSheet, Is.Not.Null, "Without a theme the overlay draws no text and Unity warns on every open.");
             Assert.That(overlayDoc.rootVisualElement.style.display.value, Is.EqualTo(DisplayStyle.Flex), "Overlay must be visible initially.");
 
             // SetRecording flips the state the way the recorder does, without starting a real Recorder.

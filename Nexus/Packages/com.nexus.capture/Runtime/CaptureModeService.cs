@@ -116,6 +116,7 @@ namespace Nexus.Capture
         /// <summary>Steps down playback speed to the next slower slow-motion step.</summary>
         public static void Slower()
         {
+            if (!IsOpen) return; // closed: nothing would restore the change
             var steps = GetSteps();
             if (SlowMotionIndex < steps.Length - 1)
             {
@@ -128,6 +129,7 @@ namespace Nexus.Capture
         /// <summary>Steps up playback speed to the next faster slow-motion step.</summary>
         public static void Faster()
         {
+            if (!IsOpen) return; // closed: nothing would restore the change
             if (SlowMotionIndex > 0)
             {
                 SlowMotionIndex--;
@@ -139,6 +141,7 @@ namespace Nexus.Capture
         /// <summary>Toggles playback pause state.</summary>
         public static void TogglePause()
         {
+            if (!IsOpen) return; // closed: nothing would restore the change
             if (!s_timeCaptured)
             {
                 CaptureOriginalTime();
@@ -159,6 +162,7 @@ namespace Nexus.Capture
         /// <summary>Advances exactly one frame at the current speed while paused.</summary>
         public static void StepFrame()
         {
+            if (!IsOpen) return; // closed: nothing would restore the change
             if (!Paused) return;
 
             IsSteppingFrame = true;
@@ -185,6 +189,7 @@ namespace Nexus.Capture
         /// <summary>Hides game Canvases, UIDocuments, and CaptureHide GameObjects.</summary>
         public static void HideUi()
         {
+            if (!IsOpen) return; // closed: nothing would restore the change
             if (UiHidden) return;
             UiHidden = true;
 
@@ -275,6 +280,7 @@ namespace Nexus.Capture
         /// <summary>Toggles god mode via registered game hooks.</summary>
         public static void ToggleGodMode()
         {
+            if (!IsOpen) return; // closed: nothing would restore the change
             if (Hooks == null) return;
 
             GodMode = !GodMode;
@@ -286,6 +292,7 @@ namespace Nexus.Capture
         /// <summary>Jumps to the specified level index via registered game hooks.</summary>
         public static void JumpToLevel(int index)
         {
+            if (!IsOpen) return; // closed: nothing would restore the change
             if (Hooks == null) return;
             Hooks.JumpToLevel(index);
         }
@@ -293,6 +300,7 @@ namespace Nexus.Capture
         /// <summary>Applies the scenario preset at the specified index via registered game hooks.</summary>
         public static void ApplyPreset(int index)
         {
+            if (!IsOpen) return; // closed: nothing would restore the change
             if (Hooks == null) return;
             Hooks.ApplyPreset(index);
         }
@@ -308,6 +316,7 @@ namespace Nexus.Capture
         /// <summary>Requests toggling video recording state.</summary>
         public static void RequestRecordToggle()
         {
+            if (!IsOpen) return; // Close already stopped any recording
             s_isRecording = !s_isRecording;
             RecordToggleRequested?.Invoke(s_isRecording);
             StateChanged?.Invoke();
@@ -316,6 +325,7 @@ namespace Nexus.Capture
         /// <summary>Requests toggling free camera mode.</summary>
         public static void RequestFreeCameraToggle()
         {
+            if (!IsOpen) return; // closed: nothing would restore the change
             FreeCameraToggleRequested?.Invoke();
             StateChanged?.Invoke();
         }

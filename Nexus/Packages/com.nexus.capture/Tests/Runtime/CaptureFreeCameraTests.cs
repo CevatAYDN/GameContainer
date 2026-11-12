@@ -77,6 +77,7 @@ namespace Nexus.Capture.Tests
 
             try
             {
+                CaptureModeService.Open();
                 LogAssert.Expect(LogType.Warning, new Regex("Nexus Capture"));
 
                 CaptureFreeCamera.Toggle();

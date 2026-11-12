@@ -15,6 +15,8 @@ namespace Nexus.Capture
         private static Label s_pausedLabel;
         private static bool s_subscribed;
 
+        internal const string ThemePath = "Packages/com.nexus.capture/Runtime/NexusCaptureOverlay.tss";
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Init()
         {
@@ -52,6 +54,8 @@ namespace Nexus.Capture
             s_panelSettings.name = "NexusCapturePanelSettings";
             s_panelSettings.sortingOrder = 32000;
             s_panelSettings.scaleMode = PanelScaleMode.ConstantPixelSize;
+            // Without a theme Unity warns "No Theme Style Sheet" on every open; a Resources folder would ship in players.
+            s_panelSettings.themeStyleSheet = UnityEditor.AssetDatabase.LoadAssetAtPath<ThemeStyleSheet>(ThemePath);
 
             s_document = s_gameObject.AddComponent<UIDocument>();
             s_document.panelSettings = s_panelSettings;

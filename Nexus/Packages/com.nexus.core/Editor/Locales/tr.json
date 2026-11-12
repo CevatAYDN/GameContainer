@@ -506,6 +506,10 @@
     {"key": "capture_god_mode", "value": "Ölümsüzlük Modu"},
     {"key": "capture_level", "value": "Seviyeye Geç"},
     {"key": "capture_presets", "value": "Önayarlar"},
-    {"key": "capture_no_hooks_hint", "value": "Ölümsüzlük, seviyeler ve önayarlar için ICaptureHooks kaydedin."}
+    {"key": "capture_no_hooks_hint", "value": "Ölümsüzlük, seviyeler ve önayarlar için ICaptureHooks kaydedin."},
+    {"key": "capture_level_item", "value": "Seviye {0}"},
+    {"key": "capture_resolution_default", "value": "Varsayılan (1080x1920)"},
+    {"key": "capture_status_open", "value": "Capture Mode açık | hız {0:0.##}x"},
+    {"key": "capture_status_closed", "value": "Capture Mode kapalı"}
   ]
 }

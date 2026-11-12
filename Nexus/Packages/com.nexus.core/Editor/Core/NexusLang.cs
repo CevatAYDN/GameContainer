@@ -636,8 +636,10 @@ namespace Nexus.Editor
             s_strings["capture_level"] = "Jump to Level";
             s_strings["capture_presets"] = "Presets";
             s_strings["capture_no_hooks_hint"] = "Register ICaptureHooks for god mode, levels and presets.";
-
-
+            s_strings["capture_level_item"] = "Level {0}";
+            s_strings["capture_resolution_default"] = "Default (1080x1920)";
+            s_strings["capture_status_open"] = "Capture Mode open | speed {0:0.##}x";
+            s_strings["capture_status_closed"] = "Capture Mode closed";
         }
 
         [System.Serializable]

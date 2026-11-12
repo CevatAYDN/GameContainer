@@ -43,7 +43,7 @@ namespace Nexus.Capture
             {
                 Restore();
             }
-            else
+            else if (CaptureModeService.IsOpen)
             {
                 Enable();
             }
@@ -127,7 +127,7 @@ namespace Nexus.Capture
                 }
 
                 cineCam.Priority = hasAny ? maxPriority + 1 : 1;
-                cineCam.Lens = brain.CurrentCameraState.Lens;
+                cineCam.Lens = brain.State.Lens;
                 cineCam.Follow = null;
                 cineCam.LookAt = null;
             }
