@@ -40,7 +40,7 @@ namespace Nexus.Ads
         // the placement the game last asked to show per format: provider events carry the format only, and revenue arrives after Closed
         private readonly Dictionary<AdFormat, string> _lastPlacement = new Dictionary<AdFormat, string>();
         private int _rewardSequence;
-        private bool _fullScreenOpen, _killSwitch, _disposed, _lockHeld;
+        private bool _fullScreenOpen, _killSwitch, _suppressed, _disposed, _lockHeld;
         private int _initFailures;
         private IAdTimer _initRetry;
         // A UI that polls IsReady every frame (an OnGUI button asks twice) instead of following ReadyChanged would cross
@@ -73,6 +73,8 @@ namespace Nexus.Ads
         public PolicyGuard Guard { get; }
         public Phase State { get; private set; } = Phase.Stopped;
         public bool KillSwitch => _killSwitch;
+        public bool Suppressed => _suppressed;
+        private bool Blocked => _killSwitch || _suppressed;
         public string ProviderName => _provider.Name;
 
         public event Action ReadyChanged;
@@ -167,7 +169,7 @@ namespace Nexus.Ads
         public bool IsReady(string placement)
         {
             var declared = _config.Find(placement);
-            if (declared == null || State != Phase.Running || _killSwitch || AdFreeCovers(declared.Format)) return false;
+            if (declared == null || State != Phase.Running || Blocked || AdFreeCovers(declared.Format)) return false;
             // a banner has no load slot: the guard alone decides, as it does for ShowBanner (#282)
             if (declared.Format == AdFormat.Banner) return Guard.Check(placement, AdFormat.Banner, new GuardState(_fullScreenOpen, false)).Allowed;
             if (!_slots.TryGetValue(declared.Format, out var slot) || slot.State != SlotState.Ready || !ProviderReady(declared.Format)) return false;
@@ -567,7 +569,16 @@ namespace Nexus.Ads
 
         private void Preload(AdFormat format)
         {
-            if (State != Phase.Running || _killSwitch) return;
+            if (State != Phase.Running || Blocked)
+            {
+                if (_suppressed && State == Phase.Running && !_killSwitch)
+                {
+                    var s = _slots[format];
+                    if (s.State != SlotState.Loading && s.State != SlotState.Ready && s.State != SlotState.Showing && _visibility.Visible)
+                        _telemetry.Record(new AdEvent(AdEventKind.Suppressed, format, "", "request suppressed"));
+                }
+                return;
+            }
             var slot = _slots[format];
             if (slot.State == SlotState.Loading || slot.State == SlotState.Ready || slot.State == SlotState.Showing) return;
             if (!_visibility.Visible) { slot.State = SlotState.Retrying; return; } // picked up when the app returns
@@ -669,8 +680,11 @@ namespace Nexus.Ads
         // ad-free interstitial raised a PolicyViolation (issue #195). An undeclared placement still reaches the guard's UnknownPlacement.
         private bool SwitchedOff(AdPlacement declared, Action<AdResult> onResult)
         {
-            if (declared == null || !(_killSwitch || AdFreeCovers(declared.Format))) return false;
-            NotReady(declared, _killSwitch ? "kill switch" : "ad-free");
+            if (declared == null || !(Blocked || AdFreeCovers(declared.Format))) return false;
+            if (_suppressed)
+                _telemetry.Record(new AdEvent(AdEventKind.Suppressed, declared.Format, declared.Name ?? "", "request suppressed"));
+            else
+                NotReady(declared, _killSwitch ? "kill switch" : "ad-free");
             DeliverResult(onResult, AdResult.NotReady);
             return true;
         }
@@ -699,7 +713,18 @@ namespace Nexus.Ads
             _killSwitch = kill;
             _telemetry.Record(new AdEvent(AdEventKind.KillSwitch, AdFormat.Interstitial, "", kill ? "on" : "off"));
             if (kill) _provider.HideBanner(); // a banner on screen goes with the rest (issue #195)
-            else if (State == Phase.Running) foreach (var format in _slots.Keys) Preload(format);
+            else if (State == Phase.Running && !_suppressed) foreach (var format in _slots.Keys) Preload(format);
+        }
+
+        /// <summary>Suppresses all ads while Capture Mode is open: loads and shows stop, and any banner is hidden (issue #428).</summary>
+        public void SetSuppressed(bool suppressed)
+        {
+            if (suppressed == _suppressed) return;
+            _suppressed = suppressed;
+            _telemetry.Record(new AdEvent(AdEventKind.Suppressed, AdFormat.Interstitial, "", suppressed ? "on" : "off"));
+            if (suppressed) _provider.HideBanner();
+            else if (State == Phase.Running && !_killSwitch) foreach (var format in _slots.Keys) Preload(format);
+            RaiseReadyChanged();
         }
 
         private void RaiseReadyChanged()
@@ -720,7 +745,7 @@ namespace Nexus.Ads
         {
             _pacingWake?.Cancel();
             _pacingWake = null;
-            if (_disposed || State != Phase.Running || _killSwitch || _fullScreenOpen || !_visibility.Visible) return;
+            if (_disposed || State != Phase.Running || Blocked || _fullScreenOpen || !_visibility.Visible) return;
             double soonest = double.PositiveInfinity;
             bool dayCapped = false;
             var placements = _config.Placements;

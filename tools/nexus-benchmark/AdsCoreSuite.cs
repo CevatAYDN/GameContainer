@@ -838,6 +838,95 @@ namespace NexusBench
                 Check("AC26. Remote_OnlyTightens", rig.Controller.Guard.Policy.MinInterstitialGapSeconds == 30 && rig.Controller.Guard.Policy.NoInterstitialForFirstSeconds == 600, $"gap={rig.Controller.Guard.Policy.MinInterstitialGapSeconds} first={rig.Controller.Guard.Policy.NoInterstitialForFirstSeconds}");
             }
 
+            // #428: Capture Mode ad suppression: separate from kill switch, stops every format, hides banner, refusal logged
+            {
+                using var rig = new AdsRig().Running();
+                rig.Scheduler.Advance(61);
+                int violations = rig.Violations.Count;
+                rig.Controller.SetSuppressed(true);
+                int loadsBefore = rig.Provider.Loads.Count;
+                bool readyRewarded = rig.Controller.IsReady("shop_refill");
+                bool readyInterstitial = rig.Controller.IsReady("level_end");
+                var showRewarded = rig.Show("shop_refill");
+                var showInterstitial = rig.Show("level_end");
+                int loadsAfter = rig.Provider.Loads.Count;
+                Check("AC71. Suppressed_StopsLoadsAndShowsOfEveryFormat",
+                    rig.Controller.Suppressed && !readyRewarded && !readyInterstitial
+                    && showRewarded == AdResult.NotReady && showInterstitial == AdResult.NotReady
+                    && loadsAfter == loadsBefore && rig.Violations.Count == violations
+                    && rig.Telemetry.Count(AdEventKind.Suppressed) == 3,
+                    $"Suppressed={rig.Controller.Suppressed}, readyRewarded={readyRewarded}, readyInterstitial={readyInterstitial}, showRewarded={showRewarded}, showInterstitial={showInterstitial}, loadsBefore={loadsBefore}, loadsAfter={loadsAfter}");
+            }
+            {
+                var cfg = AdsRig.Config(null, BuildKind.Development, AdsRig.Rewarded, AdsRig.LevelEnd, new AdPlacement("hud", AdFormat.Banner));
+                using var rig = new AdsRig(cfg).Running();
+                rig.Controller.ShowBanner("hud", BannerPosition.Bottom);
+                bool shownBefore = rig.Provider.BannerShown;
+                rig.Controller.SetSuppressed(true);
+                bool hidden = !rig.Provider.BannerShown;
+                AdResult? bannerResult = null;
+                rig.Controller.ShowBanner("hud", BannerPosition.Top, r => bannerResult = r);
+                Check("AC72. Suppressed_HidesBannerOnScreen",
+                    shownBefore && hidden && bannerResult == AdResult.NotReady && !rig.Provider.BannerShown && !rig.Controller.IsReady("hud"),
+                    $"shownBefore={shownBefore}, hidden={hidden}, bannerResult={bannerResult}, bannerShown={rig.Provider.BannerShown}, isReady={rig.Controller.IsReady("hud")}");
+            }
+            {
+                // 2. Both on: lifting suppression while kill switch is still on keeps it stopped
+                var remote2 = new AdsRemote { KillSwitch = true };
+                using var rig2 = new AdsRig(remote: remote2);
+                rig2.Controller.SetSuppressed(true);
+                rig2.Controller.Start();
+                rig2.Provider.InitCallback(true);
+                rig2.Controller.SetSuppressed(false);
+                bool stoppedByKill = rig2.Provider.Loads.Count == 0 && !rig2.Controller.IsReady("shop_refill") && rig2.Controller.KillSwitch && !rig2.Controller.Suppressed;
+
+                // 3. Both on: lifting kill switch while suppression is still on keeps it stopped
+                var remote3 = new AdsRemote { KillSwitch = true };
+                using var rig3 = new AdsRig(remote: remote3);
+                rig3.Controller.SetSuppressed(true);
+                rig3.Controller.Start();
+                rig3.Provider.InitCallback(true);
+                remote3.KillSwitch = false;
+                bool stoppedBySuppressed = rig3.Provider.Loads.Count == 0 && !rig3.Controller.IsReady("shop_refill") && !rig3.Controller.KillSwitch && rig3.Controller.Suppressed;
+
+                // 4. Lifting suppression when kill switch is off reloads
+                rig3.Controller.SetSuppressed(false);
+                bool bothOffReloads = rig3.Provider.Loads.Contains(AdFormat.Rewarded) && rig3.Provider.Loads.Contains(AdFormat.Interstitial);
+
+                Check("AC73. Suppressed_AndKillSwitch_EachKeepsAdsStopped_UntilBothAreOff",
+                    stoppedByKill && stoppedBySuppressed && bothOffReloads,
+                    $"stoppedByKill={stoppedByKill}, stoppedBySuppressed={stoppedBySuppressed}, bothOffReloads={bothOffReloads}");
+            }
+            {
+                using var rig = new AdsRig();
+                rig.Controller.SetSuppressed(true);
+                bool suppressedBefore = rig.Controller.Suppressed;
+                rig.Controller.Start();
+                rig.Provider.InitCallback(true);
+                bool noLoadsWhileSuppressed = rig.Provider.Loads.Count == 0;
+                bool notReady = !rig.Controller.IsReady("shop_refill") && !rig.Controller.IsReady("level_end");
+                var refusedShow = rig.Show("shop_refill");
+                rig.Controller.SetSuppressed(false);
+                bool reloadedAfterLift = rig.Provider.Loads.Contains(AdFormat.Rewarded) && rig.Provider.Loads.Contains(AdFormat.Interstitial);
+                Check("AC74. Suppressed_BeforeStart_HoldsAfterStart",
+                    suppressedBefore && noLoadsWhileSuppressed && notReady && refusedShow == AdResult.NotReady && reloadedAfterLift,
+                    $"suppressedBefore={suppressedBefore}, noLoads={noLoadsWhileSuppressed}, notReady={notReady}, refusedShow={refusedShow}, reloadedAfterLift={reloadedAfterLift}");
+            }
+            {
+                var lines = new List<string>();
+                var log = new AdFailureLog(lines.Add, violations: false);
+                using var rig = new AdsRig().Running();
+                rig.Controller.SetSuppressed(true);
+                rig.Show("shop_refill");
+                rig.Show("shop_refill");
+                rig.Show("shop_refill");
+                foreach (var e in rig.Telemetry.Events) log.Record(e);
+                var refusedLines = lines.FindAll(l => l.Contains("request suppressed"));
+                Check("AC75. Suppressed_EachRefusedRequestIsLogged",
+                    lines.Count == 4 && refusedLines.Count == 3 && lines.TrueForAll(l => l.StartsWith("[Nexus Ads] ")),
+                    $"totalLines={lines.Count}, refusedLines={refusedLines.Count}, lines=[{string.Join(" | ", lines)}]");
+            }
+
             // revenue forwarded; unknown placement blocked with the placement named; single mediation
             using (var rig = new AdsRig().Running())
             {

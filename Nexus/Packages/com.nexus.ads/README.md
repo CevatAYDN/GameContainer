@@ -46,7 +46,7 @@ configuration alike. The kill switch and the ad-free entitlement are not violati
 `NotReady` before the guard runs, and hide a banner on screen. The kill switch stops every format, and
 turning it off, or removing the remote configuration, loads them again; the
 ad-free entitlement removes interstitials and banners and keeps rewarded ads, which the player asks
-for (#195). The policies behind each rule, with the pages they were read from, are in the register.
+for (#195). `AdController.SetSuppressed(true)` (used by Capture Mode, #428) also answers `NotReady` without a violation, stops loads and shows of every format and hides a banner; it is separate from the remote kill switch, ads load again only when both are off. The policies behind each rule, with the pages they were read from, are in the register.
 
 | Rule | Blocks |
 |---|---|
@@ -215,7 +215,7 @@ show and raises `OnRewarded` once per paid ad.
 
 A UI that shows or hides an ad button follows `Ads.OnReadyChanged` and asks `Ads.IsReady` when it
 fires, as `AdRewardedButton` does; it does not poll every frame. The event fires on a load, a load
-failure, the end of a show, consent, visibility, the kill switch, the ad-free entitlement and the end
+failure, the end of a show, consent, visibility, the kill switch, the ad-free entitlement, suppression and the end
 of a pacing window (a placement's cooldown or first-show delay, the interstitial gaps, a day cap at
 the UTC day change, issue #95; the wait after a touch that `IsReady` or `Show` met, #126). A poll reaches the SDK each time the 0.1 s answer reuse runs out,
 which on Android is a JNI call that allocates.
@@ -231,7 +231,7 @@ still unanswered after 30 s (`Unanswered`, once each; the wait goes on), every f
 and LevelPlay providers write the SDK's reason on the line before), a subscriber or telemetry sink
 that threw while a show was answered or readiness changed (`HandlerFailed`, once per step and
 exception; issue #176), every turn of the kill switch on or off (`KillSwitch on` / `off`, issue #234;
-a configuration that changes what runs), every unreadable reward row moved aside (`RewardQuarantined`,
+a configuration that changes what runs), every turn of suppression on or off and every request it refused (`Suppressed`, #428), every unreadable reward row moved aside (`RewardQuarantined`,
 #415), and in a release build the policy block above. Successes are not logged.
 `InitFailed`, `ConsentRefused`, `Unanswered`, `HandlerFailed`, `Initialized` and `RewardQuarantined`
 are telemetry events too. A show's result reaches the game exactly once whatever a subscriber, a sink or the reload

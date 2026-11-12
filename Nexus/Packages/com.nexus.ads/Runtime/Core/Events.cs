@@ -247,6 +247,8 @@ namespace Nexus.Ads
         /// detail names the key, which holds the row's exact raw value. The queue went on empty: rewards that row held are not
         /// pending any more, so the game decides from the quarantined value whether any needs its own recovery.</summary>
         RewardQuarantined,
+        /// <summary>The ad request or preload was refused because ads are suppressed, or suppression was toggled (issue #428).</summary>
+        Suppressed,
     }
 
     /// <summary>One telemetry row. The Unity layer forwards it to the game's analytics; every row carries the placement name.</summary>
