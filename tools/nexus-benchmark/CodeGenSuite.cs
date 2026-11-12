@@ -1024,6 +1024,8 @@ public sealed class SdkLocalIntegration { [Inject] public CodeGenDep Dep; }
                 int checkedAssemblies = 0;
                 foreach (string asmdef in Directory.GetFiles(packages, "*.asmdef", SearchOption.AllDirectories))
                 {
+                    // Unity never compiles a "~" folder (Samples~): its asmdef is not a package assembly.
+                    if (Path.GetRelativePath(packages, asmdef).Split('/', '\\').Any(part => part.EndsWith("~", StringComparison.Ordinal))) continue;
                     using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(asmdef));
                     var root = json.RootElement;
                     string assembly = root.GetProperty("name").GetString();
