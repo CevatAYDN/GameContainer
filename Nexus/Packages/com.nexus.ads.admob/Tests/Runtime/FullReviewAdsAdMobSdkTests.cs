@@ -238,7 +238,7 @@ namespace Nexus.Editor.Tests
             }
         }
 
-        // These private factory hooks and interfaces were read from the locked 11.6.0 DLLs.
+        // These private factory hooks and interfaces were read from the locked 11.6.0 and 11.7.0 DLLs (#429).
         // A different binary is inconclusive, never permission to fall through to a real SDK client.
         private sealed class SdkScope : IDisposable
         {
@@ -254,9 +254,9 @@ namespace Nexus.Editor.Tests
 
             public SdkScope()
             {
-                Identity(typeof(MobileAds).Assembly, "3a97825f-f59b-47e3-a638-991ba60a3143");
-                Identity(typeof(IClientFactory).Assembly, "5254d49d-89df-40e3-a057-3114de63ba8e");
-                Identity(typeof(ConsentInformation).Assembly, "e2097b6a-fdc0-4f51-88e9-5f36e3765600");
+                Identity(typeof(MobileAds).Assembly, "3a97825f-f59b-47e3-a638-991ba60a3143", "fc60e431-1bfd-4bde-9810-e68abea7afbd");
+                Identity(typeof(IClientFactory).Assembly, "5254d49d-89df-40e3-a057-3114de63ba8e", "3c388f02-1d84-4714-971c-c36cc2ef7739");
+                Identity(typeof(ConsentInformation).Assembly, "e2097b6a-fdc0-4f51-88e9-5f36e3765600", "0868e323-c086-48d8-b478-b08ff5f92338");
                 _factoryField = StaticField(typeof(MobileAds), "clientFactory");
                 _instanceField = StaticField(typeof(MobileAds), "instance");
                 _consentField = StaticField(typeof(ConsentInformation), "_clientFactory");
@@ -283,10 +283,10 @@ namespace Nexus.Editor.Tests
                 => type.GetField(name, BindingFlags.Static | BindingFlags.NonPublic)
                     ?? throw new InvalidOperationException("The pinned SDK factory hook is missing: " + name);
 
-            private static void Identity(Assembly assembly, string moduleId)
+            private static void Identity(Assembly assembly, params string[] moduleIds)
             {
-                if (assembly.ManifestModule.ModuleVersionId != new Guid(moduleId))
-                    Assert.Inconclusive("This offline fixture requires the locked Google Mobile Ads 11.6.0 binary: " + assembly.GetName().Name);
+                if (Array.IndexOf(moduleIds, assembly.ManifestModule.ModuleVersionId.ToString()) < 0)
+                    Assert.Inconclusive("This offline fixture requires the locked Google Mobile Ads 11.6.0 or 11.7.0 binary: " + assembly.GetName().Name);
             }
         }
 

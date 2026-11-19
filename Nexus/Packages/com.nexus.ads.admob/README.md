@@ -82,7 +82,7 @@ their returned ad instead of reviving readiness (#390). A separately constructed
 owned by its caller; bootstrap owns one created by its consent factory. Disposed flows cannot
 request a form from a late update callback.
 
-Proven against Google Mobile Ads 11.6.0 in a disposable project (`Nexus/artifacts/admob-<date>/`, gate
+Proven against Google Mobile Ads 11.6.0 and 11.7.0 in disposable projects (`Nexus/artifacts/admob-<date>/`, gate
 row in [`docs/RELEASE_GATES.md`](../../../docs/RELEASE_GATES.md)): the plugin's editor placeholders
 load, show, pay and close through the provider. Not covered: app-open, native and rewarded
 interstitial ads, mediation setup inside AdMob.
