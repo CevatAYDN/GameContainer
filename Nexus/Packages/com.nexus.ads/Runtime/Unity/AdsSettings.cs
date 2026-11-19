@@ -183,6 +183,13 @@ namespace Nexus.Ads.Unity
             }
         }
 
+        /// <summary>The field that decides <see cref="ConsentFor"/> on <paramref name="platform"/>, so a message names the one to change (issue #431).</summary>
+        public string ConsentFieldFor(AdPlatform platform)
+        {
+            var own = platform == AdPlatform.Ios ? IosConsent : AndroidConsent;
+            return own == PlatformConsent.Shared ? nameof(Consent) : platform == AdPlatform.Ios ? nameof(IosConsent) : nameof(AndroidConsent);
+        }
+
         /// <summary>The selected mediation ships no consent form and the settings name, for this platform, a flow that must be registered before it starts (issues #154, #431).</summary>
         public bool ConsentNeedsRegisteredFlowFor(AdPlatform platform) => SelectedMediation == AdProviderKind.LevelPlay && ConsentFor(platform) != ConsentSource.None;
 

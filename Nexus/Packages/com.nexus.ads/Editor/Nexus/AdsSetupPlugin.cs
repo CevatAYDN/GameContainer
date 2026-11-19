@@ -14,6 +14,9 @@ namespace Nexus.Ads.Editor
     /// </summary>
     internal sealed class AdsSetupPlugin : NexusEditorPlugin
     {
+        // the outlook and the Validate buttons check the active build target, as the Status list does; its consent flow may differ (issue #431)
+        private static AdPlatform TargetPlatform => EditorUserBuildSettings.activeBuildTarget == BuildTarget.iOS ? AdPlatform.Ios : AdPlatform.Android;
+
         private const string PrefRegistered = "NexusAds.Registered.";
 
         public override string Id => "AdsSetup";
@@ -53,7 +56,7 @@ namespace Nexus.Ads.Editor
                 return view;
             }
             settingsCard.Add(NexusEditorStyles.CreateButton(NexusLang.Get("ads_open_settings"), () => Window?.SwitchToPlugin("AdsSettings"), NexusEditorStyles.BtnGray));
-            settingsCard.Add(AdsViews.Outlook(settings, AdPlatform.Android, _probe));
+            settingsCard.Add(AdsViews.Outlook(settings, TargetPlatform, _probe));
 
             BuildProviders(scroll, settings);
             BuildNetworks(scroll);
@@ -74,8 +77,8 @@ namespace Nexus.Ads.Editor
             var validate = AdsViews.Card(scroll, NexusLang.Get("ads_setup_validate"));
             var report = new VisualElement();
             var validateRow = AdsViews.Row(validate);
-            validateRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("ads_validate_test"), () => AdsViews.ShowReport(report, AdsValidator.Validate(settings, AdsValidator.Tab.Test, AdPlatform.Android, _probe, _catalog)), NexusEditorStyles.BtnBlue));
-            validateRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("ads_validate_release"), () => AdsViews.ShowReport(report, AdsValidator.Validate(settings, AdsValidator.Tab.Release, AdPlatform.Android, _probe, _catalog)), NexusEditorStyles.BtnBlue));
+            validateRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("ads_validate_test"), () => AdsViews.ShowReport(report, AdsValidator.Validate(settings, AdsValidator.Tab.Test, TargetPlatform, _probe, _catalog)), NexusEditorStyles.BtnBlue));
+            validateRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("ads_validate_release"), () => AdsViews.ShowReport(report, AdsValidator.Validate(settings, AdsValidator.Tab.Release, TargetPlatform, _probe, _catalog)), NexusEditorStyles.BtnBlue));
             validate.Add(report);
             return view;
         }

@@ -82,6 +82,8 @@ namespace Nexus.Ads.Tests
             StringAssert.Contains("com.nexus.ads.admob", BuildOutlook.MissingConsent(_settings, AdPlatform.Android, false, true));
             Assert.IsNull(BuildOutlook.MissingConsent(_settings, AdPlatform.Ios, false, true));
             StringAssert.Contains("RegisterSharedConsentFlow", BuildOutlook.MissingConsent(_settings, AdPlatform.Ios, true, false), "Google's form does not stand in for iOS's own flow");
+            StringAssert.Contains("runs only with IosConsent: GoogleUmp", BuildOutlook.MissingConsent(_settings, AdPlatform.Ios, true, false), "the message names the field that decides iOS");
+            StringAssert.Contains("runs only with Consent: GameFlow", BuildOutlook.MissingConsent(_settings, AdPlatform.Android, false, true), "Android is Shared: Consent decides");
             var provider = _settings.ToProviderConfig(BuildKind.Release, AdPlatform.Ios, AdProviderKind.LevelPlay);
             Assert.AreEqual(HostMode.Idle, BuildOutlook.Decide(_settings, BuildKind.Release, AdPlatform.Android, provider, "release", true, false, true).Mode);
             Assert.AreEqual(HostMode.Provider, BuildOutlook.Decide(_settings, BuildKind.Release, AdPlatform.Ios, provider, "release", true, false, true).Mode);

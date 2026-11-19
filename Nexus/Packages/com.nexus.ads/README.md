@@ -155,7 +155,7 @@ build's debug panel out (issue #132; `AdsCoreSuite` SM11–SM14, PlayMode
    `tools/device-acceptance/run.ps1 -ExpectAds` reads it). `consent` names the flow that runs before the
    mediation and where it came from (#154): `registered` (the flow the settings name: Google's UMP from
    `com.nexus.ads.admob`, or a flow the game passed to `AdsBootstrap.RegisterSharedConsentFlow`), `provider` (the provider's own:
-   AdMob runs UMP; LevelPlay's is a pass-through that shows no form, which runs only with `Consent: None`),
+   AdMob runs UMP; LevelPlay's is a pass-through that shows no form, which runs only when the platform's flow is `None`),
    `simulator`, or `none` when no ads start. LevelPlay ships no consent form, so with LevelPlay selected
    the settings' **Consent before LevelPlay** (`AdsSettings.Consent`) names the flow that runs before it, and
    **Android consent** / **iOS consent** (`AndroidConsent`, `IosConsent`) let one platform run another flow (#431):

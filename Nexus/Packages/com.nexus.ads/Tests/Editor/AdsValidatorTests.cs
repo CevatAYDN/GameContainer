@@ -324,6 +324,13 @@ namespace Nexus.Ads.Tests
             Assert.AreEqual(CheckResult.Fail, Check(Run(AdsValidator.Tab.Release), "consent.form").Result, "Android is Shared: UMP without its packages");
             var ios = AdsValidator.Validate(_settings, AdsValidator.Tab.Release, AdPlatform.Ios, _probe, _catalog);
             Assert.AreEqual(CheckResult.Pass, Check(ios, "consent.form").Result, "iOS names the game's flow");
+
+            // the fix names the field that decides the platform, not Consent, which iOS no longer follows
+            _settings.IosConsent = PlatformConsent.None;
+            var none = Check(AdsValidator.Validate(_settings, AdsValidator.Tab.Release, AdPlatform.Ios, _probe, _catalog), "consent.form");
+            Assert.AreEqual(CheckResult.Fail, none.Result);
+            StringAssert.Contains("set IosConsent to GameFlow", none.fix);
+            StringAssert.DoesNotContain("set Consent to", none.fix);
         }
 
         [Test]

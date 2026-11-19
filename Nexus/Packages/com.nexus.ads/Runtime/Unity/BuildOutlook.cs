@@ -82,10 +82,10 @@ namespace Nexus.Ads.Unity
             if (settings.ConsentFor(platform) == ConsentSource.GoogleUmp)
                 return googleRegistered ? null
                     : "the settings name Google's consent form (UMP) before " + kind + ", and none is registered: install com.google.ads.mobile and com.nexus.ads.admob, which register it (with both installed, Nexus.Ads.AdMob was left out of the player)"
-                        + (gameRegistered ? "; the game's registered flow runs only with Consent: GameFlow" : "");
+                        + (gameRegistered ? "; the game's registered flow runs only with " + settings.ConsentFieldFor(platform) + ": GameFlow" : "");
             return gameRegistered ? null
                 : "the settings name the game's own consent flow before " + kind + ", and none is registered: call AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, ...) before StartAds()"
-                    + (googleRegistered ? "; Google's form from com.nexus.ads.admob runs only with Consent: GoogleUmp" : "");
+                    + (googleRegistered ? "; Google's form from com.nexus.ads.admob runs only with " + settings.ConsentFieldFor(platform) + ": GoogleUmp" : "");
         }
 
         /// <summary>

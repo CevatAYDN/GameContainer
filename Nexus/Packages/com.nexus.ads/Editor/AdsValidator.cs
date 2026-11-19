@@ -84,25 +84,26 @@ namespace Nexus.Ads.Editor
     {
         public enum Tab { Test, Release }
 
-        private const string ConsentFix = "install com.google.ads.mobile and com.nexus.ads.admob and set Consent to GoogleUmp, or draw the consent screen yourself with GameConsent.Register(texts, version, LevelPlayProvider.ApplyConsent) (no AdMob account; the shared GameFlow), or wrap your own consent platform in an IConsentFlow "
-            + "(which forwards the answer with LevelPlayProvider.SetGdprConsent), register it with AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, ...) before StartAds() and set Consent to GameFlow. Android consent and iOS consent set one platform's flow on its own (Shared follows Consent).";
+        // field: the setting that decides the platform's flow (Consent, or AndroidConsent / IosConsent when not Shared; issue #431)
+        private static string ConsentFix(string field) => "install com.google.ads.mobile and com.nexus.ads.admob and set " + field + " to GoogleUmp, or draw the consent screen yourself with GameConsent.Register(texts, version, LevelPlayProvider.ApplyConsent) (no AdMob account; the shared GameFlow), or wrap your own consent platform in an IConsentFlow "
+            + "(which forwards the answer with LevelPlayProvider.SetGdprConsent), register it with AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, ...) before StartAds() and set " + field + " to GameFlow.";
 
         // A release build fails without a consent flow before LevelPlay; a development build warns (the owner's decision of 2026-10-31, #154).
-        private static AdsCheck ConsentCheck(ConsentSource source, bool googleConsent, bool release)
+        private static AdsCheck ConsentCheck(ConsentSource source, string field, bool googleConsent, bool release)
         {
             var missing = release ? CheckResult.Fail : CheckResult.Warn;
             switch (source)
             {
                 case ConsentSource.GameFlow:
-                    return new AdsCheck("consent.form", CheckResult.Pass, "the game's own consent flow runs before LevelPlay starts (Consent: GameFlow); the bootstrap starts no ads until it is registered with AdsBootstrap.RegisterSharedConsentFlow");
+                    return new AdsCheck("consent.form", CheckResult.Pass, "the game's own consent flow runs before LevelPlay starts (" + field + ": GameFlow); the bootstrap starts no ads until it is registered with AdsBootstrap.RegisterSharedConsentFlow");
                 case ConsentSource.None:
                     // only the flow the settings name runs (issue #181): with None, Google's form does not run even when its packages are in
-                    return new AdsCheck("consent.form", missing, "no consent flow runs before LevelPlay starts (Consent: None; LevelPlay ships no form); players in the EEA, the UK and Switzerland need one from a certified consent platform.",
-                        googleConsent ? "com.google.ads.mobile and com.nexus.ads.admob are in the project: set Consent to GoogleUmp to run Google's form." : ConsentFix);
+                    return new AdsCheck("consent.form", missing, "no consent flow runs before LevelPlay starts (" + field + ": None; LevelPlay ships no form); players in the EEA, the UK and Switzerland need one from a certified consent platform.",
+                        googleConsent ? "com.google.ads.mobile and com.nexus.ads.admob are in the project: set " + field + " to GoogleUmp to run Google's form." : ConsentFix(field));
                 default:
                     return googleConsent
                         ? new AdsCheck("consent.form", CheckResult.Pass, "Google's consent form (UMP) runs before LevelPlay starts; LevelPlay reads the consent UMP stores")
-                        : new AdsCheck("consent.form", missing, "the settings name Google's consent form (UMP) before LevelPlay, but com.google.ads.mobile and com.nexus.ads.admob are not both in the project, so the bootstrap would start no ads.", ConsentFix);
+                        : new AdsCheck("consent.form", missing, "the settings name Google's consent form (UMP) before LevelPlay, but com.google.ads.mobile and com.nexus.ads.admob are not both in the project, so the bootstrap would start no ads.", ConsentFix(field));
             }
         }
 
@@ -137,7 +138,7 @@ namespace Nexus.Ads.Editor
             // LevelPlay ships no consent form (issue #63); the settings name the flow that runs before it (issue #154)
             if (kind == AdProviderKind.LevelPlay)
                 report.Add(adFree ? new AdsCheck("consent.form", CheckResult.Pass, "ad-free release: LevelPlay never starts, so no consent flow runs before it")
-                    : ConsentCheck(settings.ConsentFor(platform), googleConsent, release));
+                    : ConsentCheck(settings.ConsentFor(platform), settings.ConsentFieldFor(platform), googleConsent, release));
 
             // a package below the provider asmdef's versionDefines expression compiles the provider out, and nothing else says so (issue #143)
             string compiledOut = kind == AdProviderKind.None ? null : probe.ProviderCompiledOut(kind);
