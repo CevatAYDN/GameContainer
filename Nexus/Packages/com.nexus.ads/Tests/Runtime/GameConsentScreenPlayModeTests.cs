@@ -18,7 +18,7 @@ namespace Nexus.Ads.Tests.Runtime
             screen.Show(new ConsentTexts { Title = "T", Body = "B", Accept = "Accept", Reject = "Reject" }, accepted => choice = accepted);
             yield return null;
 
-            var document = Object.FindFirstObjectByType<UIDocument>();
+            var document = Object.FindAnyObjectByType<UIDocument>();
             Assert.IsNotNull(document, "the screen is a UI Toolkit document");
             var accept = document.rootVisualElement.Q<Button>(ConsentScreenNames.Accept);
             Assert.IsNotNull(accept);
@@ -28,11 +28,11 @@ namespace Nexus.Ads.Tests.Runtime
 
             screen.Show(new ConsentTexts { Accept = "a", Reject = "r" }, _ => { }); // a second Show replaces the first
             yield return null;
-            Assert.AreEqual(1, Object.FindObjectsByType<UIDocument>(FindObjectsSortMode.None).Length);
+            Assert.AreEqual(1, Object.FindObjectsByType<UIDocument>().Length);
 
             screen.Hide();
             yield return null;
-            Assert.IsNull(Object.FindFirstObjectByType<UIDocument>());
+            Assert.IsNull(Object.FindAnyObjectByType<UIDocument>());
         }
     }
 }
