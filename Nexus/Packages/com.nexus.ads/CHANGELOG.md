@@ -13,13 +13,15 @@
   `PrivacyOptionsRequired` is true once answered; `ShowPrivacyOptions` reopens the screen and a new answer is applied at
   once and raises `Changed`. There is no region detection: every player is asked once.
 - A child-directed or under-age build (`ChildDirected` or `UnderAgeOfConsent`) shows no screen: the flow applies a refusal at
-  every start and offers no privacy options. Empty partners and policy address come from `AdsSettings`
+  every start and offers no privacy options; it says so in every build with one `[Nexus Ads] consent: child-directed or
+  under-age build` warning (#433), and `GameConsent.RefusedWithoutScreen` is true. Empty partners and policy address come from `AdsSettings`
   (`ConsentPartners`, `PrivacyPolicyUrl`; `ConsentPartners` is also in the Nexus window's Settings tab). `GameConsent.AttachInput`
   gives the screen's document to the core's `ToolkitPanelInput` (set by `NexusAdsBridge.Connect`) so a game that routes Toolkit
   input through an EventSystem can tap it. The analytics reader logs its decision with `[Nexus Ads] analytics consent:`.
 - `LevelPlayProvider.ApplyConsent(bool)` calls `SetGdprConsent(accepted)` and `SetDoNotSell(!accepted)`.
 - `com.nexus.ads.bridge.nexus`: `GameConsentAnalyticsConsent` (compiled with `com.nexus.firebase`) reads the same answer
-  for Firebase consent mode: Accept grants analytics, Reject denies, an unanswered question holds.
+  for Firebase consent mode: Accept grants analytics, Reject denies, an unanswered question holds, and a child-directed
+  or under-age build reports the refusal the ads applied, so analytics are discarded instead of held (#433).
 - The `consent.form` fix text names `GameConsent.Register`.
 
 ## Unreadable reward row quarantine (#415)

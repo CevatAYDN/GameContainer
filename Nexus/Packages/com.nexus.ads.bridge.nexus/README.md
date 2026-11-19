@@ -84,8 +84,9 @@ reward carries data of its own (an amount captured at the offer, a target) keeps
 
 A game that uses `GameConsent.Register` (`com.nexus.ads`) binds `FirebaseBindings.Bind<GameConsentAnalyticsConsent>(builder)`
 after it. The reader (compiled only with `com.nexus.firebase`) reads the same stored answer as the ad flow: Accept grants
-analytics, Reject denies them, a question asked again after a version bump holds analytics until it is answered, and
-without a registered flow nothing is sent.
+analytics, Reject denies them, a question asked again after a version bump holds analytics until it is answered, a
+child-directed or under-age build (no screen, a refusal applied) discards analytics, and without a registered flow
+nothing is sent.
 
 ## Confirmed Reward Saves
 

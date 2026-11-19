@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace Nexus.Ads.Unity
 {
@@ -50,9 +51,24 @@ namespace Nexus.Ads.Unity
                 // the settings are the single source: an empty partner list or policy address comes from them
                 Func<ConsentTexts> resolved = () => WithSettings(texts(), settings);
                 // personalised ads are never allowed for a child-directed or under-age build, as the provider's COPPA flag says
-                return new GameConsentFlow(answers, new UitkConsentScreen(style), resolved, apply, cfg.ChildDirected || cfg.UnderAgeOfConsent);
+                return CreateFlow(answers, new UitkConsentScreen(style), resolved, apply, cfg.ChildDirected || cfg.UnderAgeOfConsent);
             });
             AnswerChanged?.Invoke(); // a reader created before this call sees the question
+        }
+
+        /// <summary>
+        /// True when the registered flow runs in a child-directed or under-age build: no screen, a refusal applied at every start,
+        /// and nothing stored. The analytics reader then reports a refusal too, so nothing is sent.
+        /// </summary>
+        public static bool RefusedWithoutScreen { get; private set; }
+
+        internal static GameConsentFlow CreateFlow(ConsentAnswerStore answers, IConsentScreen screen, Func<ConsentTexts> texts, Action<bool> apply, bool noPersonalisation)
+        {
+            RefusedWithoutScreen = noPersonalisation;
+            if (noPersonalisation)
+                Debug.LogWarning("[Nexus Ads] consent: child-directed or under-age build: the consent screen is not shown and a refusal is applied (non-personalised ads, no analytics)");
+            AnswerChanged?.Invoke(); // the analytics reader re-reads the state the flag decides
+            return new GameConsentFlow(answers, screen, texts, apply, noPersonalisation);
         }
 
         internal static ConsentTexts WithSettings(ConsentTexts texts, AdsSettings settings)

@@ -16,18 +16,24 @@ namespace Nexus.Ads.Bridge
     /// The analytics consent <c>com.nexus.firebase</c> reads, over the game-drawn consent screen (issue #430): bind it with
     /// <c>FirebaseBindings.Bind&lt;GameConsentAnalyticsConsent&gt;(builder)</c> after <c>GameConsent.Register</c>. It reads the
     /// same stored answer as the ad flow, so Accept grants analytics and Reject denies them, and a question asked again
-    /// (a new version) holds analytics until it is answered. Without <c>GameConsent.Register</c> the state stays Unknown and
+    /// (a new version) holds analytics until it is answered. A child-directed or under-age build, which shows no screen and
+    /// applies a refusal, reports that refusal (Obtained and Denied), so nothing is sent and nothing waits. Without <c>GameConsent.Register</c> the state stays Unknown and
     /// nothing is sent. Compiled only with <c>com.nexus.firebase</c> installed.
     /// </summary>
     public sealed class GameConsentAnalyticsConsent : NexusService<IAnalyticsConsent>, IAnalyticsConsent
     {
         private readonly Func<ConsentAnswerStore> _answers;
+        private readonly Func<bool> _refusedWithoutScreen;
         private bool _subscribed;
 
-        public GameConsentAnalyticsConsent() : this(() => GameConsent.Answers) { }
+        public GameConsentAnalyticsConsent() : this(() => GameConsent.Answers, () => GameConsent.RefusedWithoutScreen) { }
 
-        /// <summary>Tests: the store to read.</summary>
-        internal GameConsentAnalyticsConsent(Func<ConsentAnswerStore> answers) { _answers = answers; }
+        /// <summary>Tests: the store to read and whether the build refuses without a screen.</summary>
+        internal GameConsentAnalyticsConsent(Func<ConsentAnswerStore> answers, Func<bool> refusedWithoutScreen = null)
+        {
+            _answers = answers;
+            _refusedWithoutScreen = refusedWithoutScreen ?? (() => false);
+        }
 
         public ConsentState State => Read(out _);
 
@@ -70,6 +76,7 @@ namespace Nexus.Ads.Bridge
             accepted = false;
             var store = _answers();
             if (store == null) return ConsentState.Unknown;
+            if (_refusedWithoutScreen()) return ConsentState.Obtained; // the refusal the ad flow applied; accepted stays false
             return store.TryRead(out accepted) ? ConsentState.Obtained : ConsentState.Required;
         }
     }

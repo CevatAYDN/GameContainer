@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using NUnit.Framework;
+using UnityEngine.TestTools;
 using Nexus.Ads.Unity;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -10,6 +11,32 @@ namespace Nexus.Ads.Tests
     /// <summary>Issue #430: the UI Toolkit screen and the settings of the game-drawn consent flow; its engine-free core is tested in FullReviewAdsGameConsentTests.</summary>
     public sealed class GameConsentFlowTests
     {
+        private sealed class NoScreen : IConsentScreen
+        {
+            public void Show(ConsentTexts texts, Action<bool> onChoice) { }
+            public void Hide() { }
+        }
+
+        private sealed class MemoryStore : IPacingStore
+        {
+            private readonly Dictionary<string, string> _values = new Dictionary<string, string>();
+            public string Get(string key) => _values.TryGetValue(key, out var v) ? v : null;
+            public void Set(string key, string value) => _values[key] = value;
+        }
+
+        [Test]
+        public void AChildDirectedOrUnderAgeBuild_LogsInEveryBuildThatItRefusesWithoutAScreen()
+        {
+            var answers = new ConsentAnswerStore(new MemoryStore(), 1);
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("consent: child-directed or under-age build"));
+            GameConsent.CreateFlow(answers, new NoScreen(), () => new ConsentTexts(), _ => { }, noPersonalisation: true);
+            Assert.IsTrue(GameConsent.RefusedWithoutScreen);
+
+            GameConsent.CreateFlow(answers, new NoScreen(), () => new ConsentTexts(), _ => { }, noPersonalisation: false);
+            Assert.IsFalse(GameConsent.RefusedWithoutScreen, "an ordinary build asks again");
+            LogAssert.NoUnexpectedReceived();
+        }
+
         [Test]
         public void TheSettings_FillEmptyPartnersAndPolicyAddress_ButNeverOverrideTheGamesOwn()
         {

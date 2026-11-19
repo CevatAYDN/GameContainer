@@ -41,6 +41,14 @@ namespace Nexus.Ads.Bridge.Tests
         }
 
         [Test]
+        public void AChildDirectedOrUnderAgeBuild_ReportsTheRefusalTheAdsApplied_SoAnalyticsAreDiscardedNotHeld()
+        {
+            var consent = new GameConsentAnalyticsConsent(() => new ConsentAnswerStore(new MemoryStore(), 1), () => true);
+            Assert.AreEqual(ConsentState.Obtained, consent.State, "no screen and nothing stored, yet the build has answered");
+            Assert.AreEqual(AnalyticsDecision.Discard, AnalyticsCollectionPolicy.Decide(consent.State, consent.Choice));
+        }
+
+        [Test]
         public void WithoutARegisteredFlow_NothingIsSent()
         {
             var consent = new GameConsentAnalyticsConsent(() => null);
