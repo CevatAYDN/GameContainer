@@ -14,10 +14,13 @@ timer stands in for an answer, which the owner decides in #432. Not run: an iOS 
 
 Evidence root: `Nexus/artifacts/capture-20261119/` (`summary.txt`), Unity 6000.6.8f1, Windows, batch mode with
 graphics. The proof project `CaptureProof` (Cinemachine 6.6.0, Recorder 5.1.8, URP 17.6.0, the package sample
-`ExampleCaptureHooks`) ran PlayMode `playmode-live.xml` 13 / 13 / 0 / 0: the package's 10 tests and three proof
-tests: the sample's hooks register and Close turns god mode off; the free camera is a `CinemachineCamera` at
+`ExampleCaptureHooks`) ran PlayMode `playmode-live.xml` 13 / 13 / 0 / 0: the package's 10 tests (its 11th,
+`CaptureAdSuppressionTests`, needs `com.nexus.ads` and ran in the development project, `capture-20261112/playmode.xml`)
+and three proof tests: the sample's hooks register and Close turns god mode off; the free camera is a `CinemachineCamera` at
 priority 11 that the brain picks while the main camera stays on, and Close destroys it; a recording through
 `CaptureModeService` writes an MP4, which ffprobe reads as H.264 1080x1920 at 60 fps with an AAC audio stream.
+Measured on a re-run (`playmode-take.xml` 1 / 1 / 0): the take between the two toggles was 136 frames and 2.233 s
+of game time (the Recorder fixes `Time.captureFramerate` at 60), and the file holds 134 frames and 2.233 s.
 Android development and release players carry no Capture assembly (`capture-20261112/android-*-assemblies.txt`).
 Not seen: the picture in the MP4 and the free camera's feel under real input; those are the owner's checks.
 
