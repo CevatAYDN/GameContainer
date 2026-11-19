@@ -5,7 +5,7 @@
 Local `main` carries these commits; they are **not pushed** (the owner approves the push):
 #433 (`4dc286ad`, `465fa448`, `710a3154`; the issue closes at the push), #429 dependency proofs (`99c4c0b3`,
 `5b0fcc5d`, `e738788c`, `3bd2783c`; the issue stays open: the editor move to 6000.6.10f1 is the owner's),
-#422 `PendingRewards` (`530ff932`) and #431 per-platform consent, `AndroidConsent` / `IosConsent` (`63731e6c`).
+#422 `PendingRewards` (`530ff932`) and #431 per-platform consent, `AndroidConsent` / `IosConsent` (`63731e6c`, `bc51d754`).
 Each issue has a comment with its numbers. Not touched: #432 (waits for the owner's EEA/UK policy decision) and
 #428 (waits for the owner's checks). No device run was made in this session.
 
