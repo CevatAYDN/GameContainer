@@ -129,7 +129,8 @@ namespace Nexus.Ads.AdMob
                 // answer nothing starts until the form gives one; a later answer still arrives through Changed.
                 if (!_answered && ConsentInformation.CanRequestAds())
                 {
-                    Debug.LogWarning("[Nexus Ads] consent (Google UMP): the status update allows ad requests; ads start without waiting for the form");
+                    // the usual path outside the EEA/UK on a first launch: a diagnostic, not a warning
+                    Debug.Log("[Nexus Ads] consent (Google UMP): the status update allows ad requests; ads start now");
                     Answer();
                 }
                 ConsentForm.LoadAndShowConsentFormIfRequired(formError => OnMain(() =>
