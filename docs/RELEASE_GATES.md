@@ -1,5 +1,12 @@
 # Release gates
 
+## Full suites on `ff533371` — 2026-11-19
+
+Before the push of #433, #429, #422, #431, #432 and #428 (`Nexus/artifacts/final-20261119/`, Unity 6000.6.8f1,
+Windows): `nexus-compile-check` 0 errors / 0 warnings; EditMode 1054 / 1052 / 0 / 2 (`editmode.xml`); PlayMode
+340 / 338 / 0 / 2 (`playmode.xml`), 0 `error|warning CS`; host harness passed in each commit's hook;
+`tools/check-versions.py` offline 30 rows, 0 problems. No device run.
+
 ## Google's consent form that never answers — #432
 
 Evidence root: `Nexus/artifacts/admob-20261119/` (the #429 AdMob proof project, Google Mobile Ads 11.7.0, Unity
