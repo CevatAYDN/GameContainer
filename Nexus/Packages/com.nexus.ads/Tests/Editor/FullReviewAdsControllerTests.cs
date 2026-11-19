@@ -183,6 +183,34 @@ namespace Nexus.Editor.Tests
 #if UNITY_EDITOR
         [Test]
 #endif
+        public void PendingRewards_ListsEveryQueuedReceiptOldestFirstAndAnUnreadableRowThrowsWithoutAWrite()
+        {
+            const string key = "nexus.ads.reward.pending";
+            var store = new Store();
+            using var rig = new Rig(store: store);
+            Require(rig.Controller.PendingRewards.Count == 0, "#422: an empty queue lists nothing.");
+            RewardReceipts.Write(store, new RewardReceipt("a", "first", "offer-a"));
+            RewardReceipts.Write(store, new RewardReceipt("b", "second", "offer-b"));
+            RewardReceipts.Write(store, new RewardReceipt("c", "first", "offer-c"));
+            string before = store.Get(key);
+            var all = rig.Controller.PendingRewards;
+            Require(all.Count == 3 && all[0].Context == "offer-a" && all[1].Context == "offer-b" && all[2].Context == "offer-c"
+                && all[0].Id == rig.Controller.PendingReward?.Id,
+                "#422: a game must see every queued receipt, oldest first, not only the head, to keep exactly the offers still referred to.");
+            Require(store.Get(key) == before, "Listing must not write the row.");
+            rig.Controller.AcknowledgeReward("b");
+            var left = rig.Controller.PendingRewards;
+            Require(left.Count == 2 && left[0].Id == "a" && left[1].Id == "c", "An out-of-order acknowledgement must leave the others listed in order.");
+
+            const string corrupt = "NXRQ3\n!!notbase64|x|-";
+            store.Set(key, corrupt);
+            Expect<System.IO.InvalidDataException>(() => { _ = rig.Controller.PendingRewards; }, "#422: an unreadable row must throw like PendingReward.");
+            Require(store.Get(key) == corrupt && store.Get(key + ".corrupt.0") == null, "Listing an unreadable row must write nothing.");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
         public void QueueFailedAppendAndAckKeepPreviouslyPersistedReceipts()
         {
             var store = new Store();

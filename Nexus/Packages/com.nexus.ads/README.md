@@ -258,6 +258,12 @@ exact token through late delivery and startup replay; resolve the offer by this
 token, never by the newest placement offer. Context is not the payment idempotency
 key: deduplicate by `receipt.Id`. Null-context legacy receipts need an explicit
 game migration policy. The bridge provides the matching `RequestReward` overload.
+`PendingRewards` (on `Ads` and `AdController`, or `RewardReceipts.All(store)`) lists every queued
+receipt, oldest first, without writing (#422): keep exactly the offers whose `Context` it still
+lists and drop the rest. It throws `InvalidDataException` on an unreadable row, as `PendingReward`
+does. A receipt whose `Context` no longer resolves (the offer was lost) would stop replay at every
+start, so the game decides what it is worth (the placement's default reward, or nothing with a
+warning), saves that decision, and acknowledges the id.
 Legacy `id|placement` data is read and migrated on the first successful mutation. The queue stays
 in the same `nexus.ads.reward.pending` row, with one write per append/ack; corrupt data is preserved
 rather than reset: `PendingReward` and `AcknowledgeReward` throw `InvalidDataException` and write

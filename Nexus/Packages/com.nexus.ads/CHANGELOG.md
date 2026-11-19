@@ -1,5 +1,13 @@
 # Changelog
 
+## Whole pending reward queue (#422)
+
+- `PendingRewards` on `Ads` and `AdController`, and `RewardReceipts.All(store)`: every unacknowledged reward, oldest
+  first, as a read-only copy. A game that keeps one offer per shown ad can now drop exactly the offers no queued
+  receipt refers to; before, only the oldest receipt was visible. Same rules as `PendingReward`: an unreadable row
+  throws `InvalidDataException` and nothing is written. The READMEs say what to do with a receipt whose `Context` no
+  longer resolves: apply the game's own policy, save it, then acknowledge, so replay does not stop on it at every start.
+
 ## Game-drawn consent flow (#430)
 
 - New shared consent flow for LevelPlay games without AdMob (`Consent: GameFlow`): no AdMob App ID and no UMP

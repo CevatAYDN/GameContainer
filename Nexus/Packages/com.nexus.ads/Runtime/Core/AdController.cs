@@ -392,6 +392,11 @@ namespace Nexus.Ads
         /// </summary>
         public RewardReceipt? PendingReward => RewardReceipts.Pending(_store);
 
+        /// <summary>Every unacknowledged reward, oldest first (<see cref="PendingReward"/> is the first); empty when none (#422).
+        /// A game that keeps one offer per shown ad keeps exactly the offers whose <see cref="RewardReceipt.Context"/> is listed.
+        /// An unreadable row throws <see cref="System.IO.InvalidDataException"/> and nothing is written.</summary>
+        public IReadOnlyList<RewardReceipt> PendingRewards => RewardReceipts.All(_store);
+
         /// <summary>
         /// The receipt written for the current synchronous show-result callback, captured before
         /// telemetry, close and readiness notifications can mutate the pending queue. Null outside a

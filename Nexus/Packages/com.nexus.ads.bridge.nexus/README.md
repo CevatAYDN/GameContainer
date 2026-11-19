@@ -130,6 +130,10 @@ Replay until empty, stopping on failure. A single last-receipt field is insuffic
 and replay can apply ids out of order: use the economy's `EarnOnce` ledger, or persist all relevant
 applied ids atomically with custom game state. Legacy single-receipt data migrates on mutation;
 do not downgrade to a pre-#413 package while the queue is nonempty.
+`Ads.PendingRewards` (or `AdController.PendingRewards`) lists the whole queue, oldest first, without
+writing (#422): a game that stores one offer per shown ad keeps exactly the offers whose `Context`
+is listed. A receipt whose offer was lost gets the game's own policy (the placement's default
+reward, or nothing with a warning), saved, then acknowledged, so replay does not stop on it forever.
 
 ### Rewards Paid Into Nexus Economy
 

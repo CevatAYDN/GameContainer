@@ -71,6 +71,10 @@ namespace Nexus.Ads
             return receipts.Count == 0 ? (RewardReceipt?)null : receipts[0];
         }
 
+        /// <summary>Every unacknowledged reward, oldest first; empty when none (#422). A copy: changing it changes nothing stored.
+        /// Same rules as <see cref="Pending"/>: an unreadable row throws <see cref="InvalidDataException"/>, and nothing is written.</summary>
+        public static IReadOnlyList<RewardReceipt> All(IPacingStore store) => Read(store);
+
         /// <summary>Removes only this id; unknown or repeated acknowledgements do not write the store. An unreadable row throws
         /// <see cref="InvalidDataException"/> and is preserved; recover with <see cref="QuarantineUnreadable"/>.</summary>
         public static void Acknowledge(IPacingStore store, string receiptId)

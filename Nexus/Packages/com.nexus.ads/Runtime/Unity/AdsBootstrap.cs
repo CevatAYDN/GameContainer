@@ -407,6 +407,10 @@ namespace Nexus.Ads.Unity
         /// <see cref="System.IO.InvalidDataException"/> and is preserved: call <see cref="QuarantineUnreadableRewards"/> (#415).</summary>
         public static RewardReceipt? PendingReward => RewardReceipts.Pending(ReceiptStore);
 
+        /// <summary>Every unacknowledged reward, oldest first; readable before ads start (#422). An unreadable row throws
+        /// <see cref="System.IO.InvalidDataException"/> and nothing is written.</summary>
+        public static IReadOnlyList<RewardReceipt> PendingRewards => RewardReceipts.All(ReceiptStore);
+
         /// <summary>This live callback's receipt, never the older queue head. Copy it synchronously.</summary>
         public static RewardReceipt? DeliveringReward => Controller?.DeliveringReward;
 
