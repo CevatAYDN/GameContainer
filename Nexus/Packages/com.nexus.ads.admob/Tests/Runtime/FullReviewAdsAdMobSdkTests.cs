@@ -205,6 +205,50 @@ namespace Nexus.Editor.Tests
                 "The obsolete UMP update must not request a new form after the flow's owner released it.");
         }
 
+        [Test]
+        public void AFormThatNeverAnswers_HoldsNoAds_WhenTheUpdateAllowsRequests()
+        {
+            // issue #432: on a Wickling iOS device UMP's form callback never came, and every show stayed blocked all session
+            using var sdk = new SdkScope();
+            sdk.Consent.AllowRequests = false;
+            sdk.Forms.NeverAnswer = true;
+            var clock = new Clock();
+            var scheduler = new Scheduler(clock);
+            var consent = new UmpConsentFlow(false, false);
+            using var controller = new AdController(Config(), new SimulatorProvider(scheduler), clock, new Visibility(), new MainThread(),
+                scheduler, new Store(), new Telemetry(), consent);
+            controller.Start();
+
+            sdk.Consent.AllowRequests = true;
+            sdk.Consent.CompleteUpdate();
+
+            Assert.That(sdk.Forms.LoadAndShowCalls, Is.EqualTo(1), "the form is still asked for");
+            Assert.That(consent.Completed, Is.True, "the update's answer does not wait for the form");
+            Assert.That(controller.State, Is.Not.EqualTo(AdController.Phase.AwaitingConsent));
+            ((IDisposable)consent).Dispose();
+        }
+
+        [Test]
+        public void AFormThatNeverAnswers_KeepsAdsWaiting_WhereConsentIsStillNeeded()
+        {
+            // issue #432: no timer may stand in for an answer where UMP says consent is required
+            using var sdk = new SdkScope();
+            sdk.Consent.AllowRequests = false;
+            sdk.Forms.NeverAnswer = true;
+            var clock = new Clock();
+            var scheduler = new Scheduler(clock);
+            var consent = new UmpConsentFlow(false, false);
+            using var controller = new AdController(Config(), new SimulatorProvider(scheduler), clock, new Visibility(), new MainThread(),
+                scheduler, new Store(), new Telemetry(), consent);
+            controller.Start();
+            sdk.Consent.CompleteUpdate();
+            for (int i = 0; i < 100 && scheduler.RunNext(); i++) { } // the 30 s watchdog and anything else that is due
+
+            Assert.That(consent.Completed, Is.False);
+            Assert.That(controller.State, Is.EqualTo(AdController.Phase.AwaitingConsent), "elapsed time never starts ads");
+            ((IDisposable)consent).Dispose();
+        }
+
         private static AdsConfig Config() => new AdsConfig(
             new[] { new AdPlacement("first", AdFormat.Rewarded), new AdPlacement("second", AdFormat.Rewarded) },
             AdPolicy.Default, new ProviderConfig("fixture-app", new Dictionary<AdFormat, string> { { AdFormat.Rewarded, "fixture-unit" } },
@@ -402,7 +446,8 @@ namespace Nexus.Editor.Tests
         private sealed class FormClient : IConsentFormClient
         {
             public int LoadAndShowCalls;
-            public void LoadAndShowConsentFormIfRequired(Action<FormError> completed) { LoadAndShowCalls++; completed(null); }
+            public bool NeverAnswer;
+            public void LoadAndShowConsentFormIfRequired(Action<FormError> completed) { LoadAndShowCalls++; if (!NeverAnswer) completed(null); }
             public void ShowPrivacyOptionsForm(Action<FormError> completed) => throw new NotSupportedException();
             public void Load(Action loaded, Action<FormError> failed) => throw new NotSupportedException();
             public void Show(Action<FormError> completed) => throw new NotSupportedException();

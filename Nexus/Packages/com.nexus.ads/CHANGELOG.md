@@ -1,5 +1,13 @@
 # Changelog
 
+## Google's consent form that never answers (#432)
+
+- `UmpConsentFlow` answers as soon as UMP's status update allows ad requests (no form needed where the player is, or
+  consent kept), before the form's own callback. On a Wickling iOS device that callback never came and every show
+  stayed blocked for the session. Where UMP still needs consent nothing starts until the form answers: no timer stands in
+  for it (`NoRequestBeforeConsent`). Proven in `Nexus/artifacts/admob-20261119` over Google Mobile Ads 11.7.0: PlayMode
+  48 / 48 / 0 / 0 (`admob-playmode-432.xml`); the new test fails on the old flow (`admob-playmode-432-red.xml`, 47 / 1).
+
 ## Per-platform consent (#431)
 
 - `AdsSettings.AndroidConsent` and `IosConsent` (`PlatformConsent`: `Shared`, `GoogleUmp`, `GameFlow`, `None`) let one

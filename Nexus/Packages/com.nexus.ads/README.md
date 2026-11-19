@@ -237,7 +237,7 @@ Ad events reach `AdsBootstrap.Instance.Telemetry.AddSink(...)`. With the bootstr
 always in a release player, each ad failure is logged as a `[Nexus Ads]` warning once per cause
 (issue #164): a load that failed or found no fill (once per format and reason), a refused consent, a
 failed start (once until the SDK starts, then one `Initialized` line), a consent flow or an SDK start
-still unanswered after 30 s (`Unanswered`, once each; the wait goes on), every failed show (the AdMob
+still unanswered after 30 s (`Unanswered`, once each; the wait goes on: no elapsed time starts ads, and Google's flow answers as soon as its status update allows ad requests, so a form that never returns holds ads only where consent is still needed, #432), every failed show (the AdMob
 and LevelPlay providers write the SDK's reason on the line before), a subscriber or telemetry sink
 that threw while a show was answered or readiness changed (`HandlerFailed`, once per step and
 exception; issue #176), every turn of the kill switch on or off (`KillSwitch on` / `off`, issue #234;

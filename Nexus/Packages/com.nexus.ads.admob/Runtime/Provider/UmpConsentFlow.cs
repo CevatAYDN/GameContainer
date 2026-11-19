@@ -14,7 +14,8 @@ namespace Nexus.Ads.AdMob
     /// (issue #63). The form shown is the message published for the Google Mobile Ads App ID under AdMob's Privacy &amp;
     /// messaging. Every UMP callback (the listeners arrive on the Android UI thread) continues on the main thread. An update
     /// that fails without a network in a first session is asked again when a network returns instead of answering, which
-    /// would read as a refusal (issue #180).
+    /// would read as a refusal (issue #180). An update that allows ad requests answers at once, so a form call that never
+    /// returns holds no ads where UMP needs no answer; where it does, the flow waits for the form, never for a timer (issue #432).
     /// </summary>
     public sealed class UmpConsentFlow : IConsentFlow, IDisposable
     {
@@ -122,6 +123,14 @@ namespace Nexus.Ads.AdMob
                         return;
                     }
                     Debug.LogWarning("[Nexus Ads] consent (Google UMP) update failed: " + updateError.Message);
+                }
+                // The update already says ads may be requested (no form needed here, or consent kept): answer now, so a form
+                // call that never returns (seen on iOS, issue #432) cannot hold ads for the session. Where UMP still needs an
+                // answer nothing starts until the form gives one; a later answer still arrives through Changed.
+                if (!_answered && ConsentInformation.CanRequestAds())
+                {
+                    Debug.LogWarning("[Nexus Ads] consent (Google UMP): the status update allows ad requests; ads start without waiting for the form");
+                    Answer();
                 }
                 ConsentForm.LoadAndShowConsentFormIfRequired(formError => OnMain(() =>
                 {
