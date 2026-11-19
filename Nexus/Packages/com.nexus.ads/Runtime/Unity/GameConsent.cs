@@ -6,7 +6,7 @@ namespace Nexus.Ads.Unity
 {
     /// <summary>
     /// Registers the shared, game-drawn consent flow (issue #430) for a LevelPlay game without AdMob: one line, before
-    /// <c>AdsBootstrap.StartAds()</c>, with <c>Consent: GameFlow</c> in the settings.
+    /// <c>AdsBootstrap.StartAds()</c>, with <c>Consent: GameFlow</c> in the settings (or <c>GameFlow</c> in the platform's own <c>AndroidConsent</c> / <c>IosConsent</c>, issue #431).
     /// <code>
     /// GameConsent.Register(() => texts, version: 1, apply: LevelPlayProvider.ApplyConsent);
     /// </code>

@@ -30,7 +30,9 @@ and precision (issue #135).
      `GameFlow` needs a flow registered before `StartAds()`: the shared game-drawn screen, `GameConsent.Register(texts, version,
      LevelPlayProvider.ApplyConsent)` (no AdMob account, #430), or the game's own `IConsentFlow` registered with
      `AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, factory)` before `StartAds()`; `None` runs no
-     flow and fails a release build. Without the flow the setting names the bootstrap starts no ads;
+     flow and fails a release build. Without the flow the setting names the bootstrap starts no ads. **Android
+     consent** and **iOS consent** (`Shared` by default, following the setting above) let one platform run another
+     flow, for example iOS on `GameFlow` while Android keeps `GoogleUmp` (#431);
    - AdMob: `com.nexus.ads.admob` (its `Nexus.Ads.AdMob` assembly is the family provider) plus
      `com.google.ads.mobile` 11.6.0 or newer from OpenUPM (it brings Unity's External Dependency
      Manager as its own dependency).

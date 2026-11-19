@@ -463,6 +463,8 @@
     {"key": "ads_policy_floors", "value": "Politika tabanları (paket tabanının altındaki değerler tabana çekilir)"},
     {"key": "ads_privacy", "value": "Gizlilik"},
     {"key": "ads_consent_levelplay", "value": "LevelPlay'den önce onay"},
+    {"key": "ads_consent_android", "value": "Android onayı (Shared: yukarıdaki)"},
+    {"key": "ads_consent_ios", "value": "iOS onayı (Shared: yukarıdaki)"},
     {"key": "ads_generate_app_ads", "value": "app-ads.txt üret"},
     {"key": "ads_validation", "value": "Doğrulama"},
     {"key": "ads_tester_idle", "value": "Sahnede bir AdsBootstrap ile Play Mode'a girin; editör simülatörü çalıştırır."},

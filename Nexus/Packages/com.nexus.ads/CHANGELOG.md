@@ -1,5 +1,14 @@
 # Changelog
 
+## Per-platform consent (#431)
+
+- `AdsSettings.AndroidConsent` and `IosConsent` (`PlatformConsent`: `Shared`, `GoogleUmp`, `GameFlow`, `None`) let one
+  platform run another consent flow than `Consent`, so a game can move iOS to the game-drawn screen while Android keeps
+  Google's form. `Shared`, the default, follows `Consent`, so settings saved before the fields existed run unchanged.
+  `ConsentFor(platform)` gives the flow; the bootstrap, the start line, the build outlook and the validator's
+  `consent.form` read it for the platform the build is for, and the Nexus window's Settings tab shows the field of the
+  platform it shows.
+
 ## Whole pending reward queue (#422)
 
 - `PendingRewards` on `Ads` and `AdController`, and `RewardReceipts.All(store)`: every unacknowledged reward, oldest

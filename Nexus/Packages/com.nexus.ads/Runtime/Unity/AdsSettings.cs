@@ -19,6 +19,13 @@ namespace Nexus.Ads.Unity
     /// </summary>
     public enum ConsentSource { GoogleUmp, GameFlow, None }
 
+    /// <summary>
+    /// One platform's consent flow (issue #431): <see cref="Shared"/> follows <see cref="AdsSettings.Consent"/>, the others name
+    /// that platform's own <see cref="ConsentSource"/>, so a game can move one platform at a time. Shared is the default, so
+    /// settings saved before the field existed keep their behaviour.
+    /// </summary>
+    public enum PlatformConsent { Shared, GoogleUmp, GameFlow, None }
+
     [Serializable]
     public sealed class PlatformKeys
     {
@@ -151,6 +158,10 @@ namespace Nexus.Ads.Unity
         [Header("Privacy")]
         [Tooltip("The consent flow before LevelPlay, which ships no form: Google's UMP (com.nexus.ads.admob), the game's own flow registered with AdsBootstrap.RegisterSharedConsentFlow before StartAds(), or none (a release build fails the validator)")]
         public ConsentSource Consent = ConsentSource.GoogleUmp;
+        [Tooltip("The Android build's consent flow when it differs from Consent (issue #431); Shared follows Consent")]
+        public PlatformConsent AndroidConsent = PlatformConsent.Shared;
+        [Tooltip("The iOS build's consent flow when it differs from Consent (issue #431); Shared follows Consent")]
+        public PlatformConsent IosConsent = PlatformConsent.Shared;
         public bool ChildDirected;
         public bool UnderAgeOfConsent;
         public ContentRating MaxAdContentRating = ContentRating.G;
@@ -160,8 +171,23 @@ namespace Nexus.Ads.Unity
 
         public static AdsSettings Load() => Resources.Load<AdsSettings>(ResourceName);
 
-        /// <summary>The selected mediation ships no consent form and the settings name a flow that must be registered before it starts (issue #154).</summary>
-        public bool ConsentNeedsRegisteredFlow => SelectedMediation == AdProviderKind.LevelPlay && Consent != ConsentSource.None;
+        /// <summary>The consent flow a platform runs: its own <see cref="AndroidConsent"/> or <see cref="IosConsent"/>, or <see cref="Consent"/> when that is Shared (issue #431).</summary>
+        public ConsentSource ConsentFor(AdPlatform platform)
+        {
+            switch (platform == AdPlatform.Ios ? IosConsent : AndroidConsent)
+            {
+                case PlatformConsent.GoogleUmp: return ConsentSource.GoogleUmp;
+                case PlatformConsent.GameFlow: return ConsentSource.GameFlow;
+                case PlatformConsent.None: return ConsentSource.None;
+                default: return Consent;
+            }
+        }
+
+        /// <summary>The selected mediation ships no consent form and the settings name, for this platform, a flow that must be registered before it starts (issues #154, #431).</summary>
+        public bool ConsentNeedsRegisteredFlowFor(AdPlatform platform) => SelectedMediation == AdProviderKind.LevelPlay && ConsentFor(platform) != ConsentSource.None;
+
+        /// <summary><see cref="ConsentNeedsRegisteredFlowFor"/> for the platform this runs on (<c>AdsBootstrap.CurrentPlatform</c>; Android in the editor).</summary>
+        public bool ConsentNeedsRegisteredFlow => ConsentNeedsRegisteredFlowFor(AdsBootstrap.CurrentPlatform);
 
         /// <summary>The tab a build kind reads; fixed by design.</summary>
         public static bool UsesReleaseTab(BuildKind build) => build == BuildKind.Release;

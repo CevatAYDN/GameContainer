@@ -532,6 +532,8 @@ namespace Nexus.Editor
             s_strings["ads_policy_floors"] = "Policy floors (values below the package floor are raised to it)";
             s_strings["ads_privacy"] = "Privacy";
             s_strings["ads_consent_levelplay"] = "Consent before LevelPlay";
+            s_strings["ads_consent_android"] = "Android consent (Shared: as above)";
+            s_strings["ads_consent_ios"] = "iOS consent (Shared: as above)";
             s_strings["ads_generate_app_ads"] = "Generate app-ads.txt";
             s_strings["ads_validation"] = "Validation";
             s_strings["ads_tester_idle"] = "Enter Play Mode with an AdsBootstrap in the scene; the editor runs the simulator.";

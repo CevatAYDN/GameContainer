@@ -85,7 +85,7 @@ namespace Nexus.Ads.Editor
         public enum Tab { Test, Release }
 
         private const string ConsentFix = "install com.google.ads.mobile and com.nexus.ads.admob and set Consent to GoogleUmp, or draw the consent screen yourself with GameConsent.Register(texts, version, LevelPlayProvider.ApplyConsent) (no AdMob account; the shared GameFlow), or wrap your own consent platform in an IConsentFlow "
-            + "(which forwards the answer with LevelPlayProvider.SetGdprConsent), register it with AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, ...) before StartAds() and set Consent to GameFlow.";
+            + "(which forwards the answer with LevelPlayProvider.SetGdprConsent), register it with AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, ...) before StartAds() and set Consent to GameFlow. Android consent and iOS consent set one platform's flow on its own (Shared follows Consent).";
 
         // A release build fails without a consent flow before LevelPlay; a development build warns (the owner's decision of 2026-10-31, #154).
         private static AdsCheck ConsentCheck(ConsentSource source, bool googleConsent, bool release)
@@ -137,7 +137,7 @@ namespace Nexus.Ads.Editor
             // LevelPlay ships no consent form (issue #63); the settings name the flow that runs before it (issue #154)
             if (kind == AdProviderKind.LevelPlay)
                 report.Add(adFree ? new AdsCheck("consent.form", CheckResult.Pass, "ad-free release: LevelPlay never starts, so no consent flow runs before it")
-                    : ConsentCheck(settings.Consent, googleConsent, release));
+                    : ConsentCheck(settings.ConsentFor(platform), googleConsent, release));
 
             // a package below the provider asmdef's versionDefines expression compiles the provider out, and nothing else says so (issue #143)
             string compiledOut = kind == AdProviderKind.None ? null : probe.ProviderCompiledOut(kind);

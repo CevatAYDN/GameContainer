@@ -61,6 +61,51 @@ namespace Nexus.Ads.Tests
         }
 
         [Test]
+        public void EachPlatform_RunsItsOwnConsentFlow_AndSharedFollowsConsent()
+        {
+            // issue #431: one Consent value for the project kept a game from moving iOS to its own flow while Android stays on UMP
+            _settings.Consent = ConsentSource.GoogleUmp;
+            _settings.IosConsent = PlatformConsent.GameFlow;
+            var config = _settings.ToConfig(BuildKind.Development, AdPlatform.Ios).Provider;
+            var levelPlay = new SimulatorProvider(NoScheduler.Instance);
+            var google = new SimulatorProvider(NoScheduler.Instance);
+            var game = new SimulatorProvider(NoScheduler.Instance);
+            var previous = AdsBootstrap.SwapConsentFlowsForTests(c => google, c => game);
+            try
+            {
+                Assert.AreSame(google, AdsBootstrap.ConsentFlowFor(_settings, AdPlatform.Android, levelPlay, config), "Android is Shared: Consent's UMP");
+                Assert.AreSame(game, AdsBootstrap.ConsentFlowFor(_settings, AdPlatform.Ios, levelPlay, config), "iOS names the game's flow");
+            }
+            finally { AdsBootstrap.SwapConsentFlowsForTests(previous.Google, previous.Game); }
+
+            // only the game's flow is registered (no AdMob in the project): iOS starts, Android waits for Google's form
+            StringAssert.Contains("com.nexus.ads.admob", BuildOutlook.MissingConsent(_settings, AdPlatform.Android, false, true));
+            Assert.IsNull(BuildOutlook.MissingConsent(_settings, AdPlatform.Ios, false, true));
+            StringAssert.Contains("RegisterSharedConsentFlow", BuildOutlook.MissingConsent(_settings, AdPlatform.Ios, true, false), "Google's form does not stand in for iOS's own flow");
+            var provider = _settings.ToProviderConfig(BuildKind.Release, AdPlatform.Ios, AdProviderKind.LevelPlay);
+            Assert.AreEqual(HostMode.Idle, BuildOutlook.Decide(_settings, BuildKind.Release, AdPlatform.Android, provider, "release", true, false, true).Mode);
+            Assert.AreEqual(HostMode.Provider, BuildOutlook.Decide(_settings, BuildKind.Release, AdPlatform.Ios, provider, "release", true, false, true).Mode);
+            Assert.AreEqual("SimulatorProvider(registered)", AdsBootstrap.DescribeConsent(_settings, AdPlatform.Ios, HostMode.Provider, levelPlay));
+
+            _settings.AndroidConsent = PlatformConsent.None;
+            Assert.IsNull(BuildOutlook.MissingConsent(_settings, AdPlatform.Android, false, false), "Android's own None waits for no flow");
+            Assert.AreEqual("SimulatorProvider(provider)", AdsBootstrap.DescribeConsent(_settings, AdPlatform.Android, HostMode.Provider, levelPlay));
+        }
+
+        [Test]
+        public void SettingsSavedBeforeThePlatformFields_RunTheirConsentOnBothPlatforms()
+        {
+            // issue #431: an asset written before AndroidConsent and IosConsent existed must load with unchanged behaviour
+            JsonUtility.FromJsonOverwrite("{\"Consent\":1}", _settings);
+            Assert.AreEqual(ConsentSource.GameFlow, _settings.ConsentFor(AdPlatform.Android));
+            Assert.AreEqual(ConsentSource.GameFlow, _settings.ConsentFor(AdPlatform.Ios));
+            // a field Unity writes as its first value (0) must also mean Shared
+            JsonUtility.FromJsonOverwrite("{\"Consent\":2,\"AndroidConsent\":0,\"IosConsent\":0}", _settings);
+            Assert.AreEqual(ConsentSource.None, _settings.ConsentFor(AdPlatform.Android));
+            Assert.AreEqual(ConsentSource.None, _settings.ConsentFor(AdPlatform.Ios));
+        }
+
+        [Test]
         public void TheStartLine_NamesTheConsentFlowThatRunsAndWhereItCameFrom()
         {
             // issue #154: a release build that started LevelPlay with only its pass-through left no trace of it

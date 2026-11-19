@@ -316,6 +316,17 @@ namespace Nexus.Ads.Tests
         }
 
         [Test]
+        public void TheConsentCheck_ReadsThePlatformsOwnFlow()
+        {
+            // issue #431: iOS on the game's flow while Android stays on Google's form, whose packages are not in the project
+            _settings.Consent = ConsentSource.GoogleUmp;
+            _settings.IosConsent = PlatformConsent.GameFlow;
+            Assert.AreEqual(CheckResult.Fail, Check(Run(AdsValidator.Tab.Release), "consent.form").Result, "Android is Shared: UMP without its packages");
+            var ios = AdsValidator.Validate(_settings, AdsValidator.Tab.Release, AdPlatform.Ios, _probe, _catalog);
+            Assert.AreEqual(CheckResult.Pass, Check(ios, "consent.form").Result, "iOS names the game's flow");
+        }
+
+        [Test]
         public void LevelPlay_WithTheGamesOwnConsentFlow_Passes_AndWithNone_FailsARelease()
         {
             // issue #154: the settings name the flow before LevelPlay; a game with its own consent platform says so

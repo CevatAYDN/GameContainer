@@ -47,6 +47,10 @@ namespace Nexus.Ads.Unity
         /// <param name="googleConsentRegistered">Google's form is registered (com.nexus.ads.admob); the editor reads it from the project's packages.</param>
         /// <param name="gameConsentRegistered">The game registered its own flow; the editor cannot see that before a run and passes true.</param>
         public static HostDecision Decide(AdsSettings settings, BuildKind build, ProviderConfig provider, string advertisingId, bool providerRegistered, bool googleConsentRegistered, bool gameConsentRegistered)
+            => Decide(settings, build, AdsBootstrap.CurrentPlatform, provider, advertisingId, providerRegistered, googleConsentRegistered, gameConsentRegistered);
+
+        /// <summary>The decision for a build on <paramref name="platform"/>, whose consent flow may differ from the other's (issue #431).</summary>
+        public static HostDecision Decide(AdsSettings settings, BuildKind build, AdPlatform platform, ProviderConfig provider, string advertisingId, bool providerRegistered, bool googleConsentRegistered, bool gameConsentRegistered)
         {
             bool adFree = settings.AdFreeRelease && build == BuildKind.Release;
             var gate = adFree
@@ -56,7 +60,7 @@ namespace Nexus.Ads.Unity
                     : ProviderGate.Evaluate(build, provider, advertisingId);
             var mode = ProviderGate.Host(build, gate, settings.SelectedMediation != AdProviderKind.None, providerRegistered);
             // the consent flow the settings name runs before the SDK, or nothing starts (issues #154, #181)
-            string consentMissing = mode == HostMode.Provider ? MissingConsent(settings, googleConsentRegistered, gameConsentRegistered) : null;
+            string consentMissing = mode == HostMode.Provider ? MissingConsent(settings, platform, googleConsentRegistered, gameConsentRegistered) : null;
             if (consentMissing != null) return new HostDecision(gate, HostMode.Idle, consentMissing);
             return new HostDecision(gate, mode, mode == HostMode.Idle && !adFree ? IdleReason(settings, gate) : null);
         }
@@ -68,10 +72,14 @@ namespace Nexus.Ads.Unity
         /// a flow registered for the other source does not count.
         /// </summary>
         public static string MissingConsent(AdsSettings settings, bool googleRegistered, bool gameRegistered)
+            => MissingConsent(settings, AdsBootstrap.CurrentPlatform, googleRegistered, gameRegistered);
+
+        /// <summary><see cref="MissingConsent(AdsSettings, bool, bool)"/> for the flow <paramref name="platform"/> runs (issue #431).</summary>
+        public static string MissingConsent(AdsSettings settings, AdPlatform platform, bool googleRegistered, bool gameRegistered)
         {
-            if (settings == null || !settings.ConsentNeedsRegisteredFlow) return null;
+            if (settings == null || !settings.ConsentNeedsRegisteredFlowFor(platform)) return null;
             var kind = settings.SelectedMediation;
-            if (settings.Consent == ConsentSource.GoogleUmp)
+            if (settings.ConsentFor(platform) == ConsentSource.GoogleUmp)
                 return googleRegistered ? null
                     : "the settings name Google's consent form (UMP) before " + kind + ", and none is registered: install com.google.ads.mobile and com.nexus.ads.admob, which register it (with both installed, Nexus.Ads.AdMob was left out of the player)"
                         + (gameRegistered ? "; the game's registered flow runs only with Consent: GameFlow" : "");
@@ -124,7 +132,7 @@ namespace Nexus.Ads.Unity
         private static OutlookRow Row(string where, AdsSettings settings, BuildKind build, AdPlatform platform, string advertisingId, bool providerInstalled, ProviderStatusReport releaseStatus, bool googleConsentInstalled)
         {
             var provider = settings.ToProviderConfig(build, platform, settings.SelectedMediation);
-            var decision = Decide(settings, build, provider, advertisingId, providerInstalled, googleConsentInstalled, gameConsentRegistered: true);
+            var decision = Decide(settings, build, platform, provider, advertisingId, providerInstalled, googleConsentInstalled, gameConsentRegistered: true);
             bool problem;
             string text = Say(settings, build, platform, decision, releaseStatus, out problem);
             return new OutlookRow(where, decision.Mode, text, problem);

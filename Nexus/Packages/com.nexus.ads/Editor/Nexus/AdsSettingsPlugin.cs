@@ -93,7 +93,12 @@ namespace Nexus.Ads.Editor
 
             var privacy = AdsViews.Card(scroll, NexusLang.Get("ads_privacy"));
             if (kind == AdProviderKind.LevelPlay) // LevelPlay ships no consent form (issue #154)
+            {
                 privacy.Add(Field(so, nameof(AdsSettings.Consent), NexusLang.Get("ads_consent_levelplay")));
+                // the platform the tab shows, as its Validate buttons check (issue #431)
+                privacy.Add(Field(so, _platform == AdPlatform.Ios ? nameof(AdsSettings.IosConsent) : nameof(AdsSettings.AndroidConsent),
+                    NexusLang.Get(_platform == AdPlatform.Ios ? "ads_consent_ios" : "ads_consent_android")));
+            }
             privacy.Add(Field(so, nameof(AdsSettings.ChildDirected)));
             privacy.Add(Field(so, nameof(AdsSettings.UnderAgeOfConsent)));
             privacy.Add(Field(so, nameof(AdsSettings.MaxAdContentRating)));
