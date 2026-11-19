@@ -17,6 +17,17 @@ no output for 20 minutes and was stopped; `HardeningRegressionTests`, the last t
 the Windows one), `LevelPlayProvider.ApplyConsent` (needs `NEXUS_LEVELPLAY`; no LevelPlay proof project exists on
 this machine), and the screen on a device.
 
+Windows re-run (#433), Unity 6000.6.8f1, .NET SDK 10.0.404. On `16b2d5cf`
+(`Nexus/artifacts/gameconsent-430-win-20261119/`): the full EditMode suite ran without a stall, 1048 total /
+1046 passed / 0 failed / 2 skipped; PlayMode 340 / 338 / 0 / 2; the LevelPlay 9.6.0 proof project
+(`sdk-20261105-b2ac9b9/LevelPlayConsumer`, Android target) compiled `LevelPlayProvider.ApplyConsent` with
+`NEXUS_LEVELPLAY`, EditMode 188 / 187 / 0 / 1 (`A05_BuildHooksReject…`), and showed five `warning CS0618` lines
+from the obsolete object lookups #430 added. On the #433 fixes (`4dc286ad`, `465fa448`;
+`Nexus/artifacts/gameconsent-433-20261119/`): host harness 0 FAIL, `nexus-compile-check` 0 errors / 0 warnings;
+EditMode 1050 / 1048 / 0 / 2, PlayMode 340 / 338 / 0 / 2; proof project EditMode 189 / 188 / 0 / 1 and PlayMode
+48 / 48 / 0 / 0; 0 `warning CS` in both projects' recompiles; `tools/check-versions.py` offline 30 rows, 0 problems.
+`ApplyConsent` is compiled but called by no test, and the screen has still not been seen on a device.
+
 ## Closure follow-up — #418 and #420
 
 Evidence root: `Nexus/artifacts/closure-100-418-420/`, Unity 6000.6.8f1.
