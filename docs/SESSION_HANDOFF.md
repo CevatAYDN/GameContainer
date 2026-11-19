@@ -1,13 +1,16 @@
 # Session handoff
 
-## Current continuation — 2026-11-19 (#433, #429, #422, #431)
+## Current continuation — 2026-11-19 (#433, #429, #422, #431, #432, #428)
 
 Local `main` carries these commits; they are **not pushed** (the owner approves the push):
 #433 (`4dc286ad`, `465fa448`, `710a3154`; the issue closes at the push), #429 dependency proofs (`99c4c0b3`,
 `5b0fcc5d`, `e738788c`, `3bd2783c`; the issue stays open: the editor move to 6000.6.10f1 is the owner's),
-#422 `PendingRewards` (`530ff932`) and #431 per-platform consent, `AndroidConsent` / `IosConsent` (`63731e6c`, `bc51d754`).
-Each issue has a comment with its numbers. Not touched: #432 (waits for the owner's EEA/UK policy decision) and
-#428 (waits for the owner's checks). No device run was made in this session.
+#422 `PendingRewards` (`530ff932`), #431 per-platform consent, `AndroidConsent` / `IosConsent` (`63731e6c`, `bc51d754`)
+and #432, Google's flow answering once UMP's status update allows ad requests (`77e48fac`, `e607a147`; the timer the
+issue asks about is the owner's decision, recommended won't do; the issue closes after the push unless the owner decides
+otherwise). #428 got a live batch proof (recording, Cinemachine free camera, the sample's hooks) and stays open for the
+owner's checks: watching the MP4 and the free camera's feel. Numbers for #432 and #428 are in `RELEASE_GATES.md`, at
+its top. Each issue has a comment with its numbers. No device run was made in this session.
 
 ## Earlier continuation — #430 game-drawn consent flow
 

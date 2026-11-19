@@ -1,5 +1,26 @@
 # Release gates
 
+## Google's consent form that never answers — #432
+
+Evidence root: `Nexus/artifacts/admob-20261119/` (the #429 AdMob proof project, Google Mobile Ads 11.7.0, Unity
+6000.6.8f1, Windows). `UmpConsentFlow` answers once UMP's status update allows ad requests (`77e48fac`; the line it
+logs is a diagnostic since `e607a147`). PlayMode `admob-playmode-432.xml` 48 / 48 / 0 / 0; on the old flow
+`admob-playmode-432-red.xml` 48 / 47 / 1 / 0, the failure being `AFormThatNeverAnswers_HoldsNoAds_WhenTheUpdateAllowsRequests`;
+after `e607a147` `admob-playmode-432b.xml` 48 / 48 / 0 / 0, 0 `error|warning CS`. Where consent is still needed a
+form that never answers keeps ads waiting (`AFormThatNeverAnswers_KeepsAdsWaiting_WhereConsentIsStillNeeded`); no
+timer stands in for an answer, which the owner decides in #432. Not run: an iOS device, where the hang was seen.
+
+## Capture Mode live proof — #428
+
+Evidence root: `Nexus/artifacts/capture-20261119/` (`summary.txt`), Unity 6000.6.8f1, Windows, batch mode with
+graphics. The proof project `CaptureProof` (Cinemachine 6.6.0, Recorder 5.1.8, URP 17.6.0, the package sample
+`ExampleCaptureHooks`) ran PlayMode `playmode-live.xml` 13 / 13 / 0 / 0: the package's 10 tests and three proof
+tests: the sample's hooks register and Close turns god mode off; the free camera is a `CinemachineCamera` at
+priority 11 that the brain picks while the main camera stays on, and Close destroys it; a recording through
+`CaptureModeService` writes an MP4, which ffprobe reads as H.264 1080x1920 at 60 fps with an AAC audio stream.
+Android development and release players carry no Capture assembly (`capture-20261112/android-*-assemblies.txt`).
+Not seen: the picture in the MP4 and the free camera's feel under real input; those are the owner's checks.
+
 ## Game-drawn consent flow — #430
 
 Evidence root: `Nexus/artifacts/gameconsent-430-20261119/`, Unity 6000.6.8f1 and .NET SDK 10.0.404 on macOS.
@@ -241,7 +262,7 @@ One row per dependency (#138; the rule is in `CLAUDE.md`, Dependencies). Minimum
 | `com.unity.ide.rider` (development project) | none | 3.1.1 (`devpackages-20261119`, with `com.unity.pipeline` 1.0.0, #429: the numbers in that row); 3.1.0 (6000.6.7f1 took it at the first open) | 3.1.1 (2026-11-19) | |
 | `com.unity.ide.visualstudio` (development project) | none | 2.0.29 (`devpackages-20261031`) | 2.0.29 (2026-10-28) | |
 | `com.unity.render-pipelines.universal` | 17.6.0 (`com.nexus.capture` runtime asmdef `versionDefines`, `NEXUS_URP`, #428) | 17.6.0, the editor's built-in package, in the development project (17.5.0 on 6000.5.6f1); `com.nexus.capture` PlayMode 11 / 11 / 0 / 0 (`capture-20261112/playmode.xml`, full suite 339 / 337 / 0 / 2) | set by the editor | |
-| `com.unity.recorder` | 5.1.8 (`com.nexus.capture` `package.json`, #428) | 5.1.8 (development project, where `com.nexus.capture` is embedded: its editor assembly compiles against it, PlayMode 11 / 11 / 0 / 0, `capture-20261112/playmode.xml`, full suite 339 / 337 / 0 / 2; no recording made by a test) | 5.1.8 | The editor 6000.6.8f1 bundles 5.1.7; the package asks for 5.1.8 |
+| `com.unity.recorder` | 5.1.8 (`com.nexus.capture` `package.json`, #428) | 5.1.8 (development project, where `com.nexus.capture` is embedded: its editor assembly compiles against it, PlayMode 11 / 11 / 0 / 0, `capture-20261112/playmode.xml`, full suite 339 / 337 / 0 / 2; in `capture-20261119/CaptureProof` a test recorded an MP4, 1080x1920 at 60 fps, H.264 + AAC, #428) | 5.1.8 | The editor 6000.6.8f1 bundles 5.1.7; the package asks for 5.1.8 |
 | `com.unity.cinemachine` | 6.6.0 (`com.nexus.capture` runtime asmdef `versionDefines`, `NEXUS_CINEMACHINE`, #428) | 6.6.0, the editor's built-in package: the proof project `Nexus/artifacts/cinemachine-20261112/CM660` compiles `com.nexus.core` and `com.nexus.capture` with `NEXUS_CINEMACHINE` defined, no compile error (`CM660-final.log`), and its `com.nexus.capture.dll` references `CinemachineBrain` and `CinemachineCamera`; the development project has no Cinemachine | set by the editor | The registry's newest is 3.1.7, but on 6000.6.8f1 the built-in 6.6.0 replaces a 3.1.7 request (the `CM317` proof project and Wickling, whose manifests ask for 3.1.7, resolve 6.6.0), so 3.1.7 cannot be proven on this editor and the minimum is the proven 6.6.0 |
 | `com.unity.test-framework` | 1.8.0 (core editor asmdef: the filter that keeps a test run out of the Error Dashboard compiles with it, #193) | 1.8.0, the editor's built-in package (1.7.0 on 6000.5.6f1) | set by the editor | |
 
