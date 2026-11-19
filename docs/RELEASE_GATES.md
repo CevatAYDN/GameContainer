@@ -1,5 +1,22 @@
 # Release gates
 
+## Game-drawn consent flow — #430
+
+Evidence root: `Nexus/artifacts/gameconsent-430-20261119/`, Unity 6000.6.8f1 and .NET SDK 10.0.404 on macOS.
+Host harness (`host.log`): 889 PASS lines, 1 FAIL, `DurableReward FailedDelete_NeverConfirms_AndKeepsTheOldDurableValue`
+(a file-lock test), which fails identically on the clean `45bdccb2` here and is not touched by this change; the
+10 `FullReviewAdsGameConsentTests` (the engine-free flow) pass. The harness caught CG7 on the first run: the
+`Nexus.Ads.Bridge.Nexus.Firebase` assembly, which now holds an injectable service, was missing from its package's
+`link.xml`; fixed in the same commit. Ads family EditMode (`com.nexus.ads.editor.tests`,
+`com.nexus.ads.bridge.nexus.editor.tests`, `com.nexus.ads.editor.nexus.tests`; `ads-editmode.xml`): 190 total,
+189 passed / 0 failed / 1 inconclusive (`A05_BuildHooksReject…`, not touched by this change). PlayMode
+(`com.nexus.ads.tests`, `com.nexus.ads.bridge.nexus.tests`; `gameconsent-playmode.xml`): 30 passed / 0 failed /
+0 skipped, with no `No Theme Style Sheet` line in the log. The full EditMode suite stalled on this machine with
+no output for 20 minutes and was stopped; `HardeningRegressionTests`, the last test its log showed, passes alone
+(`hardening.xml`: 39 / 39), so the stall is not located. Not run: `tools/check-versions.py` (its editor path is
+the Windows one), `LevelPlayProvider.ApplyConsent` (needs `NEXUS_LEVELPLAY`; no LevelPlay proof project exists on
+this machine), and the screen on a device.
+
 ## Closure follow-up — #418 and #420
 
 Evidence root: `Nexus/artifacts/closure-100-418-420/`, Unity 6000.6.8f1.

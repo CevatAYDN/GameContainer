@@ -100,3 +100,4 @@ MonoBehaviour:
   UnderAgeOfConsent: 0
   MaxAdContentRating: 0
   PrivacyPolicyUrl: 
+  ConsentPartners: []

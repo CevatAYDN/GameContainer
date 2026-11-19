@@ -480,6 +480,16 @@ namespace Nexus.Ads.LevelPlay
 
         /// <summary>Forwards a CCPA "do not sell" opt-out.</summary>
         public static void SetDoNotSell(bool optedOut) => LevelPlayPrivacySettings.SetCCPA(optedOut);
+
+        /// <summary>
+        /// Applies one consent answer: <c>SetGdprConsent(accepted)</c> and <c>SetDoNotSell(!accepted)</c>. The game-drawn flow
+        /// (<c>GameConsent.Register</c>, issue #430) calls it before LevelPlay starts and again when the player changes the answer.
+        /// </summary>
+        public static void ApplyConsent(bool accepted)
+        {
+            SetGdprConsent(accepted);
+            SetDoNotSell(!accepted);
+        }
     }
 
     /// <summary>Registers the provider with the bootstrap before any scene loads; only the selected mediation is ever created.</summary>

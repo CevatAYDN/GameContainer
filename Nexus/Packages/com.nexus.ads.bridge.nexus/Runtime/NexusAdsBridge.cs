@@ -32,6 +32,8 @@ namespace Nexus.Ads.Bridge
         {
             if (ads == null) throw new ArgumentNullException(nameof(ads));
             if (factory == null) throw new ArgumentNullException(nameof(factory));
+            // the consent screen of GameConsent is a runtime document: with the core's ToolkitPanelInput it gets EventSystem input (#430)
+            GameConsent.AttachInput = document => UnityEngine.Object.FindFirstObjectByType<ToolkitPanelInput>()?.Attach(document);
             bootstrap = bootstrap ?? AdsBootstrap.Instance;
             if (bootstrap == null) throw new InvalidOperationException("No AdsBootstrap in the scene; add one (it loads Resources/" + AdsSettings.ResourceName + ").");
             if (bootstrap.Controller != null) { Attach(ads, factory, store, removeAdsProductId, bootstrap); return; }

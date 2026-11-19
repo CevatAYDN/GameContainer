@@ -84,7 +84,7 @@ namespace Nexus.Ads.Editor
     {
         public enum Tab { Test, Release }
 
-        private const string ConsentFix = "install com.google.ads.mobile and com.nexus.ads.admob and set Consent to GoogleUmp, or wrap your own consent platform in an IConsentFlow "
+        private const string ConsentFix = "install com.google.ads.mobile and com.nexus.ads.admob and set Consent to GoogleUmp, or draw the consent screen yourself with GameConsent.Register(texts, version, LevelPlayProvider.ApplyConsent) (no AdMob account; the shared GameFlow), or wrap your own consent platform in an IConsentFlow "
             + "(which forwards the answer with LevelPlayProvider.SetGdprConsent), register it with AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, ...) before StartAds() and set Consent to GameFlow.";
 
         // A release build fails without a consent flow before LevelPlay; a development build warns (the owner's decision of 2026-10-31, #154).

@@ -98,6 +98,7 @@ namespace Nexus.Ads.Editor
             privacy.Add(Field(so, nameof(AdsSettings.UnderAgeOfConsent)));
             privacy.Add(Field(so, nameof(AdsSettings.MaxAdContentRating)));
             privacy.Add(Field(so, nameof(AdsSettings.PrivacyPolicyUrl)));
+            if (kind == AdProviderKind.LevelPlay) privacy.Add(Field(so, nameof(AdsSettings.ConsentPartners)));
 
             var appAds = AdsViews.Card(scroll, "app-ads.txt");
             appAds.Add(Field(so, nameof(AdsSettings.AppAdsTxtLines)));

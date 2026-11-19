@@ -3,6 +3,8 @@
     "rootNamespace": "Nexus.Ads.Bridge",
     "references": [
         "Nexus.Ads.Core",
+        "Nexus.Ads.Unity",
+        "com.nexus.core",
         "com.nexus.firebase"
     ],
     "includePlatforms": [],

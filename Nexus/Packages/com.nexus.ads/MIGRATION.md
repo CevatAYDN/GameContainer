@@ -27,7 +27,8 @@ and precision (issue #135).
      form, and the ad settings' **Consent before LevelPlay** names the flow that runs before it (issues #154,
      #181): `GoogleUmp`, the default, needs `com.google.ads.mobile` and `com.nexus.ads.admob` (Google's form, the
      one the legacy `AdMobAdapter` showed; the game's AdMob App ID stays in Assets > Google Mobile Ads > Settings);
-     `GameFlow` needs the game's own `IConsentFlow` registered with
+     `GameFlow` needs a flow registered before `StartAds()`: the shared game-drawn screen, `GameConsent.Register(texts, version,
+     LevelPlayProvider.ApplyConsent)` (no AdMob account, #430), or the game's own `IConsentFlow` registered with
      `AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, factory)` before `StartAds()`; `None` runs no
      flow and fails a release build. Without the flow the setting names the bootstrap starts no ads;
    - AdMob: `com.nexus.ads.admob` (its `Nexus.Ads.AdMob` assembly is the family provider) plus

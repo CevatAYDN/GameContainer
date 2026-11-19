@@ -1,5 +1,13 @@
 # Session handoff
 
+## Current continuation — #430 game-drawn consent flow
+
+#430 (`GameConsent.Register`, `Consent: GameFlow`, `GameConsentAnalyticsConsent`) is committed on `main`, not pushed.
+Evidence and what was not run are in `RELEASE_GATES.md`, "Game-drawn consent flow". The host harness ran (one macOS-only failure that also fails on the clean base). Open before pushing: `tools/check-versions.py`
+needs the Windows editor path. Optional parts
+(per-platform `Consent` setting, fallback for a flow that never answers) are not done and need their own issue. Wickling
+re-pins to the commit that carries this.
+
 ## Current continuation — closure follow-up
 
 **Framework issue state:** #100, #418 and #420 were closed with scoped evidence comments;

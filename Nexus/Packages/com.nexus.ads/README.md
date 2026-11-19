@@ -160,7 +160,12 @@ build's debug panel out (issue #132; `AdsCoreSuite` SM11–SM14, PlayMode
    the settings' **Consent before LevelPlay** (`AdsSettings.Consent`) names the flow that runs before it:
    `GoogleUmp` (the default; Google's form, which `com.nexus.ads.admob` registers), `GameFlow` (the game's
    own `IConsentFlow`, registered with `AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, factory)`
-   before `StartAds()`, which forwards the answer with `LevelPlayProvider.SetGdprConsent`) or `None` (no flow
+   before `StartAds()`, which forwards the answer with `LevelPlayProvider.SetGdprConsent`; a game without AdMob
+   registers the shared screen instead with `GameConsent.Register(() => texts, version: 1, LevelPlayProvider.ApplyConsent)`:
+   a UI Toolkit screen shown once per device (no region detection), Accept and Reject of equal weight, the answer stored
+   with its version so a bump asks again and applied before LevelPlay starts, reopened by the game's "Ad privacy options"
+   entry (#430); `AdsSettings.ConsentPartners` adds the enabled networks to the partner list; a game's own
+   `ConsentScreenStyle` supplies UXML/USS, whose buttons are named `nexus-consent-accept` and `nexus-consent-reject`) or `None` (no flow
    runs, Google's form included). Each source has its own registration and only the one the setting names
    runs, whatever the order the registrations came in (#181). When the flow it names is not registered at the
    start, no ads start and the bootstrap logs `[Nexus Ads] no ads run:` with what is missing; the Ads
@@ -358,7 +363,7 @@ bad arguments). `-adsTab` reads `Test` or `Release` in any case, here and in `An
 |---|---|
 | `mediation.single` | fail: two mediation SDKs are in the project |
 | `mediation.admob` | warn: the Google Mobile Ads SDK is in the project while LevelPlay or MAX is selected without `com.nexus.ads.admob` (only the selected mediation starts; the SDK still ships); with that package it passes, since Google's consent form then runs before the mediation |
-| `consent.form` | LevelPlay is selected (it ships no form) and the settings' `Consent` names no flow that runs before it: `None`, or `GoogleUmp` without `com.google.ads.mobile` and `com.nexus.ads.admob`. Fail on the Release tab, which stops a release build; warn on the Test tab. `GameFlow` passes (the bootstrap starts no ads until that flow is registered). With `None` Google's form does not run even when its packages are in, and the fix names `GoogleUmp` (#181) |
+| `consent.form` | LevelPlay is selected (it ships no form) and the settings' `Consent` names no flow that runs before it: `None`, or `GoogleUmp` without `com.google.ads.mobile` and `com.nexus.ads.admob`. Fail on the Release tab, which stops a release build; warn on the Test tab. `GameFlow` passes (the bootstrap starts no ads until that flow is registered, for example with `GameConsent.Register`). With `None` Google's form does not run even when its packages are in, and the fix names `GoogleUmp` (#181) |
 | `mediation.selected` | fail: no mediation selected on a release that is not ad-free |
 | `mediation.status` | fail: the selected provider is not Active for a release build (warn on the Test tab when NotInstalled: a development build runs the simulator on a device that is not listed and no ads on a listed one) |
 | `keys.release.missing`, `keys.test.missing` | fail: a required field (derived from the placements) is empty; warn on the Test tab for LevelPlay/MAX (the SDK cannot start on a listed device) |

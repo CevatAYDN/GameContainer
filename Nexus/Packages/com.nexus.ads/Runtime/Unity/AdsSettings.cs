@@ -155,6 +155,8 @@ namespace Nexus.Ads.Unity
         public bool UnderAgeOfConsent;
         public ContentRating MaxAdContentRating = ContentRating.G;
         public string PrivacyPolicyUrl = "";
+        [Tooltip("Networks the game-drawn consent screen (Consent: GameFlow) names besides ironSource / LevelPlay and Unity Ads: one per enabled LevelPlay network")]
+        public List<string> ConsentPartners = new List<string>();
 
         public static AdsSettings Load() => Resources.Load<AdsSettings>(ResourceName);
 

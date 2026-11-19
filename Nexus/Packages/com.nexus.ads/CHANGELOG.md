@@ -1,5 +1,27 @@
 # Changelog
 
+## Game-drawn consent flow (#430)
+
+- New shared consent flow for LevelPlay games without AdMob (`Consent: GameFlow`): no AdMob App ID and no UMP
+  message. `GameConsent.Register(texts, version, LevelPlayProvider.ApplyConsent)` registers it with one line before
+  `StartAds()`. `GameConsentFlow` (engine-free core) shows a UI Toolkit screen once per device; Accept and Reject have
+  the same weight, neither is pre-selected and nothing closes the screen without a choice. The game supplies the texts
+  (`ConsentTexts`, read each time the screen opens), may supply its own UXML/USS/`PanelSettings` (`ConsentScreenStyle`),
+  and `AdsSettings.ConsentPartners` adds the enabled networks to the partner list.
+- The answer is stored with a version (`ConsentAnswerStore`); a bumped version asks again. It is applied before the
+  mediation starts, also on later launches without the screen. Reject still lets ads load (non-personalised).
+  `PrivacyOptionsRequired` is true once answered; `ShowPrivacyOptions` reopens the screen and a new answer is applied at
+  once and raises `Changed`. There is no region detection: every player is asked once.
+- A child-directed or under-age build (`ChildDirected` or `UnderAgeOfConsent`) shows no screen: the flow applies a refusal at
+  every start and offers no privacy options. Empty partners and policy address come from `AdsSettings`
+  (`ConsentPartners`, `PrivacyPolicyUrl`; `ConsentPartners` is also in the Nexus window's Settings tab). `GameConsent.AttachInput`
+  gives the screen's document to the core's `ToolkitPanelInput` (set by `NexusAdsBridge.Connect`) so a game that routes Toolkit
+  input through an EventSystem can tap it. The analytics reader logs its decision with `[Nexus Ads] analytics consent:`.
+- `LevelPlayProvider.ApplyConsent(bool)` calls `SetGdprConsent(accepted)` and `SetDoNotSell(!accepted)`.
+- `com.nexus.ads.bridge.nexus`: `GameConsentAnalyticsConsent` (compiled with `com.nexus.firebase`) reads the same answer
+  for Firebase consent mode: Accept grants analytics, Reject denies, an unanswered question holds.
+- The `consent.form` fix text names `GameConsent.Register`.
+
 ## Unreadable reward row quarantine (#415)
 
 - An unreadable `nexus.ads.reward.pending` row (bad base64, wrong field count, duplicate id,

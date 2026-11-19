@@ -80,6 +80,13 @@ is kept under a `nexus.ads.reward.pending.corrupt.<n>` key, and a later earned r
 same by itself. `IAdService` does not carry the receipt: a game whose
 reward carries data of its own (an amount captured at the offer, a target) keeps that data itself.
 
+## Analytics consent over the game-drawn consent screen (#430)
+
+A game that uses `GameConsent.Register` (`com.nexus.ads`) binds `FirebaseBindings.Bind<GameConsentAnalyticsConsent>(builder)`
+after it. The reader (compiled only with `com.nexus.firebase`) reads the same stored answer as the ad flow: Accept grants
+analytics, Reject denies them, a question asked again after a version bump holds analytics until it is answered, and
+without a registered flow nothing is sent.
+
 ## Confirmed Reward Saves
 
 Confirmation is **opt-in** (issue #338). The old `IPlayerPrefsService.Save()` still returns void;

@@ -153,6 +153,7 @@
     <Compile Include="../../Nexus/Packages/com.nexus.fsm/Tests/Editor/FullReview*.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.ads/Tests/Editor/FullReviewAdsPacingTests.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.ads/Tests/Editor/FullReviewAdsControllerTests.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.ads/Tests/Editor/FullReviewAdsGameConsentTests.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.ads.bridge.nexus/Tests/Editor/FullReviewAdsAwaitContractTests.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Tests/Editor/NetcodeReplayRegressionTests.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Tests/Editor/ObjectPoolReentrancyTests.cs" />
