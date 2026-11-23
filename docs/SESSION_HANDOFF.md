@@ -1,6 +1,14 @@
 # Session handoff
 
-## Current continuation — 2026-11-19 (#433, #429, #422, #431, #432, #428)
+## Current continuation — 2026-11-23 (#443)
+
+Guideline 5.6 follow-up (#443). The ten Mac commits `fc5bcc60..60715202` and the four local fixes (`48d35a81`,
+`da3d367a`, `9786c669`, `9d845a9d`) are verified on Windows (`RELEASE_GATES.md`, top) and **not pushed**: the owner
+approves the push. After the push, close #437, #438, #439, #440 and #442. #434, #435 and #436 stay open for device
+proofs (listed in #443's comment); #429 stays open. Games re-pin one at a time, not while one is under review.
+No device run was made in this session.
+
+## Earlier continuation — 2026-11-19 (#433, #429, #422, #431, #432, #428)
 
 Pushed to `origin/main` with the owner's approval after the full suites on `ff533371` (`RELEASE_GATES.md`, top):
 #433 (`4dc286ad`, `465fa448`, `710a3154`), #429 dependency proofs (`99c4c0b3`, `5b0fcc5d`, `e738788c`, `3bd2783c`),

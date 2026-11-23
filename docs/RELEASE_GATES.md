@@ -1,5 +1,18 @@
 # Release gates
 
+## Full suites on `9d845a9d` — 2026-11-23
+
+Verification of the ten Mac commits `fc5bcc60..60715202` (#441, #437, #438, #442, #439, #440, #435, #429, #436, #434)
+plus the four local fixes (`Nexus/artifacts/final-20261123/`, Unity 6000.6.8f1, Windows): `nexus-compile-check` 0 errors /
+0 warnings; host harness `nexus-benchmark` passed (also in each commit's hook); EditMode 1083 / 1081 / 0 / 2
+(`editmode.xml`); PlayMode 344 / 342 / 0 / 2 (`playmode.xml`); `tools/check-docs.py` 158 files, 0 broken links;
+`tools/check-versions.py --newest` 30 rows, 4 problems: stale "newest" for com.google.firebase (14.2.0) and
+com.unity.external-dependency-manager (2.2.0), HTTP 504 for com.google.ads.mobile and VContainer (network).
+Fixes the run found: #440 EditMode tests ran without Awake and on Reset's default (`48d35a81`, test only; meta
+`da3d367a`); #438 restore-timeout test reached Unity IAP's platform answer on the Windows editor, now through an
+internal `RestoreRequest` seam (`9d845a9d`); NexusAdsSettings reserialized with #434's `AndroidConsent` / `IosConsent`
+(`9786c669`). No device run; no Mac editor run.
+
 ## Full suites on `ff533371` — 2026-11-19
 
 Before the push of #433, #429, #422, #431, #432 and #428 (`Nexus/artifacts/final-20261119/`, Unity 6000.6.8f1,
