@@ -140,7 +140,7 @@ namespace Nexus.Ads.Unity
         public ProviderTab Test = new ProviderTab();
         [Tooltip("The live account keys; used by release builds only")]
         public ProviderTab Release = new ProviderTab();
-        [Tooltip("Advertising ids (GAID / IDFA) of the devices that may request live SDK ads in a development build")]
+        [Tooltip("Device ids of the devices that may request live SDK ads in a development build. Android: the Google advertising id (GAID). iOS: the Nexus test-device id the debug panel shows (a vendor id, not the IDFA; the package never reads the IDFA)")]
         public List<string> TestDeviceIds = new List<string>();
 
         [Header("Placements")]

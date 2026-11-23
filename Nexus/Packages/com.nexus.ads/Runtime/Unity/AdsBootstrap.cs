@@ -331,14 +331,49 @@ namespace Nexus.Ads.Unity
         }
     }
 
+    /// <summary>What <see cref="DeviceIdentity.FetchAdvertisingId"/> hands the gate (issue #439).</summary>
+    public enum DeviceIdKind
+    {
+        /// <summary>The editor's literal "editor".</summary>
+        Editor,
+        /// <summary>Android: the Google advertising id (GAID) from Play services; the fallback is the vendor-style device id.</summary>
+        AndroidAdvertisingId,
+        /// <summary>iOS and every other player: <c>SystemInfo.deviceUniqueIdentifier</c>. On iOS that is the vendor id,
+        /// NOT the IDFA: no mediation dashboard knows it and the package never reads the IDFA.</summary>
+        VendorId
+    }
+
     /// <summary>
-    /// The device's advertising id, which the Test tab's device list and the mediation dashboards use.
-    /// Android asks Google Play services off the main thread (the call blocks); everything else
-    /// answers at once. Without Play services the device id falls back to Unity's device identifier,
-    /// which then has to be the id entered on the Test tab.
+    /// The device id the Test tab's device list is compared with. Android asks Google Play services for the advertising
+    /// id off the main thread (the call blocks). iOS and other players answer at once with Unity's device identifier,
+    /// which is a vendor id, not an advertising id: the package never reads the IDFA and requests no tracking permission
+    /// (issue #439). Without Play services the Android id falls back to the same device identifier.
     /// </summary>
     public static class DeviceIdentity
     {
+        /// <summary>Which id the gate gets on a player.</summary>
+        public static DeviceIdKind KindFor(bool isEditor, bool isAndroid)
+            => isEditor ? DeviceIdKind.Editor : isAndroid ? DeviceIdKind.AndroidAdvertisingId : DeviceIdKind.VendorId;
+
+        /// <summary>The name the debug panel uses for an id; only Android's is called an advertising id.</summary>
+        public static string Label(DeviceIdKind kind)
+        {
+            switch (kind)
+            {
+                case DeviceIdKind.AndroidAdvertisingId: return "advertising id (GAID)";
+                case DeviceIdKind.VendorId: return "Nexus test-device id (vendor id, not the IDFA)";
+                default: return "editor id";
+            }
+        }
+
+        /// <summary>The kind of id this player reads.</summary>
+        public static DeviceIdKind CurrentKind
+#if UNITY_ANDROID
+            => KindFor(Application.isEditor, true);
+#else
+            => KindFor(Application.isEditor, false);
+#endif
+
         public static void FetchAdvertisingId(Action<string> onFetched)
         {
             if (Application.isEditor) { onFetched("editor"); return; }
@@ -354,6 +389,7 @@ namespace Nexus.Ads.Unity
                 onFetched(id);
             }) { IsBackground = true, Name = "Nexus.Ads.AdvertisingId" }.Start();
 #else
+            // iOS: the vendor id, for the Test tab's list only (#439). Not the IDFA; nothing here calls ATTrackingManager.
             onFetched(SystemInfo.deviceUniqueIdentifier);
 #endif
         }

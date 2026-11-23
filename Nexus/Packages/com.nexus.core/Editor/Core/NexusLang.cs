@@ -524,7 +524,7 @@ namespace Nexus.Editor
             s_strings["ads_reset_test_data"] = "Reset to the official test data";
             s_strings["ads_no_test_keys"] = "{0} publishes no test keys: the Test tab mirrors the Release tab; test mode and the device list make them test ads.";
             s_strings["ads_copy_release"] = "Copy from Release";
-            s_strings["ads_test_devices"] = "Test device ids (GAID / IDFA)";
+            s_strings["ads_test_devices"] = "Test device ids (Android GAID; iOS: Nexus test-device id, not the IDFA)";
             s_strings["ads_guide"] = "Where these values come from ({0})";
             s_strings["ads_test_devices_where"] = "Test devices: {0}";
             s_strings["ads_prepare_android_tab"] = "Prepare Android ({0} tab)";

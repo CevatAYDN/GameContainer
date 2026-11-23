@@ -120,6 +120,14 @@ build, Google's ads settings page on the phone shows it as "Your advertising ID"
 build's debug panel shows the same id with a copy button where the gate reads it, with a mediation
 selected and test mode on; elsewhere nothing reads the id (issue #133).
 
+**iOS has no advertising id here (#439).** There the gate's id is `SystemInfo.deviceUniqueIdentifier`, which Unity
+fills from the vendor id (`identifierForVendor`); it is not the IDFA and no mediation dashboard knows it. The package
+never reads the IDFA, never calls `ATTrackingManager` and adds no `NSUserTrackingUsageDescription`. The debug panel
+labels it "Nexus test-device id (vendor id, not the IDFA)"; paste it into the Test tab's list to let that iPhone
+request ads in a development build, and add the IDFA to the mediation dashboard yourself if you want the dashboard's
+test-device rule on iOS. `DeviceIdentity.KindFor` and `Label` name which id a player reads (`DeviceIdentityTests`).
+Who asks for App Tracking Transparency: [POLICY_COMPLIANCE](docs/POLICY_COMPLIANCE.md#app-tracking-transparency-and-the-idfa).
+
 `ProviderGate.Host(build, gate, mediationSelected, providerRegistered)` then decides what the bootstrap
 runs. The simulator (a full-screen overlay labelled "Simulated Rewarded ad" or "Simulated Interstitial ad") runs only where the gate chose it,
 or in the editor and development builds while no mediation is selected. A blocked gate, or a selected

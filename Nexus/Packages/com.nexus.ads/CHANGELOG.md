@@ -1,5 +1,15 @@
 # Changelog
 
+## iOS vendor id is no longer called an advertising id (#439)
+
+- On iOS the gate's id is `SystemInfo.deviceUniqueIdentifier` (the vendor id), not the IDFA. The Test tab tooltip,
+  the Nexus window's field label, the setup steps, the debug panel ("Nexus test-device id (vendor id, not the IDFA)",
+  "Copy device id") and the README now say so; `DeviceIdKind` with `DeviceIdentity.KindFor`/`Label`/`CurrentKind`
+  names which id a player reads. Behaviour is unchanged: the package still reads no IDFA, calls no `ATTrackingManager`
+  and adds no ATT prompt. `POLICY_COMPLIANCE*.md` gains "App Tracking Transparency and the IDFA": the repo's own code
+  never reads the IDFA; whether a mediation SDK requests ATT cannot be determined from this repo (the SDKs are not
+  stored here) and is written as unverified. Not run: no Unity test run for this change (`DeviceIdentityTests` added).
+
 ## Google's consent form that never answers (#432)
 
 - `UmpConsentFlow` answers as soon as UMP's status update allows ad requests (no form needed where the player is, or

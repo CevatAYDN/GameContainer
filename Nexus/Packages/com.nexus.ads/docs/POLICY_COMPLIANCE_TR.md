@@ -221,6 +221,30 @@ Hepsi okunma tarihinde yanıt verdi (aksi yazılmadıkça HTTP 200).
 | Chartboost | ağ | https://dashboard.chartboost.com | |
 | Google AdMob | ağ | https://admob.google.com | |
 
+## App Tracking Transparency ve IDFA
+
+#439 ile soruldu. Bu depo neyi yanıtlayabilir, neyi yanıtlayamaz (2026-11-23):
+
+- **Deponun kendi kodu** IDFA'yı hiç okumaz: depodaki hiçbir dosyada `ATTrackingManager`, `ASIdentifierManager`,
+  `requestTrackingAuthorization`, `NSUserTrackingUsageDescription` veya `AppTrackingTransparency` yoktur. Okunan tek
+  cihaz kimliği `SystemInfo.deviceUniqueIdentifier`'dır (iOS'ta Unity'nin satıcı kimliği); yalnızca mediation seçili
+  ve test modu açık bir geliştirme build'inde Test sekmesinin listesiyle karşılaştırmak için okunur. Paket onu hiçbir
+  yere göndermez; kapı karşılaştırmıyorsa hiçbir şey okumaz (#133). Hata ayıklama panelindeki etiketi "vendor id,
+  not the IDFA"dır.
+- **ATT'yi kim ister: paket istemez. Bir mediation SDK'sının isteyip istemediği bu depodan belirlenemez.**
+  LevelPlay, Google Mobile Ads ve ağ SDK'ları depoda tutulmaz (`com.nexus.ads.levelplay` ve `com.nexus.ads.admob`
+  yalnızca onların genel API'sini çağırır; yerel iOS SDK'ları oyun projesi paketlerini çözünce gelir). Bir SDK'nın
+  `requestTrackingAuthorization`'ı kendiliğinden çağırıp çağırmadığı ya da IDFA'yı yalnızca oyunun ATT izni varken
+  okuyup okumadığı burada **doğrulanmadı**; tahmin etmeyin. Oyun bunu gönderdiği SDK sürümlerinden (satıcının iOS
+  entegrasyon sayfası, her SDK'nın gizlilik manifesti, derlenmiş ikilide `ATTrackingManager` araması) doğrulayıp
+  Apple'a öyle yanıt verir.
+- **İstemi oyun yönetir.** Pakette ATT istemi yoktur. Kişiselleştirilmiş reklam için IDFA isteyen oyun ATT'yi kendisi
+  çağırır, `NSUserTrackingUsageDescription` yazar, App Store Connect'in izleme sorusunu ve gizlilik etiketini
+  SDK'ların yaptığıyla uyumlu yanıtlar. İzin yokken iOS sıfırlardan oluşan bir IDFA verir; bu kişiselleştirilmemiş
+  yoldur.
+- Doğrulanmadı: bir oyunun LevelPlay mediation'ındaki ağların ATT onaylıyken IDFA okuyup okumadığı ve her birinin
+  gizlilik manifestinde ne beyan ettiği.
+
 ## App Review (Apple) notları
 
 Kod adresleri yan tarafta verilmiş her ifade koddan okunmuştur; oyunun kendi eklediği şeyleri (ilerleme

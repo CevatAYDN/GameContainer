@@ -455,7 +455,7 @@
     {"key": "ads_reset_test_data", "value": "Resmi test verisine sıfırla"},
     {"key": "ads_no_test_keys", "value": "{0} test anahtarı yayımlamaz: Test sekmesi Release sekmesinin kopyasıdır; test modu ve cihaz listesi bunları test reklamı yapar."},
     {"key": "ads_copy_release", "value": "Release'den kopyala"},
-    {"key": "ads_test_devices", "value": "Test cihaz kimlikleri (GAID / IDFA)"},
+    {"key": "ads_test_devices", "value": "Test cihaz kimlikleri (Android GAID; iOS: Nexus test cihaz kimliği, IDFA değil)"},
     {"key": "ads_guide", "value": "Bu değerler nereden gelir ({0})"},
     {"key": "ads_test_devices_where", "value": "Test cihazları: {0}"},
     {"key": "ads_prepare_android_tab", "value": "Android'i hazırla ({0} sekmesi)"},

@@ -54,8 +54,8 @@
           "Create a Unity account or sign in at cloud.unity.com with the Play Console email.",
           "Add the app on the LevelPlay platform (an unpublished app can be added) and copy its App Key.",
           "Create one rewarded and one interstitial ad unit for Android (and iOS when needed) and copy their ids.",
-          "Add your device's advertising id under Settings > Test devices (Google's ads settings page on the phone shows it as \"Your advertising ID\").",
-          "Enter the App Key and ad unit ids on the Release tab; the Test tab copies them and keeps the device list (the same advertising id).",
+          "Add your Android device's advertising id under Settings > Test devices (on iOS the dashboard matches the IDFA, which the package never reads, so add it there yourself; Google's ads settings page on the phone shows it as \"Your advertising ID\").",
+          "Enter the App Key and ad unit ids on the Release tab; the Test tab copies them and keeps the device list (Android: the same advertising id; iOS: the debug panel's vendor-based test-device id, which the dashboard does not know).",
           "Press Prepare Android twice: the first press adds the Ads Mediation package (com.unity.services.levelplay), the Nexus provider and the dependency resolver; the second adds the native SDK and the Unity Ads adapter and resolves them. Other networks come from Ads Mediation > Network Manager.",
           "Fill payment and tax details before the first payout."
         ],
@@ -109,7 +109,7 @@
           "Add the app and copy the SDK key (Account > General > Keys).",
           "Create one rewarded and one interstitial ad unit and copy their ids.",
           "Install the plugin with AppLovin's installer package (adds the scoped registry), enable Jetifier in the Android Resolver settings.",
-          "Enter the SDK key and ad unit ids on the Release tab; add your device's GAID/IDFA to the Test tab's device list.",
+          "Enter the SDK key and ad unit ids on the Release tab; add your Android device's GAID, or on iOS the test-device id the debug panel shows (a vendor id, not the IDFA), to the Test tab's device list.",
           "Fill payment and tax details before the first payout."
         ],
         "tr": [
@@ -117,7 +117,7 @@
           "Uygulamayı ekle ve SDK anahtarını kopyala (Account > General > Keys).",
           "Bir ödüllü ve bir geçiş reklam birimi oluştur, kimliklerini kopyala.",
           "Eklentiyi AppLovin'in yükleyici paketiyle kur (kapsamlı kayıt defterini ekler), Android Resolver ayarlarında Jetifier'ı aç.",
-          "SDK anahtarını ve reklam birimi kimliklerini Release sekmesine gir; cihazının GAID/IDFA'sını Test sekmesinin cihaz listesine ekle.",
+          "SDK anahtarını ve reklam birimi kimliklerini Release sekmesine gir; Android cihazının GAID'ini, iOS'ta ise hata ayıklama panelinin gösterdiği test cihaz kimliğini (IDFA değil, satıcı kimliği) Test sekmesinin cihaz listesine ekle.",
           "İlk ödemeden önce ödeme ve vergi bilgilerini doldur."
         ]
       }

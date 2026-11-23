@@ -12,6 +12,18 @@ namespace Nexus.Ads.Tests
     /// </summary>
     public sealed class DeviceIdentityTests
     {
+        // Issue #439: iOS handed the vendor id to the Test tab under the name "advertising id".
+        [Test]
+        public void OnlyAndroidsIdIsCalledAnAdvertisingId_TheVendorIdSaysItIsNotTheIdfa()
+        {
+            Assert.That(DeviceIdentity.KindFor(isEditor: false, isAndroid: true), Is.EqualTo(DeviceIdKind.AndroidAdvertisingId));
+            Assert.That(DeviceIdentity.KindFor(isEditor: false, isAndroid: false), Is.EqualTo(DeviceIdKind.VendorId));
+            Assert.That(DeviceIdentity.KindFor(isEditor: true, isAndroid: true), Is.EqualTo(DeviceIdKind.Editor));
+            StringAssert.Contains("advertising id", DeviceIdentity.Label(DeviceIdKind.AndroidAdvertisingId));
+            StringAssert.Contains("not the IDFA", DeviceIdentity.Label(DeviceIdKind.VendorId));
+            StringAssert.DoesNotContain("advertising id", DeviceIdentity.Label(DeviceIdKind.VendorId));
+        }
+
         [Test]
         public void AFailedLookupOnTheLookupThreadAnswersWithTheFallbackId()
         {

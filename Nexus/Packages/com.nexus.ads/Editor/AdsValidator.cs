@@ -295,7 +295,7 @@ namespace Nexus.Ads.Editor
                 else
                     report.Add(new AdsCheck("keys.test.mirror", CheckResult.Pass, releaseComplete ? "Test tab mirrors the Release tab" : "Release tab not filled yet; nothing to mirror"));
                 report.Add(settings.TestDeviceIds.Count == 0
-                    ? new AdsCheck("devices.empty", CheckResult.Warn, "the test device list is empty: every development build runs the simulator.", "add the phone's advertising id (the debug panel shows it) to the Test tab's device list.")
+                    ? new AdsCheck("devices.empty", CheckResult.Warn, "the test device list is empty: every development build runs the simulator.", "add the phone's id (the debug panel shows it: Android's advertising id, on iOS the Nexus test-device id, which is not the IDFA) to the Test tab's device list.")
                     : new AdsCheck("devices.empty", CheckResult.Pass, settings.TestDeviceIds.Count + " test device(s)"));
             }
         }

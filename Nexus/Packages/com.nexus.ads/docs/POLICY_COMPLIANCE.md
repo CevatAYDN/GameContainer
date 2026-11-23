@@ -221,6 +221,30 @@ All answered on the read date (HTTP 200 unless noted).
 | Chartboost | network | https://dashboard.chartboost.com | |
 | Google AdMob | network | https://admob.google.com | |
 
+## App Tracking Transparency and the IDFA
+
+Asked in #439. What this repository can and cannot answer (checked 2026-11-23):
+
+- **This repository's own code** never reads the IDFA: no `ATTrackingManager`, `ASIdentifierManager`,
+  `requestTrackingAuthorization`, `NSUserTrackingUsageDescription` or `AppTrackingTransparency` appears in any file of
+  the repository. The only device identifier it reads is `SystemInfo.deviceUniqueIdentifier`, on iOS Unity's vendor
+  id, and only in a development build with a mediation selected and test mode on, to compare it with the Test tab's
+  list. The package sends it nowhere, and where the gate does not compare it nothing reads it (#133). The debug
+  panel labels it "vendor id, not the IDFA" (#439).
+- **Who requests ATT: not the package. Whether a mediation SDK does cannot be determined from this repository.**
+  The LevelPlay, Google Mobile Ads and network SDKs are not stored here: `com.nexus.ads.levelplay` and
+  `com.nexus.ads.admob` only call their public APIs, and the native iOS SDKs reach a game project when it resolves
+  its packages. Whether an SDK calls `requestTrackingAuthorization` on its own, or reads the IDFA only when the game
+  already holds ATT authorization, is therefore **not verified** here. Do not assume either way: a game confirms it
+  from the SDK versions it ships (the vendors' iOS integration pages, each SDK's privacy manifest, and a search of the
+  built binary for `ATTrackingManager`) before it answers Apple.
+- **The game owns the prompt.** The package adds no ATT prompt (see the App Review notes below). A game that wants
+  the IDFA for personalized ads calls ATT itself, writes `NSUserTrackingUsageDescription`, and answers App Store
+  Connect's tracking question and the privacy label to match what its mediation SDKs do. Without authorization iOS
+  returns an all-zero IDFA, which is the non-personalized path.
+- Unverified: whether the networks inside a game's LevelPlay mediation read the IDFA when ATT is authorized, and what
+  each declares in its privacy manifest.
+
 ## App Review notes
 
 What a game team can say about the ad stack in Notes for Review, and what to check first. English text in
