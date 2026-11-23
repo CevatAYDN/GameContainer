@@ -13,6 +13,12 @@ Fixes the run found: #440 EditMode tests ran without Awake and on Reset's defaul
 internal `RestoreRequest` seam (`9d845a9d`); NexusAdsSettings reserialized with #434's `AndroidConsent` / `IosConsent`
 (`9786c669`). No device run; no Mac editor run.
 
+The same Unity 6000.6.8f1 on the iOS build target (`-buildTarget iOS`, log shows "Targeting platform: iOS"): batch compile
+0 `error CS` (`ios-compile.log`), so the `#if UNITY_IOS` blocks of `IosPostProcess.cs` (#436) compiled; EditMode 1085 / 1081 /
+0 / 4 (`editmode-ios.xml`). `NEXUS_LEVELPLAY` is never defined in this project (a `versionDefines` of
+`com.unity.services.levelplay` 9.5.1, a package that is not in `manifest.json`), so `LevelPlayIosPostProcess.cs` (#435),
+`LevelPlayIosLinkerFlagsTests.cs` and the rest of the LevelPlay editor assemblies did not compile on any target.
+
 ## Full suites on `ff533371` — 2026-11-19
 
 Before the push of #433, #429, #422, #431, #432 and #428 (`Nexus/artifacts/final-20261119/`, Unity 6000.6.8f1,
