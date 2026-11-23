@@ -1,5 +1,15 @@
 # Release gates
 
+## US-state opt-out from UMP to LevelPlay (#444) — 2026-11-24
+
+Tests first (`Nexus/artifacts/us444/`): host harness with the 10 new `FullReviewAdsUsPrivacyTests` and a throwing stub failed
+those 10 (`NotImplementedException`), then passed after the decoder (`nexus-benchmark`: ALL BENCHMARKS PASSED). LevelPlay 9.6.0
+consumer project (`final-20261123/levelplay-435/LevelPlayConsumer`, Android target), `LevelPlayProviderTests` with the seam
+test and the GameFlow test, before the fix: 5 run, 3 passed, 2 failed (`red.xml`); after: whole EditMode 223 / 222 / 0 / 1
+(`green-editmode.xml`, 0 `error CS`). Development project, `com.nexus.ads.editor.tests`: 159 total, 158 passed, 0 failed (1
+inconclusive, `devproject-editmode.xml`); `nexus-compile-check` 0 errors / 0 warnings. Not run: a device (UMP's real GPP write on
+Android, the iOS `PlayerPrefs` read of NSUserDefaults), usnat version 3, state sections other than usnat and usca.
+
 ## Full suites on `9d845a9d` — 2026-11-23
 
 Verification of the ten Mac commits `fc5bcc60..60715202` (#441, #437, #438, #442, #439, #440, #435, #429, #436, #434)

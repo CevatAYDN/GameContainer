@@ -142,6 +142,17 @@ or its own question sets `GameFlow`, wraps it in an `IConsentFlow` whose answer 
 `AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, factory)` and then calls
 `AdsBootstrap.StartAds()`; the provider's own `IConsentFlow` is a pass-through, which runs only with `None`.
 
+US states (issue #444): with `GoogleUmp` the bootstrap also forwards the sale/sharing opt-out of Google's US-states message to
+LevelPlay's `do_not_sell` (`LevelPlayProvider.SetDoNotSell`, the SDK's `SetCCPA`), because Google's SDK reads the answer itself but
+ironSource Ads and Unity Ads behind LevelPlay do not. UMP stores the IAB GPP answer in SharedPreferences (Android) /
+NSUserDefaults (iOS): `IABGPP_GppSID` and `IABGPP_[SectionID]_String`. `UsPrivacySignal` (`com.nexus.ads`, engine-free) decodes
+`SaleOptOut` / `SharingOptOut` of usnat (section 7, versions 1 and 2) and usca (section 8) and, with no such section, the older
+`IABUSPrivacy_String`. An opt-out (value 1) sends `true`; a US section with no opt-out sends `false`; no US section, another state
+section or a usnat version 3 string sends nothing. `UsPrivacySync` applies it when UMP answers (before LevelPlay initializes) and again
+whenever the flow raises `Changed` (status update, form, privacy options) with a different answer. With `GameFlow` nothing of this runs:
+`GameConsent.Register(..., LevelPlayProvider.ApplyConsent)` keeps sending `SetDoNotSell(!accepted)`. Not run on a device: the iOS read
+goes through `PlayerPrefs`, which should be NSUserDefaults' standard domain, and is unconfirmed.
+
 Test ads: LevelPlay publishes no test keys. The Test tab mirrors the Release keys; a development
 build requests live SDK ads only on a device in the Test tab's list and that device also has to be
 listed in the LevelPlay dashboard (Settings > Test devices) to receive test ads from a chosen

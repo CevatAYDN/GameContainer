@@ -42,6 +42,7 @@ namespace Nexus.Ads.Unity
 
         private UnityAdTelemetry _telemetry;
         private IConsentFlow _ownedConsent;
+        private UsPrivacySync _usPrivacy;
         private float _timeScaleBeforeAd = 1f;
         private bool _audioWasPaused;
         // what OnAdOpened changed for the show that is open: a show that never opened (a display failure) restores nothing (issue #174)
@@ -138,6 +139,13 @@ namespace Nexus.Ads.Unity
         }
 
         public static bool IsProviderRegistered(AdProviderKind kind) => Factories.ContainsKey(kind);
+
+        /// <summary>
+        /// Where a mediation takes the US-state sale/sharing opt-out of Google's form (issue #444); LevelPlay registers its do_not_sell.
+        /// With <c>Consent: GoogleUmp</c> the bootstrap reads the GPP answer UMP stores (<see cref="UsPrivacySignal"/>) when UMP answers and
+        /// whenever it changes, and calls this with true for an opt-out. Null (AdMob reads UMP itself): nothing is forwarded.
+        /// </summary>
+        public static Action<bool> DoNotSellSink { get; set; }
 
         /// <summary>
         /// Registers the consent flow that runs before a mediation that ships no form (LevelPlay) for the source the settings'
@@ -256,6 +264,11 @@ namespace Nexus.Ads.Unity
             }
 
             if (!ReferenceEquals(consent, Provider)) _ownedConsent = consent;
+            // Consent: GoogleUmp only; the game-drawn flow keeps its own apply (LevelPlayProvider.ApplyConsent). Before the controller, so the sync's
+            // callback is first in the flow's list and LevelPlay holds the opt-out before it initializes.
+            if (Mode == HostMode.Provider && DoNotSellSink != null && consent != null && _settings.ConsentNeedsRegisteredFlowFor(Platform)
+                && _settings.ConsentFor(Platform) == ConsentSource.GoogleUmp)
+                _usPrivacy = new UsPrivacySync(consent, UsPrivacyStore.Read, DoNotSellSink);
             Controller = new AdController(config, Provider, new UnityAdClock(), visibility, mainThread, scheduler, new PlayerPrefsPacingStore(), _telemetry, consent, touch: touch);
             Controller.ReadyChanged += Ads.RaiseReadyChanged; // before Start, so the first fill reaches subscriptions made before this bootstrap existed (issue #195)
             if (!UnityTouchInput.ReadsPointer) Controller.ReadyChanged += WarnTouchWaitUnread; // remote values arrive with a ReadyChanged
@@ -310,6 +323,8 @@ namespace Nexus.Ads.Unity
             if (Instance != this) return;
             var consent = _ownedConsent;
             _ownedConsent = null;
+            _usPrivacy?.Dispose();
+            _usPrivacy = null;
             try
             {
                 try { Controller?.Dispose(); }

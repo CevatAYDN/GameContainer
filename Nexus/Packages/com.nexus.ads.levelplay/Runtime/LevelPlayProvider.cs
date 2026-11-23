@@ -10,6 +10,7 @@ using UnityEngine;
 // attribute the IL2CPP linker drops the whole assembly and the provider never registers (seen on a device, 2026-10-24, when the player then ran the simulator; since issue #19 a store build runs nothing).
 [assembly: UnityEngine.Scripting.AlwaysLinkAssembly]
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("com.nexus.ads.levelplay.tests")]
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("com.nexus.ads.levelplay.editor.tests")]
 
 namespace Nexus.Ads.LevelPlay
 {
@@ -478,8 +479,14 @@ namespace Nexus.Ads.LevelPlay
         /// <summary>Forwards a GDPR answer from a CMP that is not shared with the SDK automatically (SDK 9.5.0+).</summary>
         public static void SetGdprConsent(bool consent) => LevelPlayPrivacySettings.SetGDPRConsent(consent);
 
-        /// <summary>Forwards a CCPA "do not sell" opt-out.</summary>
-        public static void SetDoNotSell(bool optedOut) => LevelPlayPrivacySettings.SetCCPA(optedOut);
+        /// <summary>The call that reaches LevelPlay (<c>LevelPlayPrivacySettings.SetCCPA</c>, the SDK's do_not_sell metadata); tests replace it.</summary>
+        internal static Action<bool> DoNotSellApi = optedOut => LevelPlayPrivacySettings.SetCCPA(optedOut);
+
+        /// <summary>
+        /// Forwards a CCPA "do not sell" opt-out. With <c>Consent: GoogleUmp</c> the bootstrap calls it with the US-state opt-out of Google's form
+        /// (<c>UsPrivacySignal</c>, issue #444); with <c>GameFlow</c> <see cref="ApplyConsent"/> does.
+        /// </summary>
+        public static void SetDoNotSell(bool optedOut) => DoNotSellApi(optedOut);
 
         /// <summary>
         /// Applies one consent answer: <c>SetGdprConsent(accepted)</c> and <c>SetDoNotSell(!accepted)</c>. The game-drawn flow
@@ -496,7 +503,11 @@ namespace Nexus.Ads.LevelPlay
     public static class LevelPlayRegistration
     {
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        private static void Register() => AdsBootstrap.RegisterProvider(AdProviderKind.LevelPlay, (scheduler, _) => new LevelPlayProvider(scheduler));
+        internal static void Register()
+        {
+            AdsBootstrap.RegisterProvider(AdProviderKind.LevelPlay, (scheduler, _) => new LevelPlayProvider(scheduler));
+            AdsBootstrap.DoNotSellSink = LevelPlayProvider.SetDoNotSell;
+        }
     }
 }
 #endif

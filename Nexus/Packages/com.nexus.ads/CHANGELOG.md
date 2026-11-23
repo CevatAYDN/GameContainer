@@ -1,5 +1,14 @@
 # Changelog
 
+## Google UMP's US-state opt-out reaches LevelPlay (#444)
+
+- With `Consent: GoogleUmp` and LevelPlay, `AdsBootstrap` reads the IAB GPP answer UMP stores (`IABGPP_GppSID`,
+  `IABGPP_[SectionID]_String`, else `IABUSPrivacy_String`) through `UsPrivacySignal` and sends LevelPlay `do_not_sell`
+  (`LevelPlayProvider.SetDoNotSell`) when UMP answers and whenever its answer changes (`UsPrivacySync`, `AdsBootstrap.DoNotSellSink`).
+  Decoded: usnat v1/v2 (7) and usca (8) `SaleOptOut` / `SharingOptOut`; other state sections and usnat v3 send nothing.
+  `Consent: GameFlow` is unchanged (`ApplyConsent`). New public: `UsPrivacySignal`, `UsPrivacySync`, `UsPrivacyStore`,
+  `AdsBootstrap.DoNotSellSink`. Not run on a device (iOS reads the key through `PlayerPrefs`, unconfirmed).
+
 ## LevelPlay iOS builds keep their network adapters (#435)
 
 - `com.nexus.ads.levelplay` gains an editor assembly (`Nexus.Ads.LevelPlay.Editor`, compiled with LevelPlay installed)
