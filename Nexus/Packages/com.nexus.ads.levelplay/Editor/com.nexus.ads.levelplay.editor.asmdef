@@ -1,0 +1,24 @@
+{
+    "name": "Nexus.Ads.LevelPlay.Editor",
+    "rootNamespace": "Nexus.Ads.LevelPlay.Editor",
+    "references": [],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "NEXUS_LEVELPLAY"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.unity.services.levelplay",
+            "expression": "9.5.1",
+            "define": "NEXUS_LEVELPLAY"
+        }
+    ],
+    "noEngineReferences": false
+}

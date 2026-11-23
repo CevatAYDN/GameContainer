@@ -81,6 +81,18 @@ runtime file and none of its build processors read it, so the player is the same
 Commit it in `ProjectSettings/ProjectSettings.asset` for every build target the editor is opened on:
 reverted, it comes back on the next open.
 
+### iOS: the network adapters need `-ObjC` (#435)
+
+LevelPlay finds its network adapters by class name at runtime, so nothing references them and the linker drops
+their static archives unless the UnityFramework target links with `-ObjC`. CocoaPods added the flag; the Swift
+packages of the External Dependency Manager 2.1 do not, and the symptom is `509 Mediation No fill` on every iOS
+request (device log: `Error while getting classFromString: ISUnityAdsAdapter`). The editor assembly
+`Nexus.Ads.LevelPlay.Editor` (`LevelPlayIosPostProcess`, an iOS post-process build step) adds `-ObjC` to
+UnityFramework's `OTHER_LDFLAGS` once, whatever the resolver, and fails the build if the flag cannot be written. A game that
+adds the flag in its own post-process can drop that line when it re-pins. To check a build by hand:
+`xcodebuild -target UnityFramework -showBuildSettings | grep OTHER_LDFLAGS` shows `-ObjC`, and
+`strings UnityFramework.framework/UnityFramework | grep ISUnityAdsAdapter` finds the adapter. Not yet proven on a device.
+
 ## What the provider does
 
 | Core call | LevelPlay |

@@ -1,5 +1,17 @@
 # Changelog
 
+## LevelPlay iOS builds keep their network adapters (#435)
+
+- `com.nexus.ads.levelplay` gains an editor assembly (`Nexus.Ads.LevelPlay.Editor`, compiled with LevelPlay installed)
+  whose `LevelPlayIosPostProcess` adds `-ObjC` to UnityFramework's `OTHER_LDFLAGS` in the exported Xcode project
+  (once; a game that adds it itself, as Wickling does, keeps working), reads it back and fails the build when it
+  is not there. LevelPlay creates adapters by class name, so under the External Dependency Manager 2.1's Swift
+  packages (no CocoaPods, no `-ObjC`) the linker dropped them and every iOS request answered `509 Mediation No fill`.
+  Games remove their own `-ObjC` workaround at the re-pin that brings this. `LevelPlayIosLinkerFlagsTests` (EditMode)
+  lock the flag detection. Not compiled and not run: this change was written without Unity or `dotnet`, so no test
+  result exists, and the device proof (the adapter string in `UnityFramework`, a real rewarded ad) is still open.
+  Not done: the build-time check that each `IS*Adapter` of `Assets/LevelPlay/Editor/*Dependencies.xml` is in the binary.
+
 ## iOS vendor id is no longer called an advertising id (#439)
 
 - On iOS the gate's id is `SystemInfo.deviceUniqueIdentifier` (the vendor id), not the IDFA. The Test tab tooltip,

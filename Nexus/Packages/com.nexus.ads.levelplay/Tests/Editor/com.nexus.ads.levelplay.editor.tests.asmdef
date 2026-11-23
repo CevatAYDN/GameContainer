@@ -5,6 +5,7 @@
         "Nexus.Ads.Core",
         "Nexus.Ads.Unity",
         "Nexus.Ads.LevelPlay",
+        "Nexus.Ads.LevelPlay.Editor",
         "Unity.LevelPlay",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
