@@ -81,7 +81,7 @@ namespace Nexus.Ads
         /// </summary>
         public AdPolicy Tighten(string key, double value)
         {
-            if (value < 0) return this;
+            if (!IsAcceptable(key, value)) return this;
             switch (key)
             {
                 case Keys.MinInterstitialGapSeconds:
@@ -97,7 +97,7 @@ namespace Nexus.Ads
                 case Keys.SessionResumeGapMinutes:
                     return value > SessionResumeGapMinutes ? With(p => p.SessionResumeGapMinutes = value) : this;
                 case Keys.MinLifetimeSessionsBeforeInterstitial:
-                    int sessions = value >= int.MaxValue ? int.MaxValue : (int)value;
+                    int sessions = (int)value;
                     return sessions > MinLifetimeSessionsBeforeInterstitial ? With(p => p.MinLifetimeSessionsBeforeInterstitial = sessions) : this;
                 case Keys.NoInterstitialAfterTouchSeconds:
                     return value > NoInterstitialAfterTouchSeconds ? With(p => p.NoInterstitialAfterTouchSeconds = value) : this;
@@ -105,6 +105,36 @@ namespace Nexus.Ads
                     return this;
             }
         }
+
+        /// <summary>
+        /// The largest value <see cref="Tighten(string,double)"/> accepts for <paramref name="key"/> (issue #437): a day for the second
+        /// values, a day in minutes for the resume gap, 1000 for the caps and the lifetime-session threshold. A larger value is a typo or
+        /// a bad publish, not a policy: it is ignored, so one remote value cannot switch interstitials off for the session.
+        /// An unknown key has no upper bound (it is ignored by <see cref="Tighten(string,double)"/> anyway).
+        /// </summary>
+        public static double UpperBound(string key)
+        {
+            switch (key)
+            {
+                case Keys.MinInterstitialGapSeconds:
+                case Keys.NoInterstitialForFirstSeconds:
+                case Keys.NoInterstitialAfterRewardedSeconds:
+                case Keys.NoInterstitialAfterTouchSeconds:
+                    return 86400;
+                case Keys.SessionResumeGapMinutes:
+                    return 1440;
+                case Keys.MaxInterstitialsPerSession:
+                case Keys.MaxInterstitialsPerDay:
+                case Keys.MinLifetimeSessionsBeforeInterstitial:
+                    return 1000;
+                default:
+                    return double.MaxValue;
+            }
+        }
+
+        /// <summary>True when <paramref name="value"/> is finite, not negative and not above <see cref="UpperBound"/> of <paramref name="key"/>.</summary>
+        public static bool IsAcceptable(string key, double value) =>
+            !double.IsNaN(value) && !double.IsInfinity(value) && value >= 0 && value <= UpperBound(key);
 
         /// <summary>Applies every value of <paramref name="requested"/> through <see cref="Tighten(string,double)"/>.</summary>
         public AdPolicy Tighten(AdPolicy requested)

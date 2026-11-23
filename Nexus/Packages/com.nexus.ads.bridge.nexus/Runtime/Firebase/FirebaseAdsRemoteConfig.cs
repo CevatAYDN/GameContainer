@@ -31,7 +31,9 @@ namespace Nexus.Ads.Bridge
         public bool TryGetDouble(string key, out double value)
         {
             string raw = _remote.GetString(key, null);
-            if (raw != null && double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value)) return true;
+            // "Infinity", "-Infinity" and "NaN" parse as doubles; none is a policy value (issue #437).
+            if (raw != null && double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
+                && !double.IsNaN(value) && !double.IsInfinity(value)) return true;
             value = 0;
             return false;
         }

@@ -672,7 +672,15 @@ namespace Nexus.Ads
             if (_disposed) return;
             SetKillSwitch(_remote.KillSwitch);
             for (int i = 0; i < AdPolicy.Keys.All.Length; i++)
-                if (_remote.TryGetDouble(AdPolicy.Keys.All[i], out double value)) Guard.Tighten(AdPolicy.Keys.All[i], value);
+            {
+                string key = AdPolicy.Keys.All[i];
+                if (!_remote.TryGetDouble(key, out double value)) continue;
+                // A non-finite, negative or absurdly large remote value is ignored and reported (issue #437).
+                if (!AdPolicy.IsAcceptable(key, value))
+                    Isolated(() => _telemetry.Record(new AdEvent(AdEventKind.Violation, AdFormat.Interstitial, "",
+                        "remote " + key + "=" + value.ToString(System.Globalization.CultureInfo.InvariantCulture) + " ignored: outside 0.." + AdPolicy.UpperBound(key).ToString(System.Globalization.CultureInfo.InvariantCulture))), AdFormat.Interstitial, "", "remote value warning");
+                else Guard.Tighten(key, value);
+            }
             RaiseReadyChanged();
         });
 
