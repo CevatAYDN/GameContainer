@@ -25,6 +25,9 @@ namespace Nexus.Ads.Tests
             typeof(AdRewardedButton).GetField("_notReadyLabel", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
                 .SetValue(_button, _label);
             _go.SetActive(true);
+            // EditMode never runs Awake/OnEnable and AddComponent runs Reset (ShowDisabled); start like a component saved by an older version.
+            typeof(AdRewardedButton).GetMethod("Awake", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(_button, null);
+            _button.WhenNotReady = NotReadyBehavior.Hide;
         }
 
         [TearDown]
