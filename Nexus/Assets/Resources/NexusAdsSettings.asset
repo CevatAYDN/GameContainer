@@ -96,6 +96,8 @@ MonoBehaviour:
   GeneratedPlacementsPath: Assets/Scripts/Ads/AdPlacements.g.cs
   AppAdsTxtLines: []
   Consent: 0
+  AndroidConsent: 0
+  IosConsent: 0
   ChildDirected: 0
   UnderAgeOfConsent: 0
   MaxAdContentRating: 0
