@@ -3,8 +3,8 @@
 ## Current continuation — 2026-11-23 (#443)
 
 Guideline 5.6 follow-up (#443). The ten Mac commits `fc5bcc60..60715202` and the four local fixes (`48d35a81`,
-`da3d367a`, `9786c669`, `9d845a9d`) are verified on Windows (`RELEASE_GATES.md`, top) and **not pushed**: the owner
-approves the push. After the push, close #437, #438, #439, #440 and #442. #434, #435 and #436 stay open for device
+`da3d367a`, `9786c669`, `9d845a9d`) are verified on Windows (`RELEASE_GATES.md`, top) and pushed to `origin/main`
+with the owner's approval (`edd61bce`). Closed: #437, #438, #439, #440, #442. #434, #435 and #436 stay open for device
 proofs (listed in #443's comment); #429 stays open. Games re-pin one at a time, not while one is under review.
 No device run was made in this session.
 
