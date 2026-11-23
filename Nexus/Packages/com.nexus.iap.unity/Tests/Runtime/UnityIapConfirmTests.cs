@@ -528,11 +528,11 @@ namespace Nexus.Iap.Unity.Tests
             var store = UseTestStore("NexusRestoreTimeout", failConfirms: 0);
             try
             {
-                var adapter = new UnityIapAdapter { OperationTimeout = TimeSpan.FromMilliseconds(50) };
+                var adapter = new UnityIapAdapter { OperationTimeout = TimeSpan.FromMilliseconds(50), RestoreRequest = _ => { } };
                 bool? ready = null;
                 adapter.Initialize(Pass(), ok => ready = ok);
                 yield return Until(() => ready != null, "the store initialized");
-                store.HoldPurchases = true;   // the purchase fetch behind the restore is never answered
+                store.HoldPurchases = true;   // the store never answers the restore (a seam: the editors refuse the real request at once)
                 bool? restored = null;
                 adapter.Restore(ok => restored = ok);
                 Assert.IsNull(restored);
@@ -541,6 +541,7 @@ namespace Nexus.Iap.Unity.Tests
                 Assert.AreEqual(false, restored);
 
                 store.HoldPurchases = false;   // a later restore is not blocked
+                adapter.RestoreRequest = done => { done(true, null); store.FetchPurchases(); };   // as the store does after a restore
                 bool? again = null;
                 adapter.Restore(ok => again = ok);
                 yield return Until(() => again != null, "the next restore answered");

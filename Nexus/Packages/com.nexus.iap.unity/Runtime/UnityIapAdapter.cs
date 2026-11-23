@@ -56,6 +56,8 @@ namespace Nexus.Iap.Unity
         /// <see cref="PurchaseOutcome.Unavailable"/> / false and warns (issue #438). Without it a store that never calls back
         /// left every later purchase answering Pending and every later restore false until the app restarted. Tests shorten it.</summary>
         internal TimeSpan OperationTimeout = TimeSpan.FromSeconds(75);
+        /// <summary>Test seam: stands in for the store's restore request, which Unity IAP answers by platform (the Windows editor refuses it at once).</summary>
+        internal Action<Action<bool, string>> RestoreRequest;
         private int _purchaseTicket, _restoreTicket;   // tell a timer from the request it was started for: a later request has its own
 
         public event Action Changed;
@@ -216,7 +218,7 @@ namespace Nexus.Iap.Unity
             ExpireRestore(++_restoreTicket);
             // A successful restore fetches the purchases itself (Unity IAP's PurchaseService.RestoreTransactions, since 5.0.2), and
             // that fetch answers the restore; a second fetch here confirmed every pending order twice (issue #182).
-            _store.RestoreTransactions((ok, message) =>
+            (RestoreRequest ?? _store.RestoreTransactions).Invoke((ok, message) =>
             {
                 if (!ok) { Warn("Restore: " + message); FinishRestore(false); }
             });
