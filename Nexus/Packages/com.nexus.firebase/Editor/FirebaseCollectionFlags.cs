@@ -67,7 +67,7 @@ namespace Nexus.Firebase.Editor
             else if (loaded) throw new BuildFailedException("[Nexus Firebase] Firebase is in the project but not as the UPM package " + packageName + ", so com.nexus.firebase binds no Firebase service for it and cannot turn its collection off before consent. Install Firebase as UPM packages (com.nexus.firebase README, Install the SDK).");
         }
 
-        private static bool IsLoaded(string assemblyName)
+        internal static bool IsLoaded(string assemblyName)
         {
             foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {

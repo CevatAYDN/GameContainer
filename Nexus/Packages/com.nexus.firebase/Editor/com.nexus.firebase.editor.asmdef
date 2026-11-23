@@ -1,7 +1,9 @@
 {
     "name": "com.nexus.firebase.editor",
     "rootNamespace": "Nexus.Firebase.Editor",
-    "references": [],
+    "references": [
+        "com.nexus.core.editor"
+    ],
     "includePlatforms": [
         "Editor"
     ],

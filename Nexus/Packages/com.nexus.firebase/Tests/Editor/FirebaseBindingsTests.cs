@@ -135,5 +135,44 @@ namespace Nexus.Firebase.Tests
         {
             Assert.Throws<FileNotFoundException>(() => FirebaseCollectionFlags.Write(Path.Combine(Path.GetTempPath(), "no-such-manifest.xml"), new[] { FirebaseCollectionFlags.AnalyticsFlag }));
         }
+
+        private const string InfoPlist = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n\t<key>CFBundleName</key>\n\t<string>Game</string>\n\t<key>FirebaseCrashlyticsCollectionEnabled</key>\n\t<true/>\n</dict>\n</plist>\n";
+
+        // Issue #434: Firebase collected on iOS from launch because the exported Info.plist had neither key
+        [Test]
+        public void TheInfoPlistGetsEachMissingCollectionKeyOffAndKeepsOneTheGameSet()
+        {
+            string path = Path.Combine(Path.GetTempPath(), "NexusFirebaseInfo-" + Guid.NewGuid().ToString("N") + ".plist");
+            File.WriteAllText(path, InfoPlist);
+            try
+            {
+                var written = FirebaseIosCollectionFlags.Write(path, new[] { FirebaseIosCollectionFlags.AnalyticsKey, FirebaseIosCollectionFlags.CrashlyticsKey });
+
+                Assert.That(written, Is.EqualTo(new[] { FirebaseIosCollectionFlags.AnalyticsKey }));
+                string text = File.ReadAllText(path);
+                StringAssert.Contains("<key>FIREBASE_ANALYTICS_COLLECTION_ENABLED</key>\n\t<false/>", text);
+                StringAssert.Contains("<key>FirebaseCrashlyticsCollectionEnabled</key>\n\t<true/>", text, "the game's value stays");
+                Assert.IsEmpty(FirebaseIosCollectionFlags.Write(path, new[] { FirebaseIosCollectionFlags.AnalyticsKey }), "a second build adds no duplicate");
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        [Test]
+        public void TheIosStepWritesOnlyTheKeysOfInstalledPackages_AndFailsForAnSdkOutsideUpm()
+        {
+            Assert.That(FirebaseIosCollectionFlags.KeysToWrite(true, true, _ => true), Is.EqualTo(new[] { FirebaseIosCollectionFlags.AnalyticsKey, FirebaseIosCollectionFlags.CrashlyticsKey }));
+            Assert.That(FirebaseIosCollectionFlags.KeysToWrite(false, true, name => name == "Firebase.Crashlytics"), Is.EqualTo(new[] { FirebaseIosCollectionFlags.CrashlyticsKey }));
+            Assert.IsEmpty(FirebaseIosCollectionFlags.KeysToWrite(false, false, _ => false), "without the packages neither key is written");
+            Assert.Throws<BuildFailedException>(() => FirebaseIosCollectionFlags.KeysToWrite(true, false, name => name == "Firebase.Crashlytics"));
+        }
+
+        [Test]
+        public void AMissingInfoPlistFailsTheBuild()
+        {
+            Assert.Throws<FileNotFoundException>(() => FirebaseIosCollectionFlags.Write(Path.Combine(Path.GetTempPath(), "no-such-Info.plist"), new[] { FirebaseIosCollectionFlags.AnalyticsKey }));
+        }
     }
 }
