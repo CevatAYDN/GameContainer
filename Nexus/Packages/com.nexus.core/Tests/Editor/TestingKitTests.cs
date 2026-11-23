@@ -97,5 +97,43 @@ namespace Nexus.Editor.Tests
             ads.RequestReward("level_end", o => outcome = o);
             Assert.That(outcome, Is.EqualTo(AdOutcome.Failed));
         }
+
+        [Serializable] private sealed class AsmdefFile
+        {
+            public string name;
+            public string[] references;
+            public string[] defineConstraints;
+            public bool autoReferenced;
+            public string[] includePlatforms;
+        }
+
+        // Issue #441: MockIapStoreAdapter sells every product for free, so it must not reach a release player.
+        [Test]
+        public void TheMockStoreAssemblyStaysOutOfReleasePlayersAndTheRuntimeNeverReferencesIt()
+        {
+            string root = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(MockIapStoreAdapter).Assembly).resolvedPath;
+            Assert.That(typeof(MockIapStoreAdapter).Assembly.GetName().Name, Is.EqualTo("com.nexus.core.testing"));
+
+            var testing = UnityEngine.JsonUtility.FromJson<AsmdefFile>(
+                System.IO.File.ReadAllText(System.IO.Path.Combine(root, "Runtime", "Testing", "com.nexus.core.testing.asmdef")));
+            Assert.That(testing.defineConstraints, Is.EquivalentTo(new[] { "UNITY_EDITOR || UNITY_INCLUDE_TESTS" }));
+            Assert.That(testing.autoReferenced, Is.False);
+
+            var runtime = UnityEngine.JsonUtility.FromJson<AsmdefFile>(
+                System.IO.File.ReadAllText(System.IO.Path.Combine(root, "Runtime", "com.nexus.core.asmdef")));
+            Assert.That(runtime.references, Does.Not.Contain("com.nexus.core.testing"));
+
+            foreach (string file in System.IO.Directory.GetFiles(System.IO.Path.Combine(root, "Runtime"), "*.cs", System.IO.SearchOption.AllDirectories))
+            {
+                if (file.Replace('\\', '/').Contains("/Runtime/Testing/")) continue;
+                string code = System.IO.File.ReadAllText(file);
+                foreach (string line in code.Split('\n'))
+                {
+                    string t = line.TrimStart();
+                    if (t.StartsWith("//") || t.StartsWith("///") || t.StartsWith("*")) continue;
+                    Assert.That(t, Does.Not.Contain("MockIapStoreAdapter"), file);
+                }
+            }
+        }
     }
 }
