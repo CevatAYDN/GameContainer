@@ -461,6 +461,114 @@ namespace Nexus.Iap.Unity.Tests
             }
             finally { UnityIAPServices.SetStoreAsDefault(previous); }
         }
+
+        // Issue #438: a store that never answers a purchase left every later purchase answering Pending until the app restarted
+        [UnityTest]
+        public IEnumerator APurchaseTheStoreNeverAnswers_CompletesUnavailable_AfterTheTimeout_AndWarns()
+        {
+            string previous = UnityIAPServices.GetDefaultStore();
+            var store = UseTestStore("NexusPurchaseTimeout", failConfirms: 0);
+            try
+            {
+                var adapter = new UnityIapAdapter { OperationTimeout = TimeSpan.FromMilliseconds(50) };
+                bool? ready = null;
+                adapter.Initialize(Pass(), ok => ready = ok);
+                yield return Until(() => ready != null, "the store initialized");
+                Assert.AreEqual(true, ready);
+                store.HoldOrders = true;
+                PurchaseOutcome? first = null;
+                adapter.PurchaseWithOutcome("rewards_pass", o => first = o);
+                Assert.IsNull(first, "the store has not answered yet");
+                LogAssert.Expect(LogType.Warning, new Regex(@"\[UnityIAP\] Purchase of rewards_pass: Unavailable, the store did not answer within 0\.05 s"));
+                yield return Until(() => first != null, "the purchase timed out");
+                Assert.AreEqual(PurchaseOutcome.Unavailable, first);
+
+                store.HoldOrders = false;   // the next purchase is not stuck behind the dead one
+                PurchaseOutcome? second = null;
+                adapter.PurchaseWithOutcome("rewards_pass", o => second = o);
+                yield return Until(() => second != null, "the next purchase answered");
+                Assert.AreEqual(PurchaseOutcome.Purchased, second);
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally { UnityIAPServices.SetStoreAsDefault(previous); }
+        }
+
+        // Issue #438: the timer of a purchase that was answered must not complete a later one
+        [UnityTest]
+        public IEnumerator AnAnsweredPurchasesTimer_DoesNotCompleteALaterPurchase()
+        {
+            string previous = UnityIAPServices.GetDefaultStore();
+            var store = UseTestStore("NexusStaleTimer", failConfirms: 0);
+            try
+            {
+                var adapter = new UnityIapAdapter { OperationTimeout = TimeSpan.FromMilliseconds(300) };
+                bool? ready = null;
+                adapter.Initialize(Coins(), ok => ready = ok);
+                yield return Until(() => ready != null, "the store initialized");
+                PurchaseOutcome? first = null;
+                adapter.PurchaseWithOutcome("coins_100", o => first = o);
+                Assert.AreEqual(PurchaseOutcome.Purchased, first);
+                yield return new WaitForSecondsRealtime(0.2f);   // the first timer (300 ms) is still to fire
+                store.HoldOrders = true;
+                PurchaseOutcome? second = null;
+                adapter.PurchaseWithOutcome("coins_100", o => second = o);
+                yield return new WaitForSecondsRealtime(0.2f);   // the first timer fired 100 ms ago; the second's (at 500 ms) has not
+                Assert.IsNull(second, "the first request's timer must not complete the second request");
+                LogAssert.Expect(LogType.Warning, new Regex(@"Purchase of coins_100: Unavailable, the store did not answer"));
+                yield return Until(() => second != null, "the second request timed out on its own timer");
+            }
+            finally { UnityIAPServices.SetStoreAsDefault(previous); }
+        }
+
+        // Issue #438: a restore the store never answers answered false to every later restore until the app restarted
+        [UnityTest]
+        public IEnumerator ARestoreTheStoreNeverAnswers_CompletesFalse_AfterTheTimeout_AndWarns()
+        {
+            string previous = UnityIAPServices.GetDefaultStore();
+            var store = UseTestStore("NexusRestoreTimeout", failConfirms: 0);
+            try
+            {
+                var adapter = new UnityIapAdapter { OperationTimeout = TimeSpan.FromMilliseconds(50) };
+                bool? ready = null;
+                adapter.Initialize(Pass(), ok => ready = ok);
+                yield return Until(() => ready != null, "the store initialized");
+                store.HoldPurchases = true;   // the purchase fetch behind the restore is never answered
+                bool? restored = null;
+                adapter.Restore(ok => restored = ok);
+                Assert.IsNull(restored);
+                LogAssert.Expect(LogType.Warning, new Regex(@"\[UnityIAP\] Restore: false, the store did not answer within 0\.05 s"));
+                yield return Until(() => restored != null, "the restore timed out");
+                Assert.AreEqual(false, restored);
+
+                store.HoldPurchases = false;   // a later restore is not blocked
+                bool? again = null;
+                adapter.Restore(ok => again = ok);
+                yield return Until(() => again != null, "the next restore answered");
+                Assert.AreEqual(true, again, "an answered fetch with nothing to restore is true");
+            }
+            finally { UnityIAPServices.SetStoreAsDefault(previous); }
+        }
+
+        // Issue #438: a product that is not in this session's catalog answered Unavailable with no line in any build
+        [UnityTest]
+        public IEnumerator AProductMissingFromTheCatalog_AnswersUnavailable_AndWarnsWithTheProductId()
+        {
+            string previous = UnityIAPServices.GetDefaultStore();
+            UseTestStore("NexusUnknownProduct", failConfirms: 0);
+            try
+            {
+                var adapter = new UnityIapAdapter();
+                bool? ready = null;
+                adapter.Initialize(Pass(), ok => ready = ok);
+                yield return Until(() => ready != null, "the store initialized");
+                LogAssert.Expect(LogType.Warning, new Regex(@"\[UnityIAP\] Purchase of not_registered: Unavailable, the product is not in the catalog"));
+                PurchaseOutcome? outcome = null;
+                adapter.PurchaseWithOutcome("not_registered", o => outcome = o);
+                Assert.AreEqual(PurchaseOutcome.Unavailable, outcome);
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally { UnityIAPServices.SetStoreAsDefault(previous); }
+        }
     }
 }
 #endif

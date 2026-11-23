@@ -22,7 +22,17 @@ UnityIapAdapter.Register(iapFactory);               // IIapAdapterFactory, provi
 iapService.RegisterProducts(new ProductDefinition { Id = "rewards_pass", Type = ProductType.NonConsumable });
 iapService.SetStoreAdapter(iapFactory.CreateAdapter("unity"));   // after the products: it hands the catalog to the store
 
-iapService.Purchase("rewards_pass", outcome => { if (outcome == PurchaseOutcome.Purchased) Unlock(); });
+iapService.Purchase("rewards_pass", outcome =>
+{
+    switch (outcome)
+    {
+        case PurchaseOutcome.Purchased:   Unlock(); break;                          // also an already owned product
+        case PurchaseOutcome.Cancelled:   break;                                    // the player backed out: show nothing
+        case PurchaseOutcome.Pending:     ShowMessage("Payment pending approval."); break;   // deferred, or another purchase is waiting
+        case PurchaseOutcome.Unavailable: ShowMessage("The store is not available right now. Try again later."); break;   // the log says why
+        case PurchaseOutcome.Failed:      ShowMessage("The purchase did not go through."); break;
+    }
+});
 label.text = iapService.GetLocalizedPrice("rewards_pass") ?? "...";
 iapService.StoreChanged += RefreshShop;
 iapService.UnrequestedPurchase += (productId, transactionId) => GrantOnce(productId, transactionId);   // before SetStoreAdapter
@@ -68,5 +78,19 @@ an order for another product (a deferred payment approved, a promo code) is owne
 `Changed`, and the waiting purchase still gets its own answer. A purchase
 whose payment the store holds (deferred) reports `Pending`, and buying that product again answers
 `Pending` without a second store call until the order completes or a fetch no longer lists it.
+
+`Unavailable` is never silent: the adapter warns in every build with `Purchase of <product id>: Unavailable, <reason>`.
+The reasons are no product id, the store not connected, the store connected but its product fetch failed, a product that
+is not in the catalog the session started with, a product the store did not return (not created in App Store Connect or
+Play Console, not attached to the build, sandbox trouble) or not available to purchase, a store that did not answer
+within the timeout, and a disposed adapter. A purchase the store does not answer within 75 s completes `Unavailable` and
+warns, so the next purchase is not stuck behind it; an order that arrives late is handled like an unrequested one
+(`UnrequestedPurchase` for a consumable, ownership for a non-consumable).
+
+`Restore` answers a `bool`, and every `false` is warned with its reason (`Restore: false, ...` or the store's own message).
+`true` means the store's purchase fetch answered, also when the account has nothing to restore: read what came back from
+`IsOwned` and `StoreChanged`. `false` means the store is not connected (not initialized, offline, disposed), another restore is
+still waiting, the store refused the restore or the purchase fetch failed (store unreachable), the store did not answer within
+75 s, or the adapter was disposed meanwhile. A game that needs to tell them apart reads `IsStoreAvailable` and the log.
 
 Not covered: receipt validation on a server, subscription details, Apple-specific services.

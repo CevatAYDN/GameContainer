@@ -25,6 +25,9 @@ namespace Nexus.Iap.Unity.Tests
         {
             var adapter = new UnityIapAdapter();
             Assert.IsFalse(adapter.IsAvailable);
+            LogAssert.Expect(LogType.Warning, new Regex(@"\[UnityIAP\] Purchase of rewards_pass: Unavailable, the store is not connected"));
+            LogAssert.Expect(LogType.Warning, new Regex(@"\[UnityIAP\] Purchase of rewards_pass: Unavailable, the store is not connected"));
+            LogAssert.Expect(LogType.Warning, new Regex(@"\[UnityIAP\] Restore: false, the store is not connected"));
             Assert.IsNull(adapter.GetLocalizedPrice("rewards_pass"));
             Assert.IsFalse(adapter.IsOwned("rewards_pass"));
             PurchaseOutcome? outcome = null;
@@ -49,6 +52,7 @@ namespace Nexus.Iap.Unity.Tests
             Assert.AreEqual(PurchaseOutcome.Pending, outcome, "a held payment is not a failure (the store answered a second call 'already owned')");
             Assert.IsFalse(adapter.IsOwned("rewards_pass"), "a deferred payment unlocks nothing yet");
             adapter.Defer("rewards_pass", false);
+            LogAssert.Expect(LogType.Warning, new Regex(@"Purchase of rewards_pass: Unavailable, the store is not connected"));
             adapter.PurchaseWithOutcome("rewards_pass", o => outcome = o);
             Assert.AreEqual(PurchaseOutcome.Unavailable, outcome, "once settled the purchase goes to the store again (unconnected here)");
         }

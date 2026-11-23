@@ -52,6 +52,12 @@ namespace Nexus.Iap.Unity
         /// the order to the next purchase fetch (each start and <see cref="Restore"/>).</summary>
         internal TimeSpan[] ConfirmRetryDelays = { TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2) };
 
+        /// <summary>How long a purchase or a restore waits for Unity IAP to answer before it completes
+        /// <see cref="PurchaseOutcome.Unavailable"/> / false and warns (issue #438). Without it a store that never calls back
+        /// left every later purchase answering Pending and every later restore false until the app restarted. Tests shorten it.</summary>
+        internal TimeSpan OperationTimeout = TimeSpan.FromSeconds(75);
+        private int _purchaseTicket, _restoreTicket;   // tell a timer from the request it was started for: a later request has its own
+
         public event Action Changed;
         /// <summary>A paid consumable the game did not request in this session; see <see cref="IIapUnrequestedPurchaseAdapter"/>.</summary>
         public event UnrequestedPurchaseHandler UnrequestedPurchase;
@@ -152,7 +158,9 @@ namespace Nexus.Iap.Unity
                 store.OnProductsFetchFailed -= OnProductsFetchFailed;
             }
             _connected = _productsFetched = false;
+            if (_pending != null) Warn($"Purchase of {_pendingProductId}: Unavailable, the adapter was disposed while the store had not answered.");
             Complete(PurchaseOutcome.Unavailable);
+            if (_restorePending != null) Warn("Restore: false, the adapter was disposed while the store had not answered.");
             FinishRestore(false);
             FinishInitialize(false);
         }
@@ -174,27 +182,74 @@ namespace Nexus.Iap.Unity
         {
             // a payment the store holds (deferred) answers Pending: a second store call failed as "already owned", read as "not charged"
             if (productId != null && _deferred.Contains(productId)) { onOutcome?.Invoke(PurchaseOutcome.Pending); return; }
-            if (!IsAvailable || string.IsNullOrEmpty(productId) || !_catalog.ContainsKey(productId)) { onOutcome?.Invoke(PurchaseOutcome.Unavailable); return; }
+            string id = productId ?? "(null)";
+            if (string.IsNullOrEmpty(productId)) { Unavailable(id, "no product id was given", onOutcome); return; }
+            if (!IsAvailable) { Unavailable(id, _connected ? "the store connected but its product fetch has not succeeded (the product is not set up in the store, or the store is slow or offline)" : "the store is not connected (not initialized yet, offline, or the connect failed)", onOutcome); return; }
+            if (!_catalog.ContainsKey(productId)) { Unavailable(id, "the product is not in the catalog this session started with (register every product before SetStoreAdapter)", onOutcome); return; }
             var product = _store.GetProductById(productId);
-            if (product == null || !product.availableToPurchase) { onOutcome?.Invoke(PurchaseOutcome.Unavailable); return; }
+            if (product == null) { Unavailable(id, "the store returned no product with this id (not created in App Store Connect / Play Console, not attached to this build, or a sandbox problem)", onOutcome); return; }
+            if (!product.availableToPurchase) { Unavailable(id, "the store lists the product but it is not available to purchase", onOutcome); return; }
             if (IsOwned(productId)) { onOutcome?.Invoke(PurchaseOutcome.Purchased); return; }
             if (_pending != null) { onOutcome?.Invoke(PurchaseOutcome.Pending); return; }
             _pending = onOutcome;
             _pendingProductId = productId;
+            ExpirePurchase(productId, ++_purchaseTicket);
             _store.PurchaseProduct(productId);
         }
 
+        private static void Unavailable(string productId, string reason, Action<PurchaseOutcome> onOutcome)
+        {
+            Warn($"Purchase of {productId}: Unavailable, {reason}.");
+            onOutcome?.Invoke(PurchaseOutcome.Unavailable);
+        }
+
+        /// <summary>Restores the account's purchases. The answer is true once Unity IAP's purchase fetch answered, also when it found
+        /// nothing to restore: owned products are then reported through <see cref="IsOwned"/> and <see cref="Changed"/>, not through
+        /// this value. It is false, with a warning that names the reason, when the store is not connected (not initialized, offline
+        /// or disposed), another restore is still waiting, the store refused the restore or the purchase fetch failed (store
+        /// unreachable), the store did not answer within <see cref="OperationTimeout"/>, or the adapter was disposed meanwhile.</summary>
         public void Restore(Action<bool> onComplete)
         {
-            if (!_connected) { onComplete?.Invoke(false); return; }
-            if (_restorePending != null) { onComplete?.Invoke(false); return; }
+            if (!_connected) { Warn("Restore: false, the store is not connected (not initialized yet, offline, or disposed)."); onComplete?.Invoke(false); return; }
+            if (_restorePending != null) { Warn("Restore: false, another restore is still waiting for the store."); onComplete?.Invoke(false); return; }
             _restorePending = onComplete;
+            ExpireRestore(++_restoreTicket);
             // A successful restore fetches the purchases itself (Unity IAP's PurchaseService.RestoreTransactions, since 5.0.2), and
             // that fetch answers the restore; a second fetch here confirmed every pending order twice (issue #182).
             _store.RestoreTransactions((ok, message) =>
             {
                 if (!ok) { Warn("Restore: " + message); FinishRestore(false); }
             });
+        }
+
+        private async void ExpirePurchase(string productId, int ticket) // NEXUS002-exempt: started from the request, which must return first; the whole body is caught
+        {
+            try
+            {
+                await Task.Delay(OperationTimeout);
+                if (_disposed || _pending == null || ticket != _purchaseTicket) return;   // answered, or a later request waits
+                Warn($"Purchase of {productId}: Unavailable, the store did not answer within {OperationTimeout.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture)} s. A late order is handled like an unrequested one.");
+                Complete(PurchaseOutcome.Unavailable);
+            }
+            catch (Exception e)
+            {
+                Warn($"The purchase timeout of {productId} failed: {e.GetType().Name}: {e.Message}");
+            }
+        }
+
+        private async void ExpireRestore(int ticket) // NEXUS002-exempt: started from the request, which must return first; the whole body is caught
+        {
+            try
+            {
+                await Task.Delay(OperationTimeout);
+                if (_disposed || _restorePending == null || ticket != _restoreTicket) return;
+                Warn($"Restore: false, the store did not answer within {OperationTimeout.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture)} s.");
+                FinishRestore(false);
+            }
+            catch (Exception e)
+            {
+                Warn($"The restore timeout failed: {e.GetType().Name}: {e.Message}");
+            }
         }
 
         private void OnPending(PendingOrder order)

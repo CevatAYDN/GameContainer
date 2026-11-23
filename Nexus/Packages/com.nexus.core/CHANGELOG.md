@@ -1242,6 +1242,10 @@ Date corrected on 2026-10-15: the repository-root changelog said 2025-06-25; the
 
 ### Fixed
 
+- **`com.nexus.iap.unity` Purchase and Restore no longer hang or fail silently** (issue #438).
+  - Every `Unavailable` purchase outcome now logs a warning in every build with the product id and the reason (not connected, product fetch failed, not in the catalog, not returned by the store, not available to purchase, timeout, disposed). `Restore` warns the reason of every `false`.
+  - A purchase and a restore the store never answers complete after 75 s (`Unavailable` / `false`) and warn, instead of leaving every later purchase `Pending` and every later restore `false` until the app restarts. A timer never completes a later request.
+  - README: the sample shows every `PurchaseOutcome` branch and documents `Restore`'s reason cases. Public API unchanged; `UnityIapConfirmTests` and `UnityIapAdapterTests` hold the regressions.
 - `ViewBinder.Bind` / `Unbind` and `_isBound` guard in `View`
 - `Context.Dispose` guard and `IContextLifecycle.OnDispose` call
 - Skip value types in `NexusDI.Inject` to prevent allocation
