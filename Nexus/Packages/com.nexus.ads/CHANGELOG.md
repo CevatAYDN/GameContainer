@@ -10,6 +10,15 @@
   never reads the IDFA; whether a mediation SDK requests ATT cannot be determined from this repo (the SDKs are not
   stored here) and is written as unverified. Not run: no Unity test run for this change (`DeviceIdentityTests` added).
 
+## Visible not-ready state for AdRewardedButton (#440)
+
+- `AdRewardedButton.WhenNotReady` (`NotReadyBehavior`): `Hide`, the old behaviour (alpha 0, no raycasts), or
+  `ShowDisabled`: visible at 50 % alpha, not interactable, with an optional `Not Ready Label` object active
+  (`AdRewardedButton.NotReadyText` is "No ad available right now"). Buttons saved before keep `Hide`; a button added or reset in the
+  editor starts on `ShowDisabled` (`Reset`), so nothing changes by surprise on upgrade. While the button's own ad is
+  on screen it is not interactable in both modes and never shows the not-ready label; the in-flight guard of #380 is unchanged.
+  `AdRewardedButton.Present` is the state table; `AdRewardedButtonTests` (EditMode) lock it. Not run: no Unity test run was made for this change.
+
 ## Google's consent form that never answers (#432)
 
 - `UmpConsentFlow` answers as soon as UMP's status update allows ad requests (no form needed where the player is, or

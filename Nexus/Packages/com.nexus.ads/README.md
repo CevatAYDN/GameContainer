@@ -232,8 +232,14 @@ while (Ads.PendingReward is RewardReceipt receipt)
 }
 ```
 
-Or drop `AdRewardedButton` on a uGUI Button with a `CanvasGroup`: it hides itself while nothing can
-show and raises `OnRewarded` once per paid ad.
+Or drop `AdRewardedButton` on a uGUI Button with a `CanvasGroup`: it raises `OnRewarded` once per paid ad and is
+never interactable while its own ad is on screen. While nothing can show it follows `When Not Ready` (#440):
+`Hide` (invisible, taps pass through) or `ShowDisabled` (visible, dimmed to 50 % alpha, not interactable, and the
+optional `Not Ready Label` child active; the wording is `AdRewardedButton.NotReadyText`, "No ad available right
+now", for you to localise). A button added in the editor starts on `ShowDisabled`, so the rewarded option stays
+visible when the network has no fill (a reviewer then sees the feature and why it is idle). A button saved by an older
+version stays on `Hide`: Unity keeps the saved value, so no existing game changes on upgrade; set `ShowDisabled` per
+button to opt in. The sample projects ship no localisation table, so there is no key to add there.
 
 A UI that shows or hides an ad button follows `Ads.OnReadyChanged` and asks `Ads.IsReady` when it
 fires, as `AdRewardedButton` does; it does not poll every frame. The event fires on a load, a load
