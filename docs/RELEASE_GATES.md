@@ -17,7 +17,7 @@ The same Unity 6000.6.8f1 on the iOS build target (`-buildTarget iOS`, log shows
 0 `error CS` (`ios-compile.log`), so the `#if UNITY_IOS` blocks of `IosPostProcess.cs` (#436) compiled; EditMode 1085 / 1081 /
 0 / 4 (`editmode-ios.xml`). `NEXUS_LEVELPLAY` is never defined in this project (a `versionDefines` of
 `com.unity.services.levelplay` 9.5.1, a package that is not in `manifest.json`), so `LevelPlayIosPostProcess.cs` (#435),
-`LevelPlayIosLinkerFlagsTests.cs` and the rest of the LevelPlay editor assemblies did not compile on any target.
+`LevelPlayIosLinkerFlagsTests.cs` and the rest of the LevelPlay editor assemblies did not compile in that project. They did compile in the throwaway consumer project `Nexus/artifacts/final-20261123/levelplay-435/LevelPlayConsumer/` (LevelPlay 9.6.0, `-buildTarget iOS`, 0 `error CS`, `NEXUS_LEVELPLAY` active: `Nexus.Ads.LevelPlay.Editor.dll` built): EditMode 211 / 210 / 0 / 1, `LevelPlayIosLinkerFlagsTests` 10 / 10 passed (`editmode.xml`).
 
 ## Full suites on `ff533371` — 2026-11-19
 
