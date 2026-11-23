@@ -3,7 +3,7 @@ using UnityEngine;
 namespace Nexus.Ads.Unity
 {
     /// <summary>
-    /// The fake full-screen ad the simulator shows in the editor and on unlisted devices: a dark
+    /// The fake full-screen ad the simulator shows in the editor and, in a development build, on unlisted devices: a dark
     /// layer with the format and the scenario, a Close button, a Reward button for rewarded ads and a
     /// Fail button for the show-failure path. Immediate-mode UI so the package needs no canvas.
     /// </summary>

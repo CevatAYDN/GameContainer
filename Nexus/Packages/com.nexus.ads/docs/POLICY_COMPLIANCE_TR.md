@@ -220,3 +220,30 @@ Hepsi okunma tarihinde yanıt verdi (aksi yazılmadıkça HTTP 200).
 | InMobi | ağ | https://publisher.inmobi.com | oturum olmadan 401 döner; giriş sayfası |
 | Chartboost | ağ | https://dashboard.chartboost.com | |
 | Google AdMob | ağ | https://admob.google.com | |
+
+## App Review (Apple) notları
+
+Kod adresleri yan tarafta verilmiş her ifade koddan okunmuştur; oyunun kendi eklediği şeyleri (ilerleme
+kapıları, onay ekranı, IAP teklifi) oyun kendisi doğrular. İngilizce kanonik metin
+[README'de](../README.md#app-review-notes) ve `com.nexus.firebase` README'sindedir; özet:
+
+- Varsayılanlar (`AdPolicy.Default`): oturumun ilk 60 sn'sinde interstitial yok, iki interstitial arası 30 sn,
+  ödüllü reklamdan sonra 30 sn, oturum ve gün sınırı yok, ilk interstitial ilk oturumdan itibaren
+  (`MinLifetimeSessionsBeforeInterstitial` = 0), dokunuş sonrası bekleme kapalı. Çerçevede seviye ya da
+  takvim tarihi kapısı yoktur; Notlarda böyle bir kapı varsa oyunun kodundaki yeri yazılmalıdır.
+- Kill switch (`ads.kill_switch`) tüm reklam biçimlerini kapatır; uzaktan `ads.*` değerleri yalnızca
+  tabanı sıkılaştırır (aralık ve gecikmeler büyür, sınırlar küçülür). Uzaktan yapılandırma reklam ekleyemez,
+  tabanı gevşetemez, onayı kapatamaz. Çerçeve `FetchAsync` çağırmaz; oyun çağırmazsa hiçbir şey çekilmez.
+- İnceleme build'i paketlenmiş varsayılanlara dayanmalıdır: `FirebaseAdsRemoteConfig` bağlanmaz ya da
+  inceleme süresince `ads.*` anahtarları konsolda boş bırakılır.
+- Onay zamanlaması: ayarlarda adı geçen onay akışı aracı SDK başlamadan önce çalışır ve bitene dek
+  `NoRequestBeforeConsent` her gösterimi engeller. Reklam paketinde App Tracking Transparency istemi yoktur;
+  ATT, `Info.plist` metni, gizlilik etiketi ve politikası oyunun işidir.
+- Release build simülatörü hiç çalıştırmaz ve test yapılandırmasıyla SDK'ya bağlanmaz; simülatör editörde ve
+  geliştirme build'inde listede olmayan cihazda çalışır. Listedeki cihaz, Test sekmesindeki anahtarlarla gerçek
+  reklam isteyebilir; geliştirme build'i incelemeye gönderilmez.
+- Notlar için kontrol listesi: doğrulayıcıyı Release sekmesinde çalıştır ve `[Nexus Ads] started` satırını oku;
+  pacing sayılarını gönderilen ayar dosyasından kopyala; uygulanan seviye/tarih/oturum kapılarını yaz; ödüllü
+  reklamın isteğe bağlı olduğunu ve ad-free yetkisinin kapsamını yaz; onay ekranını, ne zaman çıktığını ve
+  nereden yeniden açıldığını yaz; IAP yolunu ve Restore'un yerini yaz (çekirdekte `IapService.RestorePurchases`
+  vardır, düğmeyi oyun çizer); yapmadığın hiçbir şeyi yazma.

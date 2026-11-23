@@ -123,7 +123,7 @@ grant a non-consumable from `IsProductOwned`. `MonetizationAsyncTests` (EditMode
 the `IAdNetworkAdapter` (with every capability) over the family's controller, and the mediation SDK
 sits behind the family's provider packages. The editor runs the family's simulator, a development
 build runs the real SDK with the **Test** tab (test mode and the test device list; an unlisted device
-gets the simulator), a release build runs the **Release** tab. The provider is never chosen by a
+gets the simulator; a release build never does), a release build runs the **Release** tab. The provider is never chosen by a
 `#if` in game code: the settings asset and `ProviderGate` decide. See the
 [ads package README](../../com.nexus.ads/README.md) and the
 [bridge README](../../com.nexus.ads.bridge.nexus/README.md); the lifecycle above becomes

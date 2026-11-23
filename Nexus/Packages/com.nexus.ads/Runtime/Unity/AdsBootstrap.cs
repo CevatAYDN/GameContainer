@@ -29,7 +29,7 @@ namespace Nexus.Ads.Unity
         [SerializeField] private AdsSettings _settings;
         [SerializeField] private bool _pauseAudioDuringAds = true;
         [SerializeField] private bool _pauseTimeDuringAds = true;
-        [Tooltip("What the simulator pretends in the editor and on unlisted devices")]
+        [Tooltip("What the simulator pretends in the editor and, in a development build, on unlisted devices (a release build never runs it)")]
         [SerializeField] private SimulatorScenario _simulatorScenario = SimulatorScenario.Normal;
         [Tooltip("Ad events go to the console in the editor and development builds")]
         [SerializeField] private bool _logEvents = true;

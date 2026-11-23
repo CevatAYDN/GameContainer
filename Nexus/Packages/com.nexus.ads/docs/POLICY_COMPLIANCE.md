@@ -220,3 +220,17 @@ All answered on the read date (HTTP 200 unless noted).
 | InMobi | network | https://publisher.inmobi.com | answers 401 without a session; the sign-in page |
 | Chartboost | network | https://dashboard.chartboost.com | |
 | Google AdMob | network | https://admob.google.com | |
+
+## App Review notes
+
+What a game team can say about the ad stack in Notes for Review, and what to check first. English text in
+[`README.md`](../README.md#app-review-notes) (the ads package) and the `com.nexus.firebase` README; this register
+keeps the policy side:
+
+- Apple's Guideline 5.6 and 2.5.19 reviews read what the build does against what the Notes say. The package
+  enforces the pacing floors, consent-before-request and the release gate in code (`PolicyGuard`,
+  `ProviderGate`), and remote configuration can only tighten them or switch ads off (kill switch).
+- The package does not prompt for App Tracking Transparency, write the privacy nutrition label or the privacy
+  policy, or publish the game's Notes. Those stay with the game (Developer rows above).
+- A review build uses the packaged defaults: no remote `ads.*` values during review, and no development
+  build (it can request real ads on a listed device).

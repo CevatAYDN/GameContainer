@@ -13,7 +13,7 @@ Firebase Analytics, Remote Config and Crashlytics behind Nexus services, with th
 | `IAnalyticsConsent` | Where the services read the answer and the choice from. Over Google's consent form, `com.nexus.ads.admob`'s `UmpAnalyticsConsent`; a game that asks its own analytics question implements it over that question. |
 | `AnalyticsGate`, `AnalyticsEvent` | Holds events until the answer is known, sends them in order once allowed, drops them when refused. The wait is bounded (256 events); a full wait is warned once in every build, and a service whose SDK did not start closes it, so nothing waits for an answer that never comes (issue #171). |
 | `AnalyticsRefusals` | Reports each event, parameter or user property Firebase would refuse, once per name and in every build, as `[Firebase] Analytics <what> is not sent: <rule>` (a user property: `is not set`). The Firebase service and the mock share it, so the editor shows the lines a player writes to its log (issue #123). |
-| `IRemoteConfigService`, `RemoteConfigFetchPolicy`, `RemoteConfigParser` | `FetchAsync`, typed reads with the game's fallback, a `Changed` event per key, a 12-hour fetch cache, and value parsing with the invariant culture. |
+| `IRemoteConfigService`, `RemoteConfigFetchPolicy`, `RemoteConfigParser` | `FetchAsync`, typed reads with the game's fallback, a `Changed` event per key, a 12-hour fetch cache (it caches what the game's `FetchAsync` call asks for; nothing fetches by itself), and value parsing with the invariant culture. |
 | `ICrashReporter`, `LoggedErrorException`, `CrashContext` | Records an error the game survived as a non-fatal, and the custom keys (`SetCustomKey`) and log lines (`Log`) every later report carries. A key set before the reporter is ready is held and applied once it is, with its last value; so are the newest 64 lines and the newest 32 non-fatals (issue #171). |
 | `MockAnalyticsService`, `MockRemoteConfigService`, `MockCrashReporter`, `MockAnalyticsConsent` | In-memory versions for the editor and tests. The analytics mock drops what the Firebase service would drop, a parameter whose value Firebase has no type for included, and reports it the same way; the crash mock keeps the non-fatals, keys and lines (`Recorded`, `Keys`, `Logged`). |
 | `FirebaseAnalyticsService` (`NEXUS_FIREBASE_ANALYTICS`) | Analytics behind `IAnalyticsService`. Collection stays off until the decision allows it. |
@@ -34,7 +34,7 @@ The adapters were written against Firebase Unity SDK **14.0.0** (`expression` 14
 - **User properties.** A name of at most 24 characters with the same shape, not `user_id`, `first_open_time` or `last_deep_link_referrer`; a value of at most 36 characters. A value over the limit is dropped, not truncated.
 - **What is refused is reported.** Firebase logs nothing for a name it is never given, so each refused event, parameter (its name, or a value of no Firebase type) and user property is reported once per name, in every build, with the rule it broke: `[Firebase] Analytics event 'ad_reward' is not sent: the name is one Google reserves for events` (`AnalyticsRefusals`, issue #123).
 - **Consent.** The consent status does not say which purposes the player accepted: `Obtained` means the form was answered. Analytics are sent when the choice is granted, dropped when it is refused, and held while the choice or the answer is unknown. Where consent is not required, events are sent at once. Where the choice is read from is `IAnalyticsConsent`'s job. `com.nexus.ads.admob`'s `UmpAnalyticsConsent` reads Google's consent form, which answers nothing about analytics, so its choice is always refused (issue #87).
-- **Remote config.** Fetched at launch and reused for 12 hours. A clock set back forces a fetch. A value that cannot be read as the requested type returns the fallback. Numbers are read with the invariant culture, so a device language does not change them.
+- **Remote config.** The service fetches only when the game calls `IRemoteConfigService.FetchAsync`: no framework code calls it (not the bootstrap, not `FirebaseBindings`, not the ads bridge), so a game that never calls it never fetches and every read returns the game's fallback, or the values an earlier fetch activated. A call within 12 hours of the last successful fetch answers `true` without a network request. A clock set back forces a fetch. A value that cannot be read as the requested type returns the fallback. Numbers are read with the invariant culture, so a device language does not change them.
 
 ## Binding
 
@@ -79,6 +79,25 @@ public void OnConfigure(IContextBuilder builder)
 ## Consent and the platform manifest
 
 `SetAnalyticsCollectionEnabled(false)` at start is too late to stop what the SDK collects before the game's code runs. On every Android build `FirebaseCollectionFlags` writes Firebase's own flags, `false`, into the `application` tag of the launcher manifest for each SDK package the project has: `firebase_analytics_collection_enabled`, and `firebase_crashlytics_collection_enabled` (Crashlytics's [opt-in reporting](https://firebase.google.com/docs/crashlytics/android/customize-crash-reports)). `FirebaseAnalyticsService` and `FirebaseCrashReporter` turn collection on once the consent decision allows it. A flag the manifest already carries is left as the game set it, and a second build adds no duplicate. A game that uses the Firebase SDK directly, without these services, turns collection on itself. The build log names the flags it wrote (`[Nexus Firebase] Collection off in the manifest until consent: ...`). The package sees an SDK only as a UPM package (`versionDefines`); Firebase installed from Google's `.unitypackage` (`Assets/Firebase`) gets no define, so the services would not use it and no flag would be written. When an Android build finds the Firebase Analytics or Crashlytics assembly without its package, it fails and names the package to install (issue #171).
+
+## App Review notes
+
+- **The framework never fetches.** `FetchAsync` has no caller in the Nexus packages. A game that wants Remote
+  Config values calls it itself (usually once the services are ready); a game that never does runs on its
+  fallbacks for every key, including `ads.kill_switch` and the `ads.*` pacing keys of `com.nexus.ads.bridge.nexus`.
+  Say in the Notes whether the game fetches, and when.
+- **What a fetch can change in the ads stack.** With the bridge's `FirebaseAdsRemoteConfig` attached, the kill
+  switch can turn all ads off and the `ads.*` keys can make pacing stricter; nothing remote can show more ads or
+  loosen a floor (see the ads README's App Review notes).
+- **Keep the console stable during review.** A review build should rely on the
+  packaged defaults: leave the keys unset, or set only tightening values, while the build is in review. A call
+  within 12 hours of the last successful fetch is answered from the cache.
+- **Analytics and consent.** Events are held until the consent answer is known, sent when the player's choice
+  is granted and dropped when it is refused (see Consent above). The decision depends on the `IAnalyticsConsent`
+  the game binds. Declare Analytics, Crashlytics and their data types in the privacy nutrition label
+  and the privacy policy to match what the build collects.
+- **Checklist.** Does the game call `FetchAsync`? Which keys does the console define? Which consent source feeds
+  analytics? Does the privacy label list the Firebase data? Is every statement in the Notes something this build does?
 
 ## Not checked by 0.1.0
 

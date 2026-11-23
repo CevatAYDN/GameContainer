@@ -4,7 +4,8 @@ Unity LevelPlay behind the `com.nexus.ads` core: `LevelPlayProvider` is the fami
 over the Ads Mediation package (`com.unity.services.levelplay` 9.x, namespace
 `Unity.Services.LevelPlay`). Nothing in a game references the SDK; the settings asset carries the App
 Key and the ad unit ids, `AdsBootstrap` creates the provider when LevelPlay is the selected
-mediation, and the simulator runs in the editor and on unlisted devices. Plan and phases:
+mediation, and the simulator runs in the editor and, in a development build, on unlisted devices (a
+release build never runs it). Plan and phases:
 [issue #8](https://github.com/CevatAYDN/GameContainer/issues/8); changes in the family's
 [CHANGELOG](../com.nexus.ads/CHANGELOG.md).
 

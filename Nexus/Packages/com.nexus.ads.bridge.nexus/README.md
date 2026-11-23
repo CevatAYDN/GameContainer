@@ -68,7 +68,9 @@ device id yet.
 Remote configuration: with `com.nexus.firebase` installed, `Nexus.Ads.Bridge.Nexus.Firebase`
 compiles `FirebaseAdsRemoteConfig` over `IRemoteConfigService` (`ads.kill_switch` plus the
 `AdPolicy.Keys` names; remote can only tighten). Attach it with
-`AdsBootstrap.Instance.Controller.SetRemoteConfig(new FirebaseAdsRemoteConfig(remote))`.
+`AdsBootstrap.Instance.Controller.SetRemoteConfig(new FirebaseAdsRemoteConfig(remote))`. Nothing in the
+framework fetches: the game calls `remote.FetchAsync` itself, and until it does the controller reads
+the values an earlier fetch activated, or none. Not attaching it keeps the packaged defaults.
 
 A paid reward is written to the store before the game hears of it, and the adapter acknowledges
 it once the game's `RequestReward` or `ShowRewarded` callback returned, so a receipt still pending

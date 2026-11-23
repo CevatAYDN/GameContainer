@@ -108,7 +108,11 @@ since the package reads no server time, and starts the day caps over (#195, PG25
 | Development | test mode on, advertising id unavailable (missing, or all zeros when ad personalization is off) | simulator (`UnregisteredDevice`); such an id never counts as listed |
 | Development | test mode off | nothing runs (`TestModeRequired`) |
 
-So a development build handed to a teammate never requests a live ad.
+So a development build handed to a teammate runs the simulator unless that device is listed. A listed
+device requests ads with the Test tab's keys, and those are live ads when the tab holds a copy of the
+Release keys (the Test tab's own tooltip allows it): list only your own devices, keep the Test tab on the
+provider's test data where one exists, and never tap a live ad. The gate stops a release build from
+carrying test configuration; it does not stop a development build from being given to someone.
 
 The device's advertising id, for the Test tab's list and the mediation dashboard: before the first
 build, Google's ads settings page on the phone shows it as "Your advertising ID"; the command
@@ -407,3 +411,76 @@ Through `com.nexus.ads.bridge.nexus`: the bridge wraps the controller as the `IA
 `com.nexus.core`'s `AdService`, so game code written against `IAdService` does not change. Bind the
 service and the factory, put an `AdsBootstrap` in the scene, call `NexusAdsBridge.Connect` once; the
 [bridge README](../com.nexus.ads.bridge.nexus/README.md) and `Samples~/Nexus` show it.
+
+## App Review notes
+
+What a game team can say about the ad stack in App Store Review's Notes for Review, and what it has to
+check first. Every line below is read from the code named beside it; whatever the game adds on top
+(its own progression gates, its consent screen, its IAP offer) the game verifies itself.
+
+**What the packaged defaults do** (`AdPolicy.Default`, `PolicyEntry` in `AdsSettings`):
+
+| Rule | Default |
+|---|---|
+| No interstitial in the first seconds of a session | 60 s |
+| Gap between two interstitials, any placement | 30 s |
+| No interstitial after a rewarded ad | 30 s |
+| Interstitials per session / per UTC day | no cap (0) |
+| Sessions on the device before the first interstitial (`MinLifetimeSessionsBeforeInterstitial`) | 0: from the first session |
+| Wait after the player's last touch (`NoInterstitialAfterTouchSeconds`) | 0: off |
+| A placement's cooldown, first-show delay, session and day cap | 0: none, set per placement in the settings |
+| New session after the app was in the background | 30 min |
+
+An interstitial shows only on a placement declared with `NaturalBreak`, never while another full-screen ad
+is open or the app is in the background. A rewarded ad shows only when the player asks for it. The
+floors cannot be lowered by the settings, the game or remote configuration. A game that holds interstitials
+back until a level, a date or a number of sessions is doing so in its own code or through
+`MinLifetimeSessionsBeforeInterstitial`; the framework has no level or calendar-date gate, so a Note that
+claims one must name where the game implements it.
+
+**What the kill switch and remote tightening can change.** With `com.nexus.firebase` and the bridge's
+`FirebaseAdsRemoteConfig` attached (`SetRemoteConfig`), `ads.kill_switch` set to `true` turns every ad format
+off: shows answer `NotReady`, loads stop, a banner on screen is hidden; turning it off loads again. The
+`ads.*` pacing keys (`AdPolicy.Keys`) can only make a floor stricter: gaps and delays grow, caps shrink,
+the session threshold grows. Remote configuration cannot add an ad, show one sooner, loosen a floor, change a
+placement, switch consent off or select another mediation, and it cannot make a release build carry
+test configuration. It acts only after the game has called `FetchAsync` and the values changed: the
+framework never calls it (see the firebase package's App Review notes).
+
+**A review build relies on the packaged defaults.** Build it without `FirebaseAdsRemoteConfig` attached, or leave
+the `ads.*` keys unset in the Remote Config console while the build is in review, so the reviewer sees what
+the Notes describe and no value changes underneath the review. The Notes then describe the settings asset
+as shipped.
+
+**Consent timing.** The consent flow named by the settings (`AdsSettings.ConsentFor(platform)`: Google's UMP,
+the game's own `IConsentFlow`, or `None`) runs before the mediation SDK initializes, and `NoRequestBeforeConsent` blocks every show until it has finished. A game that sets
+`startOnAwake` off starts ads later with `StartAds()`; until then nothing reads the advertising id, touches
+the consent flow or starts the SDK. The ads package contains no App Tracking Transparency prompt
+(it has no call to `ATTrackingManager` and sets no `NSUserTrackingUsageDescription`): whether the game asks for
+tracking permission, its `Info.plist` text, the privacy nutrition label and the privacy policy are the game's
+to declare, and they have to match what the chosen mediation and its networks collect.
+
+**Release and development builds.** A release build never runs the simulator and never talks to the SDK
+with test mode, test devices or sample units (the gate blocks it and logs an error); the validator stops the
+build first. The simulator runs in the editor, and in a development build on a device that is not listed
+or while no mediation is selected. A listed device in a development build can request real ads with the
+Test tab's keys; never submit a development build for review.
+
+**Checklist before writing the Notes**
+1. Run the validator on the Release tab for the target platform (see Validator) and read the log line
+   `[Nexus Ads] started ...` of the build you submit: `mode=Provider`, `testMode=off`, the consent flow you
+   describe.
+2. Copy the pacing numbers from the shipped settings asset, not from this page, and state the gates that
+   apply: the 60 s session start, the gap, the placements' `NaturalBreak` points, and any level, date or
+   session threshold the game sets (the value of `MinLifetimeSessionsBeforeInterstitial`, or its own code).
+3. State that interstitials are skipped where the game's ad-free entitlement covers them, and that rewarded
+   ads are optional and only on the player's request.
+4. State the consent screen the player sees, when it appears and where the player reopens it ("Ad privacy
+   options"), and whether the game shows an ATT prompt.
+5. State the in-app purchase path: which product removes ads (`IapAdFreeEntitlement` when the game uses the
+   bridge), where it is offered, and where the player restores it. The core's `IapService` has
+   `RestorePurchases`; the framework draws no Restore button, so the game must show one and name its place
+   in the Notes.
+6. Say whether the build fetches Remote Config and which `ads.*` keys exist; keep them unset (or only
+   tightening) for the review.
+7. Leave out anything the game does not do. Notes are checked against the build.
