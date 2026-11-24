@@ -172,6 +172,13 @@ namespace Nexus.Core.Services
         // Only currencies that opt into receipt-keyed earnings migrate to the wallet blob.
         // IDs are retained for the save's lifetime; pruning would permit old receipts to pay again.
         private readonly Dictionary<string, HashSet<string>> _receiptIds = new(StringComparer.Ordinal);
+        // Under _balanceLock: receipt earnings whose network notification waits for the durable commit (#448).
+        // A failed commit keeps them; the next confirmed commit of the currency sends them. Dispose drops them (RAM is gone too).
+        private readonly Dictionary<string, List<PendingEarnNotice>> _pendingEarnNotices = new(StringComparer.Ordinal);
+        private sealed class PendingEarnNotice
+        {
+            public long Amount; public BigDouble BigAmount; public string Reason; public INetworkBigEconomyValidator BigValidator;
+        }
         private bool _stagingReceiptWallet; // under _balanceLock; a custom store may reenter on the same thread
         private TaskCompletionSource<bool> _walletStagingDone;
         // Under _balanceLock: the BigDouble currencies whose legacy long key a flush has deleted (#300), and the long
@@ -323,9 +330,12 @@ namespace Nexus.Core.Services
                 RequireMutationAllowedLocked();
                 LazyLoadBalance(currencyId);
                 applied = ReceiptIdsLocked(currencyId).Add(receiptId);
-                if (applied) AddBalanceLocked(currencyId, amount);
+                if (applied)
+                {
+                    AddBalanceLocked(currencyId, amount);
+                    if (NetworkValidator != null) QueueEarnNoticeLocked(currencyId, new PendingEarnNotice { Amount = amount, Reason = reason });
+                }
             }
-            if (applied && NetworkValidator != null) _ = SafeValidateEarnAsync(currencyId, amount, reason);
             ConfirmReceiptBalance(currencyId, store);
             return applied;
         }
@@ -344,9 +354,12 @@ namespace Nexus.Core.Services
                 RequireMutationAllowedLocked();
                 var balance = LazyLoadBigBalance(currencyId);
                 applied = ReceiptIdsLocked(currencyId).Add(receiptId);
-                if (applied) balance.SetByService(Normalize(balance.Value + amount));
+                if (applied)
+                {
+                    balance.SetByService(Normalize(balance.Value + amount));
+                    if (validator != null) QueueEarnNoticeLocked(currencyId, new PendingEarnNotice { BigAmount = amount, Reason = reason, BigValidator = validator });
+                }
             }
-            if (applied && validator != null) _ = SafeValidateBigEarnAsync(validator, currencyId, amount, reason);
             ConfirmReceiptBalance(currencyId, store);
             return applied;
         }
@@ -367,6 +380,13 @@ namespace Nexus.Core.Services
             return ids;
         }
 
+        private void QueueEarnNoticeLocked(string currencyId, PendingEarnNotice notice)
+        {
+            if (!_pendingEarnNotices.TryGetValue(currencyId, out var list))
+                _pendingEarnNotices.Add(currencyId, list = new List<PendingEarnNotice>());
+            list.Add(notice);
+        }
+
         private void ConfirmReceiptBalance(string currencyId, IPlayerPrefsService store)
         {
             lock (_balanceLock)
@@ -377,6 +397,17 @@ namespace Nexus.Core.Services
             // Retry even for a duplicate: the previous call may have changed RAM but
             // failed its commit. Never infer persistence from the in-memory receipt set.
             store.SaveOrThrow();
+            List<PendingEarnNotice> due = null;
+            lock (_balanceLock)
+            {
+                if (_pendingEarnNotices.TryGetValue(currencyId, out due)) _pendingEarnNotices.Remove(currencyId);
+            }
+            if (due == null) return;
+            foreach (var n in due)
+            {
+                if (n.BigValidator != null) _ = SafeValidateBigEarnAsync(n.BigValidator, currencyId, n.BigAmount, n.Reason);
+                else if (NetworkValidator != null) _ = SafeValidateEarnAsync(currencyId, n.Amount, n.Reason);
+            }
         }
 
         private void WriteReceiptBalanceLocked(string currencyId, IPlayerPrefsService store, HashSet<string> receipts)
@@ -911,6 +942,7 @@ namespace Nexus.Core.Services
                     _bigBalances.Clear();
                     _prefetched.Clear();
                     _receiptIds.Clear();
+                    _pendingEarnNotices.Clear();
                 }
             }
         }

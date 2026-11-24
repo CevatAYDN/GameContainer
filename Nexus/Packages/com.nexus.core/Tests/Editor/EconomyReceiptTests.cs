@@ -404,6 +404,32 @@ namespace Nexus.Editor.Tests
 #if UNITY_EDITOR
         [Test]
 #endif
+        public void EarnOnce_NotifiesTheValidatorOnlyAfterTheCommit_AndExactlyOnceAcrossARetry() => NotifyAfterCommit(false);
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void EarnBigOnce_NotifiesTheValidatorOnlyAfterTheCommit_AndExactlyOnceAcrossARetry() => NotifyAfterCommit(true);
+
+        private static void NotifyAfterCommit(bool big)
+        {
+            var store = new InMemoryPlayerPrefsService();
+            var validator = new RecordingValidator();
+            using var economy = new EconomyService { PlayerPrefsService = store, NetworkValidator = validator };
+            bool Earn(string id) => big ? economy.EarnBigOnce("coin", new BigDouble(40), id, "why") : economy.EarnOnce("coin", 40, id, "why");
+            Require(Earn("ok") && validator.Earns.Count == 1 && validator.Earns[0] == (big, "40", "why"),
+                "a committed receipt earning notifies once, with its amount and reason");
+            store.FailNextSaves(1);
+            ExpectIO(() => Earn("retry"));
+            Require(validator.Earns.Count == 1, "an uncommitted earning must not reach the network validator");
+            Require(!Earn("retry") && validator.Earns.Count == 2 && validator.Earns[1] == (big, "40", "why"),
+                "the retry that makes it durable notifies once with the original amount");
+            Require(!Earn("retry") && Earn("next") && validator.Earns.Count == 3, "a notified earning is never sent again");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
         public Task LongRefundCompletedDuringWalletStaging_IsDeferredAndPersisted() => RefundDuringStaging(false);
 
 #if UNITY_EDITOR
@@ -461,6 +487,15 @@ namespace Nexus.Editor.Tests
         }
 
         private sealed class Clock : ITimeProvider { public float Now => 0; }
+
+        private sealed class RecordingValidator : INetworkBigEconomyValidator
+        {
+            public readonly List<(bool Big, string Amount, string Reason)> Earns = new List<(bool, string, string)>();
+            public Task<bool> ValidateSpendAsync(string currencyId, long amount, string reason) => Task.FromResult(true);
+            public Task ValidateEarnAsync(string currencyId, long amount, string reason) { Earns.Add((false, amount.ToString(), reason)); return Task.CompletedTask; }
+            public Task<bool> ValidateSpendBigAsync(string currencyId, BigDouble amount, string reason) => Task.FromResult(true);
+            public Task ValidateEarnBigAsync(string currencyId, BigDouble amount, string reason) { Earns.Add((true, amount.ToString(), reason)); return Task.CompletedTask; }
+        }
 
         private sealed class PendingValidator : INetworkBigEconomyValidator
         {

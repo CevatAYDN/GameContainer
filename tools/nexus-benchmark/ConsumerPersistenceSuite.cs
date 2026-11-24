@@ -31,6 +31,8 @@ namespace NexusBench
             Check(nameof(receipts.InvalidUtf16Receipt_IsRejectedBeforeAnyBalanceOrLedgerMutation), receipts.InvalidUtf16Receipt_IsRejectedBeforeAnyBalanceOrLedgerMutation);
             Check(nameof(receipts.StoreSetterReentry_AlsoRejectsNormalMutationsAndDisposal), receipts.StoreSetterReentry_AlsoRejectsNormalMutationsAndDisposal);
             Check(nameof(receipts.ThrowingStoreSetter_ReleasesTheGuard_AndDuplicateRetryConfirms), receipts.ThrowingStoreSetter_ReleasesTheGuard_AndDuplicateRetryConfirms);
+            Check(nameof(receipts.EarnOnce_NotifiesTheValidatorOnlyAfterTheCommit_AndExactlyOnceAcrossARetry), receipts.EarnOnce_NotifiesTheValidatorOnlyAfterTheCommit_AndExactlyOnceAcrossARetry);
+            Check(nameof(receipts.EarnBigOnce_NotifiesTheValidatorOnlyAfterTheCommit_AndExactlyOnceAcrossARetry), receipts.EarnBigOnce_NotifiesTheValidatorOnlyAfterTheCommit_AndExactlyOnceAcrossARetry);
             Check(nameof(receipts.LongRefundCompletedDuringWalletStaging_IsDeferredAndPersisted),
                 () => receipts.LongRefundCompletedDuringWalletStaging_IsDeferredAndPersisted().GetAwaiter().GetResult());
             Check(nameof(receipts.BigRefundCompletedDuringWalletStaging_IsDeferredAndPersisted),
