@@ -107,6 +107,18 @@ namespace Nexus.Ads.Tests
         }
 
         [Test]
+        public void AdMob_RealAppId_IsNeverWrittenIntoTheTrackedGmaAsset()
+        {
+            _settings.SelectedMediation = AdProviderKind.AdMob;
+            _settings.Release.AdMob.Android.AppKey = "ca-app-pub-1111111111111111~2222222222";
+            var probe = new FakeProbe().Installed(AdProviderKind.AdMob);
+            probe.AdMobAppId = "";
+            var step = AndroidSetup.Plan(_settings, AdsValidator.Tab.Release, probe, _catalog).First(s => s.id == "admob.appid");
+            Assert.AreEqual(SetupStatus.Done, step.status, "nothing for Prepare to write: the build writes the id");
+            StringAssert.Contains(AdsIdsFile.FileName, step.how);
+        }
+
+        [Test]
         public void Max_IsManualOnly_UntilItsProviderExists()
         {
             _settings.SelectedMediation = AdProviderKind.Max;

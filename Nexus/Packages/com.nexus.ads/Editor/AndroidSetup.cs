@@ -141,6 +141,9 @@ namespace Nexus.Ads.Editor
                 string actual = probe.AdMobSettingsAppId(AdPlatform.Android);
                 steps.Add(string.IsNullOrEmpty(wanted)
                     ? new SetupStep("admob.appid", SetupStatus.Manual, "App ID in the Google Mobile Ads settings asset", "enter the App ID on the " + tab + " tab first")
+                    : !AdMobSampleIds.IsSample(wanted)
+                    // a real id comes from NexusAdsIds.local.json and is written into the GMA asset by the build only; never into the tracked asset
+                    ? new SetupStep("admob.appid", SetupStatus.Done, "App ID in the Google Mobile Ads settings asset", "written at build time from " + AdsIdsFile.FileName)
                     : new SetupStep("admob.appid", actual == wanted ? SetupStatus.Done : SetupStatus.Pending, "App ID in the Google Mobile Ads settings asset",
                         actual == wanted ? wanted : "writes " + wanted + " (" + tab + " tab) to " + sdk.settingsAsset));
             }
