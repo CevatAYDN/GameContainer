@@ -167,7 +167,7 @@ namespace Nexus.Core
     /// can read process memory. Server-side validation remains required.
     /// </summary>
     [Preserve]
-    public sealed class SecureObservableFloat
+    public sealed class SecureObservableFloat : IReadOnlyObservableProperty<float>
     {
         private static readonly Func<Action<string>> StaticTamperAccessor = () => OnTamperDetected;
 
@@ -231,7 +231,7 @@ namespace Nexus.Core
     /// to strings, so this is NOT 0-GC (acceptable for low-frequency data).
     /// </summary>
     [Preserve]
-    public sealed class SecureObservableString
+    public sealed class SecureObservableString : IReadOnlyObservableProperty<string>
     {
         private static readonly Func<Action<string>> StaticTamperAccessor = () => OnTamperDetected;
 

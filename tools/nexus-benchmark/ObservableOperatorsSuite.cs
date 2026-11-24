@@ -23,6 +23,7 @@ namespace NexusBench
             failures += AssertPass("OP4. Dispose_DetachesFromEverySource_AndKeepsTheLastValue", DisposeDetaches);
             failures += AssertPass("OP5. ASelectorThatThrows_LeavesTheValue_AndOnCreationLeavesNoHandler", ThrowingSelector);
             failures += AssertPass("OP6. AMediatorsUnbind_DisposesADerivedPropertyItTracked", MediatorDisposesDerived);
+            failures += AssertPass("OP7. EverySecureObservable_IsAReadOnlyObservableProperty", SecureTypesAreReadOnlyProperties);
 
             if (failures == 0)
                 Console.WriteLine("\n[Operators] ALL DERIVED PROPERTY TESTS PASSED ✓");
@@ -49,6 +50,15 @@ namespace NexusBench
         private static bool Check(bool ok, string what)
         {
             if (!ok) Console.WriteLine("      " + what);
+            return ok;
+        }
+
+        // #451: Float and String lacked the interface their Int/Long/BigDouble siblings implement.
+        private static bool SecureTypesAreReadOnlyProperties()
+        {
+            object f = new SecureObservableFloat(1f), t = new SecureObservableString("a");
+            bool ok = Check(f is IReadOnlyObservableProperty<float>, "SecureObservableFloat is not an IReadOnlyObservableProperty<float>");
+            ok &= Check(t is IReadOnlyObservableProperty<string>, "SecureObservableString is not an IReadOnlyObservableProperty<string>");
             return ok;
         }
 
