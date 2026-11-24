@@ -275,6 +275,50 @@ namespace Nexus.Editor.Tests
             CollectionAssert.AreEqual(new[] { "review_key" }, changed);
         }
 
+        // Issue #449: a stored last-fetch time outside DateTime's range threw out of FetchAsync before its try.
+        [TestCase("-1")]
+        [TestCase("9223372036854775807")]
+        public async Task RemoteConfigUnreadableLastFetch_CountsAsNeverFetchedAndFetches(string stored)
+        {
+            const string lastFetchKey = "nexus.firebase.remote_config.last_fetch_utc_ticks";
+            string before = UnityEngine.PlayerPrefs.GetString(lastFetchKey, null);
+            var io = new RemoteConfigIo();
+            io.Service.ReadLastFetchUtc = new FirebaseRemoteConfigService().ReadLastFetchUtc; // the PlayerPrefs reader
+            using var test = Bind(io.Service);
+            try
+            {
+                UnityEngine.PlayerPrefs.SetString(lastFetchKey, stored);
+                await test.InitializeAsync();
+
+                Assert.That(await io.Service.FetchAsync(CancellationToken.None), Is.True);
+                Assert.That(io.FetchExpirations.Count, Is.EqualTo(1), "the corrupt time counted as never fetched, so the fetch went ahead");
+            }
+            finally
+            {
+                if (before == null) UnityEngine.PlayerPrefs.DeleteKey(lastFetchKey);
+                else UnityEngine.PlayerPrefs.SetString(lastFetchKey, before);
+            }
+        }
+
+        // Issue #449: a throwing Changed subscriber stopped the other subscribers, the remaining keys and the removal of dropped keys.
+        [Test]
+        public async Task RemoteConfigThrowingChangedSubscriber_DoesNotHideKeysFromTheRest()
+        {
+            var io = new RemoteConfigIo();
+            io.Values["a"] = "1";
+            io.Values["b"] = "1";
+            using var test = Bind(io.Service);
+            await test.InitializeAsync();
+            var heard = new List<string>();
+            io.Service.Changed += _ => throw new InvalidOperationException("subscriber bug");
+            io.Service.Changed += heard.Add;
+
+            io.NextValues = new Dictionary<string, string> { ["a"] = "2", ["c"] = "1" }; // a changed, c new, b removed
+            Assert.That(await io.Service.FetchAsync(CancellationToken.None), Is.True);
+
+            CollectionAssert.AreEquivalent(new[] { "a", "c", "b" }, heard);
+        }
+
         [Test]
         public async Task P03_CanceledToken_PreventsAllThreeDependencyChecks()
         {

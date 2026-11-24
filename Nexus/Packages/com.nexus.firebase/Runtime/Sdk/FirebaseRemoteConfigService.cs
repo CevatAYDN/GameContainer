@@ -113,6 +113,7 @@ namespace Nexus.Firebase.Sdk
             _disposed = true;
             _ready = false;
             _snapshot.Clear();
+            Changed = null;
         }
 
         private string Raw(string key)
@@ -138,21 +139,36 @@ namespace Nexus.Firebase.Sdk
                 _snapshot[key] = current;
                 if (notify && (!known || previous != current))
                 {
-                    Changed?.Invoke(key);
+                    RaiseChanged(key);
                 }
             }
             foreach (string key in removed)
             {
                 if (_disposed) return;
                 _snapshot.Remove(key);
-                if (notify) Changed?.Invoke(key);
+                if (notify) RaiseChanged(key);
+            }
+        }
+
+        // Subscribers are game code (an ads kill switch): one that throws must not hide the key from the rest
+        // or stop the comparison of the remaining keys (#449).
+        private void RaiseChanged(string key)
+        {
+            Action<string> handler = Changed;
+            if (handler == null) return;
+            foreach (Action<string> subscriber in handler.GetInvocationList())
+            {
+                try { subscriber(key); }
+                catch (Exception error) { NexusLog.WarnAlways($"[Firebase] A Remote Config Changed subscriber threw for '{key}': {error.GetType().Name}: {error.Message}"); }
             }
         }
 
         private static DateTime? LoadLastFetch()
         {
             string stored = PlayerPrefs.GetString(LastFetchKey, string.Empty);
+            // a stored value outside DateTime's range is unreadable: never fetched, not an exception out of FetchAsync (#449)
             return long.TryParse(stored, NumberStyles.Integer, CultureInfo.InvariantCulture, out long ticks)
+                && ticks >= DateTime.MinValue.Ticks && ticks <= DateTime.MaxValue.Ticks
                 ? new DateTime(ticks, DateTimeKind.Utc)
                 : (DateTime?)null;
         }
