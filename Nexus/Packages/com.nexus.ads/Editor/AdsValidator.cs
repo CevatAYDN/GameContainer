@@ -107,7 +107,7 @@ namespace Nexus.Ads.Editor
             }
         }
 
-        public static AdsValidationReport Validate(AdsSettings settings, Tab tab, AdPlatform platform, IProjectProbe probe, PlatformCatalog catalog)
+        public static AdsValidationReport Validate(AdsSettings settings, Tab tab, AdPlatform platform, IProjectProbe probe, PlatformCatalog catalog, bool inBuild = true)
         {
             if (settings == null) throw new ArgumentNullException(nameof(settings));
             if (probe == null) throw new ArgumentNullException(nameof(probe));
@@ -179,7 +179,7 @@ namespace Nexus.Ads.Editor
             if (kind != AdProviderKind.None)
             {
                 CheckKeys(settings, kind, platform, release, catalog, report);
-                CheckSdk(settings, kind, platform, release, probe, catalog, report);
+                CheckSdk(settings, kind, platform, release, probe, catalog, report, inBuild);
             }
             CheckChildren(settings, kind, probe, catalog, report);
             CheckProject(settings, kind, release, probe, report);
@@ -310,7 +310,12 @@ namespace Nexus.Ads.Editor
                 : new AdsCheck(id, CheckResult.Fail, "Android: " + string.Join("; ", open.ConvertAll(s => s.what)) + " missing; " + consequence + ".", "press Prepare Android in Nexus > Ads > Setup, or run AndroidSetup.PrepareCli."));
         }
 
-        private static void CheckSdk(AdsSettings settings, AdProviderKind kind, AdPlatform platform, bool release, IProjectProbe probe, PlatformCatalog catalog, AdsValidationReport report)
+        /// <summary>Outside a player build the tracked GMA asset is blank by design; the build writes the tab's App ID (from NexusAdsIds.local.json) into it. Blank in the tab too means the json is missing.</summary>
+        private static AdsCheck DeferredAppId(string tabAppId, bool failWhenBlank) => !string.IsNullOrWhiteSpace(tabAppId)
+            ? new AdsCheck("android.admob.appid", CheckResult.Warn, "the Google Mobile Ads settings asset is blank in git by design; its App ID is written into it at build time from " + AdsIdsFile.FileName + " (" + "tab: '" + tabAppId.Trim() + "').")
+            : new AdsCheck("android.admob.appid", failWhenBlank ? CheckResult.Fail : CheckResult.Warn, "the Google Mobile Ads settings asset is blank and the tab carries no AdMob App ID: " + AdsIdsFile.FileName + " is missing or has none; the build has nothing to write into it.", "create it with Nexus > Ads > Export Local Ids File (or fill the tab's AdMob App ID).");
+
+        private static void CheckSdk(AdsSettings settings, AdProviderKind kind, AdPlatform platform, bool release, IProjectProbe probe, PlatformCatalog catalog, AdsValidationReport report, bool inBuild)
         {
             if (probe.SdkInstalled(kind) && !probe.SdkViaUpm(kind))
                 report.Add(new AdsCheck("sdk.unitypackage", CheckResult.Warn, kind + "'s SDK is a .unitypackage import (found by assembly name): versionDefines cannot see it, so the provider package compiles only with the scripting define " + (catalog.Provider(kind)?.sdk?.define ?? "") + " set by hand.",
@@ -323,7 +328,9 @@ namespace Nexus.Ads.Editor
                 string appId = probe.AdMobSettingsAppId(platform);
                 var tab = release ? settings.Release : settings.Test;
                 string expected = tab.AdMob.For(platform).AppKey?.Trim();
-                if (appId == null)
+                if (!inBuild && appId != null && string.IsNullOrWhiteSpace(appId))
+                    report.Add(DeferredAppId(expected, true));
+                else if (appId == null)
                     report.Add(new AdsCheck("android.admob.appid", release ? CheckResult.Fail : CheckResult.Warn, "the Google Mobile Ads settings asset (Assets/GoogleMobileAds/Resources/GoogleMobileAdsSettings.asset) is missing; the plugin writes the App ID to the manifest from it.", "press Prepare Android in Nexus > Ads > Setup (it writes the tab's App ID), or enter it in Assets > Google Mobile Ads > Settings."));
                 else if (string.IsNullOrWhiteSpace(appId) || (!string.IsNullOrEmpty(expected) && appId.Trim() != expected))
                     report.Add(new AdsCheck("android.admob.appid", CheckResult.Fail, "the Google Mobile Ads settings asset carries '" + appId + "' but the " + (release ? "Release" : "Test") + " tab says '" + expected + "'; the manifest would start the SDK with the wrong app.", "press Prepare Android in Nexus > Ads > Setup (it writes the tab's App ID), or enter it in Assets > Google Mobile Ads > Settings."));
@@ -334,7 +341,9 @@ namespace Nexus.Ads.Editor
             {
                 // Google Mobile Ads beside another mediation (Google's consent form or a network adapter): its Android SDK stops the app at launch without an App ID (issue #63)
                 string appId = probe.AdMobSettingsAppId(platform);
-                if (string.IsNullOrWhiteSpace(appId))
+                if (!inBuild && string.IsNullOrWhiteSpace(appId))
+                    report.Add(DeferredAppId((release ? settings.Release : settings.Test).AdMob.For(platform).AppKey, true));
+                else if (string.IsNullOrWhiteSpace(appId))
                     report.Add(new AdsCheck("android.admob.appid", CheckResult.Fail, "Google Mobile Ads is in the project beside " + kind + " but its settings asset (Assets/GoogleMobileAds/Resources/GoogleMobileAdsSettings.asset) carries no Android App ID; the SDK stops the app at launch without one.",
                         "enter the game's AdMob App ID in Assets > Google Mobile Ads > Settings; Google's consent form shows the message published for that App ID under Privacy & messaging in AdMob."));
                 else if (release && AdMobSampleIds.IsSample(appId))
@@ -479,7 +488,7 @@ namespace Nexus.Ads.Editor
             // Enum.TryParse read "-adsPlatform 1" as Ios: a number is not a platform name (#198)
             if (!TryParseName(platformArg, out AdPlatform platform)) { Debug.LogError("[Nexus Ads] -adsPlatform Android|Ios, not '" + platformArg + "'"); return 2; }
             if (settings == null) { Debug.LogError("[Nexus Ads] no Resources/" + AdsSettings.ResourceName + " asset"); return 2; }
-            var report = Validate(settings, tab, platform, probe, catalog);
+            var report = Validate(settings, tab, platform, probe, catalog, inBuild: false);
             WriteReport(report, reportPath);
             Debug.Log(report.Summary() + "\n[Nexus Ads] report: " + Path.GetFullPath(reportPath));
             return report.Passed ? 0 : 1;

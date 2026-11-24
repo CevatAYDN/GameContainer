@@ -367,6 +367,33 @@ namespace Nexus.Ads.Tests
             Assert.AreEqual(CheckResult.Pass, Check(Run(AdsValidator.Tab.Release), "android.admob.appid").Result);
         }
 
+        // Outside a build the tracked GMA asset is blank by design (ids live in NexusAdsIds.local.json); in a build it must carry the id.
+        [Test]
+        public void BlankGmaAsset_OutsideABuild_WarnsWhenTheTabSuppliesTheAppId_ButFailsInABuild()
+        {
+            WithGoogleConsent("");
+            _settings.Release.AdMob.Android.AppKey = "ca-app-pub-1111111111111111~2222222222";
+            var outside = Check(AdsValidator.Validate(_settings, AdsValidator.Tab.Release, AdPlatform.Android, _probe, _catalog, inBuild: false), "android.admob.appid");
+            Assert.AreEqual(CheckResult.Warn, outside.Result);
+            StringAssert.Contains(AdsIdsFile.FileName, outside.message);
+            Assert.AreEqual(CheckResult.Fail, Check(Run(AdsValidator.Tab.Release), "android.admob.appid").Result, "in a build a blank asset stops the build");
+
+            _settings.SelectedMediation = AdProviderKind.AdMob;
+            Assert.AreEqual(CheckResult.Warn, Check(AdsValidator.Validate(_settings, AdsValidator.Tab.Release, AdPlatform.Android, _probe, _catalog, inBuild: false), "android.admob.appid").Result);
+            Assert.AreEqual(CheckResult.Fail, Check(Run(AdsValidator.Tab.Release), "android.admob.appid").Result);
+        }
+
+        [Test]
+        public void BlankGmaAsset_OutsideABuild_BlankTabToo_FailsInRelease_NamingTheMissingFile()
+        {
+            WithGoogleConsent("");
+            var check = Check(AdsValidator.Validate(_settings, AdsValidator.Tab.Release, AdPlatform.Android, _probe, _catalog, inBuild: false), "android.admob.appid");
+            Assert.AreEqual(CheckResult.Fail, check.Result);
+            StringAssert.Contains(AdsIdsFile.FileName, check.message);
+            _settings.SelectedMediation = AdProviderKind.AdMob;
+            Assert.AreEqual(CheckResult.Fail, Check(AdsValidator.Validate(_settings, AdsValidator.Tab.Release, AdPlatform.Android, _probe, _catalog, inBuild: false), "android.admob.appid").Result);
+        }
+
         [Test]
         public void GoogleSampleIds_OnTheReleaseTab_Fail()
         {

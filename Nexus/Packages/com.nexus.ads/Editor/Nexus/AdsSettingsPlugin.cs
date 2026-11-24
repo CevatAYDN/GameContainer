@@ -112,8 +112,8 @@ namespace Nexus.Ads.Editor
             var validation = AdsViews.Card(scroll, NexusLang.Get("ads_validation"));
             var report = new VisualElement();
             var row = AdsViews.Row(validation);
-            row.Add(NexusEditorStyles.CreateButton(NexusLang.Get("ads_validate_test"), () => AdsViews.ShowReport(report, AdsValidator.Validate(settings, AdsValidator.Tab.Test, _platform, probe, catalog)), NexusEditorStyles.BtnBlue));
-            row.Add(NexusEditorStyles.CreateButton(NexusLang.Get("ads_validate_release"), () => AdsViews.ShowReport(report, AdsValidator.Validate(settings, AdsValidator.Tab.Release, _platform, probe, catalog)), NexusEditorStyles.BtnBlue));
+            row.Add(NexusEditorStyles.CreateButton(NexusLang.Get("ads_validate_test"), () => AdsViews.ShowReport(report, AdsValidator.Validate(settings, AdsValidator.Tab.Test, _platform, probe, catalog, inBuild: false)), NexusEditorStyles.BtnBlue));
+            row.Add(NexusEditorStyles.CreateButton(NexusLang.Get("ads_validate_release"), () => AdsViews.ShowReport(report, AdsValidator.Validate(settings, AdsValidator.Tab.Release, _platform, probe, catalog, inBuild: false)), NexusEditorStyles.BtnBlue));
             validation.Add(report);
 
             scroll.Bind(so);

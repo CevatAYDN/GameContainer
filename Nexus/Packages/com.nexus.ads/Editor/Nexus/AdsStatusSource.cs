@@ -26,7 +26,7 @@ namespace Nexus.Ads.Editor
             if (settings == null) return new NexusStatusProblem[0];
             var tab = EditorUserBuildSettings.development ? AdsValidator.Tab.Test : AdsValidator.Tab.Release;
             var platform = target == BuildTarget.iOS ? AdPlatform.Ios : AdPlatform.Android;
-            return Problems(AdsValidator.Validate(settings, tab, platform, new UnityProjectProbe(), PlatformCatalog.Load()));
+            return Problems(AdsValidator.Validate(settings, tab, platform, new UnityProjectProbe(), PlatformCatalog.Load(), inBuild: false));
         }
 
         /// <summary>A failed check is an error and a warned one a warning, each with its fix and the Ads section's Setup tab.</summary>

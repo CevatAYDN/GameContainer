@@ -1,5 +1,12 @@
 # Changelog
 
+## Validator accepts the blank GMA asset outside a build
+
+- `AdsValidator.Validate(..., bool inBuild = true)`: with `inBuild: false` (RunCli, Status tab, Ads tab buttons) a blank
+  Google Mobile Ads asset App ID is a Warn ("written at build time from NexusAdsIds.local.json") when the tab supplies the
+  AdMob App ID; blank in both places stays Fail in Release and names the missing json. The pre-build guard keeps the default
+  (`inBuild: true`): blank, wrong or sample-in-release still fails. `RunCli` already validates the overlaid `AdsSettings.Load()`.
+
 ## Ad ids move out of git into `NexusAdsIds.local.json`
 
 - Games keep `NexusAdsSettings.asset` tracked with the AdMob app/unit ids, LevelPlay app keys and `TestDeviceIds` empty;
