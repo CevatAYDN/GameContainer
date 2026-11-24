@@ -8,6 +8,10 @@ namespace Nexus.Ads.Unity
     public static class UsPrivacyStore
     {
         /// <summary>The stored string for <paramref name="key"/>, or null (also in the editor and on any read failure).</summary>
+#if UNITY_ANDROID && !UNITY_EDITOR
+        private static bool _warned;
+#endif
+
         public static string Read(string key)
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -22,6 +26,8 @@ namespace Nexus.Ads.Unity
             }
             catch (System.Exception e)
             {
+                if (_warned) return null;
+                _warned = true;
                 Debug.LogWarning("[Nexus Ads] consent: could not read " + key + " from SharedPreferences, no do_not_sell is forwarded: " + e.Message);
                 return null;
             }

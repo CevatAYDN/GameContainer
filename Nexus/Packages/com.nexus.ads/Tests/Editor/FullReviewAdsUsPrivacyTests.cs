@@ -11,7 +11,7 @@ namespace Nexus.Editor.Tests
     /// <summary>
     /// Issue #444: Google's UMP US-states answer (the IAB GPP string it stores) becomes LevelPlay's do_not_sell. Engine-free: the host
     /// harness runs these (the pre-commit hook) and the editor runs them as NUnit. Section strings are built here bit by bit from the
-    /// IAB field tables, not copied from the decoder.
+    /// IAB field tables (Global-Privacy-Platform repository), independently of the decoder's code.
     /// </summary>
     public sealed class FullReviewAdsUsPrivacyTests
     {
@@ -121,6 +121,15 @@ namespace Nexus.Editor.Tests
             Require(UsPrivacySignal.DoNotSell(key => key == "IABUSPrivacy_String" ? "junk" : null) == null, "malformed");
             var both = Store("7", (7, UsNat(2, 2)));
             Require(UsPrivacySignal.DoNotSell(key => key == "IABUSPrivacy_String" ? "1YYN" : both(key)) == false, "GPP wins over the older string");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
+        public void AnUnsupportedUsnatV3_FallsBackToTheUsPrivacyString()
+        {
+            var gpp = Store("7", (7, UsNat(2, 2, version: 3)));
+            Require(UsPrivacySignal.DoNotSell(key => key == "IABUSPrivacy_String" ? "1YYN" : gpp(key)) == true, "v3 undecoded, the US string opts out");
         }
 
         private sealed class FakeFlow : IConsentFlow

@@ -148,7 +148,7 @@ ironSource Ads and Unity Ads behind LevelPlay do not. UMP stores the IAB GPP ans
 NSUserDefaults (iOS): `IABGPP_GppSID` and `IABGPP_[SectionID]_String`. `UsPrivacySignal` (`com.nexus.ads`, engine-free) decodes
 `SaleOptOut` / `SharingOptOut` of usnat (section 7, versions 1 and 2) and usca (section 8) and, with no such section, the older
 `IABUSPrivacy_String`. An opt-out (value 1) sends `true`; a US section with no opt-out sends `false`; no US section, another state
-section or a usnat version 3 string sends nothing. `UsPrivacySync` applies it when UMP answers (before LevelPlay initializes) and again
+section or a usnat version 3 string gives no GPP decision, and then the `IABUSPrivacy_String` decides if one is stored, else nothing is sent. `false` is sent on purpose (`SetCCPA(false)`) when a US section says no opt-out, so an earlier opt-out is lifted. `UsPrivacySync` applies it when UMP answers (before LevelPlay initializes) and again
 whenever the flow raises `Changed` (status update, form, privacy options) with a different answer. With `GameFlow` nothing of this runs:
 `GameConsent.Register(..., LevelPlayProvider.ApplyConsent)` keeps sending `SetDoNotSell(!accepted)`. Not run on a device: the iOS read
 goes through `PlayerPrefs`, which should be NSUserDefaults' standard domain, and is unconfirmed.

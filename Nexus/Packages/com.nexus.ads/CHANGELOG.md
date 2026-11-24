@@ -5,7 +5,7 @@
 - With `Consent: GoogleUmp` and LevelPlay, `AdsBootstrap` reads the IAB GPP answer UMP stores (`IABGPP_GppSID`,
   `IABGPP_[SectionID]_String`, else `IABUSPrivacy_String`) through `UsPrivacySignal` and sends LevelPlay `do_not_sell`
   (`LevelPlayProvider.SetDoNotSell`) when UMP answers and whenever its answer changes (`UsPrivacySync`, `AdsBootstrap.DoNotSellSink`).
-  Decoded: usnat v1/v2 (7) and usca (8) `SaleOptOut` / `SharingOptOut`; other state sections and usnat v3 send nothing.
+  Decoded: usnat v1/v2 (7) and usca (8) `SaleOptOut` / `SharingOptOut`; other state sections and usnat v3 give no GPP decision (`IABUSPrivacy_String` decides if stored, else nothing is sent). A US section with no opt-out sends `false` on purpose.
   `Consent: GameFlow` is unchanged (`ApplyConsent`). New public: `UsPrivacySignal`, `UsPrivacySync`, `UsPrivacyStore`,
   `AdsBootstrap.DoNotSellSink`. Not run on a device (iOS reads the key through `PlayerPrefs`, unconfirmed).
 

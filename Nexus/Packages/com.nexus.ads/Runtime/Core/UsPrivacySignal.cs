@@ -5,7 +5,7 @@ namespace Nexus.Ads
     /// <summary>
     /// The US-state sale/sharing opt-out Google's UMP writes (issue #444), as a LevelPlay <c>do_not_sell</c> decision. UMP stores the IAB
     /// Global Privacy Platform (GPP) answer in SharedPreferences (Android) / NSUserDefaults (iOS) under the keys of the GPP CMP API spec
-    /// (Core/CMP API Specification.md, "Storage"): <c>IABGPP_GppSID</c> lists the section ids joined by "_", and <c>IABGPP_[SectionID]_String</c>
+    /// (https://github.com/InteractiveAdvertisingBureau/Global-Privacy-Platform, Core/CMP API Specification.md, "Storage"): <c>IABGPP_GppSID</c> lists the section ids joined by "_", and <c>IABGPP_[SectionID]_String</c>
     /// holds each section. The older <c>IABUSPrivacy_String</c> ("1YNN") is read only when no GPP US section decides.
     /// </summary>
     public static class UsPrivacySignal
@@ -24,6 +24,8 @@ namespace Nexus.Ads
             return FromGpp(store(SectionIdsKey), id => store(SectionKey(id))) ?? FromUsPrivacyString(store(UsPrivacyKey));
         }
 
+        // Field tables: .../Sections/US-National (usnat) and .../Sections/US-States/CA (usca) in the same repository. Values: 0 not applicable,
+        // 1 opted out, 2 did not opt out. An unsupported section gives no GPP decision here; DoNotSell then falls back to IABUSPrivacy_String.
         // shortcut: only usnat (7, version 1 and 2) and usca (8) are decoded; the other state sections (9 usva ... 23) have their own
         // offsets and usnat version 3 (MSPA 5th amendment, 2026-11) replaces SaleOptOut/SharingOptOut with MspaOptOut, which no CMP writes
         // yet. Those give no decision (null), never a guess. Add a section when a game's UMP message writes it.
