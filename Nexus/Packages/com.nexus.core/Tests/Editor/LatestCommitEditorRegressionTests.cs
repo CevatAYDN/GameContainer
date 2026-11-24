@@ -194,6 +194,8 @@ namespace Nexus.Editor.Tests
         [UnityTest]
         public IEnumerator MenuCreation_ConfiguresDataAndHierarchyBeforeAwake()
         {
+            // a consumer project opens its own game scene, whose roots and ads would start in Play Mode and log errors (#445)
+            UnityEditor.SceneManagement.EditorSceneManager.NewScene(UnityEditor.SceneManagement.NewSceneSetup.EmptyScene, UnityEditor.SceneManagement.NewSceneMode.Single);
             yield return new EnterPlayMode();
             var data = ScriptableObject.CreateInstance<ContextData>();
             data.ScopeTag = "EditorMenuRegression";

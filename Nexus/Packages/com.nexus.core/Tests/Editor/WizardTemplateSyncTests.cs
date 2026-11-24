@@ -127,6 +127,7 @@ namespace Nexus.Editor.Tests
             try
             {
                 NexusSetupWizard.WriteGeneratedFiles(tempRoot);
+                bool hasCanonicalSamples = Directory.Exists(GetCanonicalPath(""));
 
                 foreach (var (relativePath, content) in NexusSetupWizard.GeneratedFiles())
                 {
@@ -138,6 +139,8 @@ namespace Nexus.Editor.Tests
                     Assert.AreEqual(Normalize(content.Trim()), written,
                         $"Written file '{relativePath}' differs from its template.");
 
+                    // the Game/Samples dogfood example exists only in the development project; a consumer running this package as a testable has none (#445)
+                    if (!hasCanonicalSamples) continue;
                     string canonicalPath = GetCanonicalPath(relativePath);
                     Assert.IsTrue(File.Exists(canonicalPath),
                         $"Generated file '{relativePath}' has no canonical counterpart at '{canonicalPath}'. " +
