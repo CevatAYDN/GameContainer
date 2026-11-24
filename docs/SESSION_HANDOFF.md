@@ -45,7 +45,7 @@ Evidence, the Windows re-run and what is still not run (the screen on a device) 
 "Game-drawn consent flow". The optional parts are #431 (per-platform `Consent`) and #432 (fallback for a flow that never
 answers; waits for the owner's policy decision). Wickling re-pins to the commit that carries #433.
 
-## Current continuation — closure follow-up
+## Earlier continuation — closure follow-up
 
 **Framework issue state:** #100, #418 and #420 were closed with scoped evidence comments;
 the final GitHub open-issue query returned an empty list. All eight existing consumer
