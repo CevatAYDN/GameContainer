@@ -1,6 +1,17 @@
 # Session handoff
 
-## Current continuation — 2026-11-24 (game re-pin)
+## Current continuation — 2026-11-24 (audit fixes)
+
+An external audit was checked against the code; its verified defects became #447-#457. #447, #448, #449 and #451-#456
+are fixed, reviewed twice and pushed (`9762a194..b812b1f4`, gates in `RELEASE_GATES.md`, top); all of them are closed. The refuted audit claims
+are listed in `Nexus/artifacts/review-handoff-20261124.md`, so a later audit does not reopen them. Still open:
+- #450: measured. There is no cap on the number of receipts, because the README promises lifetime retention. The fix to make is to cache the encoded receipt segment.
+- #457: iOS device checks, asked of the games.
+- #436: a comment notes that `InfoPlist.strings` should be merged, not overwritten. The four games use their own iOS post-process, so it does not touch them.
+
+The four games pin `8d5fb5b9`, and their re-pin to `b812b1f4` is Gigawatt#12, Wickling#14, ChipCrisis#26 and Formatron#17. A build that is in App Review is not changed: the re-pin goes into the next upload.
+
+## Earlier continuation — 2026-11-24 (game re-pin)
 
 All four games were re-pinned to `46aa72b6`, and each game's `main` (Android) was fast-forwarded to its `main-ios` (iOS):
 Formatron `b0122e2`, ChipCrisis `441dd074`, Wickling `9807ff1`, Gigawatt `92c5b4d`. This was done while ChipCrisis build 5
