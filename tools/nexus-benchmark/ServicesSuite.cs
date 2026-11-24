@@ -142,6 +142,20 @@ namespace NexusBench
         public void HideBanner() => Calls.Add("hideBanner");
     }
 
+    public sealed class SvcInfoIapAdapter : IIapStoreAdapter, IIapStoreInfoAdapter
+    {
+        public int Initializes;
+        public event Action Changed;
+        public bool IsAvailable => Initializes > 0;
+        public bool OwnershipKnown => true;
+        public string GetLocalizedPrice(string productId) => null;
+        public void RaiseChanged() => Changed?.Invoke();
+        public void Initialize(List<ProductDefinition> products, Action<bool> onInitialized) { Initializes++; onInitialized?.Invoke(true); }
+        public void Purchase(string productId, Action<bool, string> onComplete) => onComplete?.Invoke(true, productId);
+        public void Restore(Action<bool> onComplete) => onComplete?.Invoke(true);
+        public bool IsOwned(string productId) => false;
+    }
+
     public sealed class SvcRecordingIapAdapter : IIapStoreAdapter
     {
         public readonly List<string> Calls = new();
@@ -1422,6 +1436,19 @@ namespace NexusBench
                 string unpriced = iap.GetLocalizedPrice("vip_1mo");
                 Check("D5b. Unpriced_Product_Shows_No_Price", iap.GetProduct("vip_1mo").PriceString == null && unpriced == null,
                     $"catalog={iap.GetProduct("vip_1mo").PriceString ?? "null"} localized={unpriced ?? "null"}");
+
+                // D5c (issue #453): after Dispose SetStoreAdapter stored the new adapter, started it and subscribed to it, and
+                // nothing disposed it later (a store connection could stay open). It is refused, as AdService refuses.
+                var disposedIap = new IapService();
+                disposedIap.Dispose();
+                var lateStore = new SvcInfoIapAdapter();
+                int lateChanged = 0;
+                disposedIap.StoreChanged += () => lateChanged++;
+                bool refused = false;
+                try { disposedIap.SetStoreAdapter(lateStore); } catch (ObjectDisposedException) { refused = true; }
+                lateStore.RaiseChanged();
+                Check("D5c. SetStoreAdapter_After_Dispose_Is_Refused_And_Not_Started", refused && lateStore.Initializes == 0 && lateChanged == 0,
+                    $"refused={refused} initializes={lateStore.Initializes} storeChanged={lateChanged} (expected true/0/0)");
 
                 // D6: no adapter → graceful failure, no throw (P0.2 fix).
                 bool ok = true; string msg = null;

@@ -68,6 +68,7 @@ namespace Nexus.Core.Services
         private IIapStoreAdapter _adapter;
         // The adapter whose Initialize answered true: a store-info-less adapter is available and its ownership known only then (#183)
         private IIapStoreAdapter _startedAdapter;
+        private bool _disposed; // under _adapterLock, as AdService's _disposeState (#392): a disposed service takes no adapter (#453)
         public event Action StoreChanged;
         private readonly Action _forwardStoreChanged;
         // The game's handlers. The service subscribes to the adapter only while the game has one, so an adapter can tell that
@@ -111,6 +112,7 @@ namespace Nexus.Core.Services
 
         /// <summary>Sets the store and starts it with the registered catalog. The adapter it replaces is disposed when it is
         /// <see cref="IDisposable"/> (issue #118); setting the same adapter again only starts it again.</summary>
+        /// <exception cref="ObjectDisposedException">The service is disposed (as <c>AdService.SetAdapter</c>): the adapter is neither stored nor started (#453).</exception>
         public void SetStoreAdapter(IIapStoreAdapter adapter)
         {
             IIapStoreAdapter toInitialize;
@@ -122,17 +124,19 @@ namespace Nexus.Core.Services
             IIapStoreAdapter previous;
             lock (_adapterLock)
             {
+                if (_disposed) throw new ObjectDisposedException(nameof(IapService));
                 previous = _adapter;
                 _adapter = adapter;
                 _startedAdapter = null;
                 toInitialize = adapter;
                 if (previous is IIapUnrequestedPurchaseAdapter previousUnrequested) previousUnrequested.UnrequestedPurchase -= _forwardUnrequested;
                 if (_unrequested != null && adapter is IIapUnrequestedPurchaseAdapter unrequested) unrequested.UnrequestedPurchase += _forwardUnrequested;
+                // under the lock, so a concurrent Dispose cannot leave this subscription behind (#453)
+                if (previous is IIapStoreInfoAdapter previousInfo) previousInfo.Changed -= _forwardStoreChanged;
+                if (adapter is IIapStoreInfoAdapter info) info.Changed += _forwardStoreChanged;
             }
-            if (previous is IIapStoreInfoAdapter previousInfo) previousInfo.Changed -= _forwardStoreChanged;
             // a replaced adapter kept handling the store's purchases and confirmed them beside the live one (issue #118)
             if (previous is IDisposable replaced && !ReferenceEquals(previous, adapter)) replaced.Dispose();
-            if (adapter is IIapStoreInfoAdapter info) info.Changed += _forwardStoreChanged;
             // Initialize OUTSIDE the lock: store SDKs may block or re-enter this service
             // (e.g. invoke the callback synchronously), and holding the lock across that
             // would deadlock any other caller.
@@ -296,9 +300,13 @@ namespace Nexus.Core.Services
             IIapStoreAdapter adapter;
             lock (_adapterLock)
             {
+                _disposed = true;
                 adapter = _adapter;
                 _adapter = null;
+                _startedAdapter = null;
+                _unrequested = null;
             }
+            StoreChanged = null;
             if (adapter is IIapStoreInfoAdapter info) info.Changed -= _forwardStoreChanged;
             if (adapter is IIapUnrequestedPurchaseAdapter unrequested) unrequested.UnrequestedPurchase -= _forwardUnrequested;
             if (adapter is IDisposable disposable)
