@@ -137,6 +137,8 @@ namespace Nexus.Core.Services
             }
             // a replaced adapter kept handling the store's purchases and confirmed them beside the live one (issue #118)
             if (previous is IDisposable replaced && !ReferenceEquals(previous, adapter)) replaced.Dispose();
+            // The replaced adapter's Dispose can dispose this service or install another adapter (as AdService.SetAdapter checks).
+            lock (_adapterLock) { if (_disposed || !ReferenceEquals(_adapter, adapter)) return; }
             // Initialize OUTSIDE the lock: store SDKs may block or re-enter this service
             // (e.g. invoke the callback synchronously), and holding the lock across that
             // would deadlock any other caller.

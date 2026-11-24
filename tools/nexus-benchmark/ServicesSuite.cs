@@ -175,6 +175,17 @@ namespace NexusBench
         public bool IsOwned(string productId) => Owned;
     }
 
+    /// <summary>Store adapter whose Dispose runs a callback (a re-entrant Dispose of the service, #453).</summary>
+    public sealed class SvcDisposeHookIapAdapter : IIapStoreAdapter, IDisposable
+    {
+        public Action OnDispose;
+        public void Dispose() => OnDispose?.Invoke();
+        public void Initialize(List<ProductDefinition> products, Action<bool> onInitialized) => onInitialized?.Invoke(true);
+        public void Purchase(string productId, Action<bool, string> onComplete) => onComplete?.Invoke(false, null);
+        public void Restore(Action<bool> onComplete) => onComplete?.Invoke(false);
+        public bool IsOwned(string productId) => false;
+    }
+
     /// <summary>Audio root provider that keeps its root across service lifetimes (the interface default ReleaseRoot, #302).</summary>
     public sealed class SvcKeptAudioRoot : IAudioRootProvider
     {
@@ -1474,6 +1485,16 @@ namespace NexusBench
                 bool availableWithoutAdapter = iap.IsStoreAvailable;
                 Check("D6. No_Adapter_Graceful_Failure", purchaseFailed && restoreFailed && logged && !ownedWithoutAdapter && !availableWithoutAdapter,
                     $"ok={ok} msg={msg} restoreOk={restoreOk} logged={logger.Messages.Count} owned={ownedWithoutAdapter} available={availableWithoutAdapter}");
+
+                // D5d (issue #453 follow-up): the replaced adapter's Dispose disposes this service; the new adapter was stored
+                // before that and must not be started once the service no longer owns it.
+                var reentrantIap = new IapService();
+                var reentrantPrevious = new SvcDisposeHookIapAdapter { OnDispose = reentrantIap.Dispose };
+                reentrantIap.SetStoreAdapter(reentrantPrevious);
+                var droppedStore = new SvcInfoIapAdapter();
+                reentrantIap.SetStoreAdapter(droppedStore);
+                Check("D5d. SetStoreAdapter_Does_Not_Start_An_Adapter_A_Reentrant_Dispose_Dropped", droppedStore.Initializes == 0,
+                    $"initializes={droppedStore.Initializes} (expected 0)");
 
                 // D6r (#198): a release player's logger drops LogWarning, so a failure must still reach Unity's log.
                 logger.IsEnabled = false;
