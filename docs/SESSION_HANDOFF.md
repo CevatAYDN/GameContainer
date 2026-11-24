@@ -1,6 +1,18 @@
 # Session handoff
 
-## Current continuation — 2026-11-24 (#444)
+## Current continuation — 2026-11-24 (game re-pin)
+
+All four games were re-pinned to `46aa72b6`, and each game's `main` (Android) was fast-forwarded to its `main-ios` (iOS):
+Formatron `b0122e2`, ChipCrisis `441dd074`, Wickling `9807ff1`, Gigawatt `92c5b4d`. This was done while ChipCrisis build 5
+and Gigawatt 10006 were in App Review, which the earlier rule ("games re-pin one at a time, not while one is under review")
+forbade. It was the owner-requested consistency pass. If review rejects a build, fix it from the commit that build was made
+from, not from the tip.
+
+Cross-game ads standard: LevelPlay 9.5.1 with native 9.8.0, UnityAds adapter 5.18.0.0, AdMob adapter 5.35.0.0, identical
+`LevelPlayVersions.json` (blob `c9c80ed`); UMP consent; rating G; Test tab = Google samples.
+Open: #445 (two core editor tests fail inside Gigawatt), #443, #428, #434-#436 device proofs. No device run was made.
+
+## Earlier continuation — 2026-11-24 (#444)
 
 #444 is done: with `Consent: GoogleUmp`, Google's US-state opt-out (GPP usnat v1/v2, usca; `IABUSPrivacy_String` as fallback) reaches
 LevelPlay `do_not_sell` when UMP answers and when its answer changes (`7bb6e960`, review fixes `fed7d746`; evidence in
