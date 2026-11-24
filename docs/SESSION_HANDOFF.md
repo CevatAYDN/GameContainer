@@ -18,7 +18,7 @@ Open: #445 (two core editor tests fail inside Gigawatt), #443, #428, #434-#436 d
 LevelPlay `do_not_sell` when UMP answers and when its answer changes (`7bb6e960`, review fixes `fed7d746`; evidence in
 `RELEASE_GATES.md`, top). Games re-pin to the pushed SHA that carries these commits, one at a time. Not run on a device.
 
-## Current continuation — 2026-11-23 (#443)
+## Earlier continuation — 2026-11-23 (#443)
 
 Guideline 5.6 follow-up (#443). The ten Mac commits `fc5bcc60..60715202` and the four local fixes (`48d35a81`,
 `da3d367a`, `9786c669`, `9d845a9d`) are verified on Windows (`RELEASE_GATES.md`, top) and pushed to `origin/main`
