@@ -169,7 +169,16 @@ namespace Nexus.Ads.Unity
         [Tooltip("Networks the game-drawn consent screen (Consent: GameFlow) names besides ironSource / LevelPlay and Unity Ads: one per enabled LevelPlay network")]
         public List<string> ConsentPartners = new List<string>();
 
-        public static AdsSettings Load() => Resources.Load<AdsSettings>(ResourceName);
+        /// <summary>The settings asset; in the editor its empty ids are filled in memory from <c>NexusAdsIds.local.json</c> (the asset is never written).</summary>
+        public static AdsSettings Load()
+        {
+            var asset = Resources.Load<AdsSettings>(ResourceName);
+#if UNITY_EDITOR
+            return asset == null ? null : AdsIdsFile.OverlayInMemory(asset);
+#else
+            return asset;
+#endif
+        }
 
         /// <summary>The consent flow a platform runs: its own <see cref="AndroidConsent"/> or <see cref="IosConsent"/>, or <see cref="Consent"/> when that is Shared (issue #431).</summary>
         public ConsentSource ConsentFor(AdPlatform platform)

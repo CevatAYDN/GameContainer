@@ -204,6 +204,13 @@ adlandırır (`sdk.unitypackage`); UPM yolu tercih edilir.
 | Unity LevelPlay | Yok. Editör sahte modu `"editor"` anahtarını kullanır; yalnızca yerleşimi kapsar. | Panel, Settings > Test devices, reklam kimliğiyle; ağ ataması "bir saat içinde sıfırlanır". | Unity kayıt defteri `com.unity.services.levelplay` (sayfada 9.5.1; GitHub deposunun son etiketi ve sürümü 2026-01-20 tarihli 9.3.0, yani kayıt defteri GitHub'ın önünde) ya da `UnityLevelPlay_v9.5.1.unitypackage`. Ad alanı `Unity.Services.LevelPlay`, `LevelPlay.Init(appKey)`. |
 | AppLovin MAX | Yok. Test reklamları test modu açıkken hesabın SDK anahtarı ve birimleriyle gelir. | `MaxSdk.InitializeSdk()` öncesinde `MaxSdk.SetTestDeviceAdvertisingIdentifiers(string[])` ya da Mediation Debugger. | `https://unity.packages.applovin.com/` kapsamlı kayıt defteri, kapsamlar `com.applovin.mediation.ads`, `com.applovin.mediation.adapters`, `com.applovin.mediation.dsp` (eklentinin `AppLovinPluginMigrationHelper.cs` dosyasından, 2026-09-15 tarihli 8.6.6 sürümü), AppLovin'in yükleyici paketiyle kurulur; ya da `.unitypackage`. SDK anahtarı AppLovin > Integration Manager'da. |
 
+### Kimlikler nerede durur
+
+Gerçek reklam kimlikleri (AdMob uygulama ve birim kimlikleri, LevelPlay app key'leri, test cihaz kimlikleri) asla
+commit'lenmez. Takip edilen `Assets/Resources/NexusAdsSettings.asset` bu alanları boş tutar; gerçek değerler Unity proje
+kökündeki takip edilmeyen `NexusAdsIds.local.json` dosyasındadır (oyunun `.gitignore` dosyasına ekleyin). Dosya yoksa release
+build başarısız olur (`AdsIdsOverlay.Apply(true)`); README'de "Ad ids stay out of git" bölümüne bakın.
+
 ## Kayıt linkleri
 
 Hepsi okunma tarihinde yanıt verdi (aksi yazılmadıkça HTTP 200).

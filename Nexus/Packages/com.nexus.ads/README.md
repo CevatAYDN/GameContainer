@@ -419,6 +419,20 @@ bad arguments). `-adsTab` reads `Test` or `Release` in any case, here and in `An
 | `appads.lines` | warn: a detected network has no app-ads.txt line that starts with its ad system domain (`google.com` for AdMob, `unity.com` or `unity3d.com` for Unity Ads, ...) |
 | `manifest.pins` | fail: the family's git-URL entries point at different commits |
 
+## Ad ids stay out of git
+
+Real ad ids (AdMob app and unit ids, LevelPlay app keys, `TestDeviceIds`) never live in a game's repository. The game keeps
+`Assets/Resources/NexusAdsSettings.asset` tracked with those fields **empty**; the real values come from the untracked
+`NexusAdsIds.local.json` at the Unity project root (next to `Assets/`). Add `NexusAdsIds.local.json` to the game's `.gitignore`.
+
+File (JsonUtility; the same shape as the Test and Release tabs): `{ "Test": { "LevelPlay"|"Max"|"AdMob": { "Android"|"Ios": { "AppKey", "RewardedUnitId", "InterstitialUnitId", "BannerUnitId" } } }, "Release": { ... }, "TestDeviceIds": [ ... ] }`.
+
+- Once per game: **Nexus > Ads > Export Local Ids File** (`Nexus.Ads.Editor.AdsIdsOverlay.ExportLocalFile()`) writes the asset's current ids to the file, then **Nexus > Ads > Scrub Asset Ids** (`AdsIdsOverlay.ScrubAsset()`, refuses without the file) blanks them in the asset; commit the scrubbed asset.
+- Editor Play Mode: `AdsSettings.Load()` fills empty fields from the file in memory only; the asset is never written.
+- Builds: menu and UI builds are wrapped automatically (`AdsIdsBuildHook`: development builds apply the file if present, release builds require it). A scripted build wraps itself: `using (Nexus.Ads.Editor.AdsIdsOverlay.Apply(requireRelease: true)) { BuildPipeline.BuildPlayer(...); }`. Apply backs up the asset bytes to `Library/NexusAdsIds.backup`, fills only empty fields (a non-empty tracked field wins and logs a warning), and Dispose restores the exact bytes. With `requireRelease` a missing file, or a missing Release `AppKey` of the selected mediation for the target platform, throws `BuildFailedException` naming the file (not for `AdFreeRelease` or mediation `None`). Nested `Apply` calls are no-ops. A crashed build is restored at the next editor load from the backup.
+
+
+
 ## Using it with Nexus
 
 Through `com.nexus.ads.bridge.nexus`: the bridge wraps the controller as the `IAdNetworkAdapter` of

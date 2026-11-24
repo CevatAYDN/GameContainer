@@ -204,6 +204,13 @@ set by hand (`sdk.unitypackage`), and the UPM route is preferred.
 | Unity LevelPlay | None. The editor mock mode uses the literal key `"editor"`; it covers layout only. | Dashboard, Settings > Test devices, by advertising id; the network assignment "will reset within the hour". | Unity registry `com.unity.services.levelplay` (9.5.1 on the page; the GitHub repository's latest tag and release is 9.3.0 of 2026-01-20, so the registry is ahead of GitHub), or `UnityLevelPlay_v9.5.1.unitypackage`. Namespace `Unity.Services.LevelPlay`, `LevelPlay.Init(appKey)`. |
 | AppLovin MAX | None. Test ads use the account's SDK key and ad units with test mode on. | `MaxSdk.SetTestDeviceAdvertisingIdentifiers(string[])` before `MaxSdk.InitializeSdk()`, or the Mediation Debugger. | Scoped registry `https://unity.packages.applovin.com/` with scopes `com.applovin.mediation.ads`, `com.applovin.mediation.adapters`, `com.applovin.mediation.dsp` (from the plugin's `AppLovinPluginMigrationHelper.cs`, release 8.6.6 of 2026-09-15), installed by AppLovin's installer package, or `.unitypackage`. SDK key in AppLovin > Integration Manager. |
 
+### Where the ids live
+
+Real ad ids (AdMob app and unit ids, LevelPlay app keys, test device ids) are never committed. The tracked
+`Assets/Resources/NexusAdsSettings.asset` keeps those fields empty; the real values live in the untracked
+`NexusAdsIds.local.json` at the Unity project root (add it to the game's `.gitignore`). A release build fails without it
+(`AdsIdsOverlay.Apply(true)`); see the README, "Ad ids stay out of git".
+
 ## Registration links
 
 All answered on the read date (HTTP 200 unless noted).

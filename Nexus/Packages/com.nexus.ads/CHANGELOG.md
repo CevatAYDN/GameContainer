@@ -1,5 +1,17 @@
 # Changelog
 
+## Ad ids move out of git into `NexusAdsIds.local.json`
+
+- Games keep `NexusAdsSettings.asset` tracked with the AdMob app/unit ids, LevelPlay app keys and `TestDeviceIds` empty;
+  the real values live in the untracked `NexusAdsIds.local.json` at the Unity project root (`AdsIdsFile`, same shape as the
+  Test/Release tabs). New public: `Nexus.Ads.Unity.AdsIdsFile`; editor `Nexus.Ads.Editor.AdsIdsOverlay` with `ExportLocalFile()`,
+  `ScrubAsset()` (menu Nexus > Ads), `Apply(bool requireRelease)` (returns `IDisposable`; backs the asset up to
+  `Library/NexusAdsIds.backup`, fills empty fields, restores exact bytes on Dispose, nested calls are no-ops, throws
+  `BuildFailedException` naming the file when a release build lacks it or the Release app key), crash recovery on editor load,
+  and `AdsIdsBuildHook` for menu/UI builds (runs before `AdsBuildGuard`). In the editor `AdsSettings.Load()` overlays the file
+  in memory only. `AdsIdsOverlayTests` (EditMode) lock the behaviour. Not run on a device or in a real player build.
+
+
 ## Google UMP's US-state opt-out reaches LevelPlay (#444)
 
 - With `Consent: GoogleUmp` and LevelPlay, `AdsBootstrap` reads the IAB GPP answer UMP stores (`IABGPP_GppSID`,
