@@ -195,8 +195,8 @@ namespace Nexus.Core.Services
         private void SaveNow()
         {
             if (!_savePending) return;
-            _savePending = false;
             Store?.Save();
+            _savePending = false; // after Save: a throw keeps it pending for the throttler's retry
         }
 
         public float MasterVolume

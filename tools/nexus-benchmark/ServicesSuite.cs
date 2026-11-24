@@ -231,7 +231,8 @@ namespace NexusBench
         public bool HasKey(string key) => _store.ContainsKey(key);
         public void DeleteKey(string key) { Deletes[key] = Deletes.TryGetValue(key, out int n) ? n + 1 : 1; _store.Remove(key); }
         public int Saves;
-        public void Save() => Saves++;
+        public int FailSaves;
+        public void Save() { if (FailSaves > 0) { FailSaves--; throw new InvalidOperationException("save failed"); } Saves++; }
     }
 
     // ---------------------------------------------------------------------------
@@ -624,6 +625,17 @@ namespace NexusBench
                 audio.Dispose();
                 Check("A4c. Throttled_Setting_Saves_Once_After_Flush", savesBeforeFlush == 0 && throttler.Requests == 20 && throttled.Saves == 1,
                     $"saves before flush={savesBeforeFlush}, requests={throttler.Requests}, saves after flush={throttled.Saves} (expected 0/20/1)");
+                // #447 follow-up: a Save that throws leaves the change pending; the throttler's retry of the same action saves it.
+                var failing = new SvcDeleteCountingPrefs { FailSaves = 1 };
+                var retrying = new SvcRecordingThrottler();
+                audio.PlayerPrefsService = failing;
+                audio.SaveThrottler = retrying;
+                audio.MasterVolume = 0.11f;
+                try { retrying.FlushAll(); } catch (InvalidOperationException) { }
+                int savesAfterFailure = failing.Saves;
+                retrying.FlushAll();
+                Check("A4d. Failed_Save_Stays_Pending_For_The_Retry", savesAfterFailure == 0 && failing.Saves == 1,
+                    $"saves after the failing flush={savesAfterFailure}, after the retry={failing.Saves} (expected 0/1)");
             }
             finally
             {
