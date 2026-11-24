@@ -389,18 +389,29 @@ namespace Nexus.Core.Services
 
         private void ConfirmReceiptBalance(string currencyId, IPlayerPrefsService store)
         {
+            // Detach the notices in the same lock as the staging write: exactly the receipts in the written payload.
+            List<PendingEarnNotice> due = null;
             lock (_balanceLock)
             {
                 if (_disposed || _disposing) throw new ObjectDisposedException(nameof(EconomyService));
                 WriteReceiptBalanceLocked(currencyId, store, _receiptIds[currencyId]);
-            }
-            // Retry even for a duplicate: the previous call may have changed RAM but
-            // failed its commit. Never infer persistence from the in-memory receipt set.
-            store.SaveOrThrow();
-            List<PendingEarnNotice> due = null;
-            lock (_balanceLock)
-            {
                 if (_pendingEarnNotices.TryGetValue(currencyId, out due)) _pendingEarnNotices.Remove(currencyId);
+            }
+            try
+            {
+                // Retry even for a duplicate: the previous call may have changed RAM but
+                // failed its commit. Never infer persistence from the in-memory receipt set.
+                store.SaveOrThrow();
+            }
+            catch
+            {
+                if (due != null)
+                    lock (_balanceLock)
+                    {
+                        if (_pendingEarnNotices.TryGetValue(currencyId, out var queued)) due.AddRange(queued);
+                        _pendingEarnNotices[currencyId] = due; // staged ones first, then what was queued meanwhile
+                    }
+                throw;
             }
             if (due == null) return;
             foreach (var n in due)

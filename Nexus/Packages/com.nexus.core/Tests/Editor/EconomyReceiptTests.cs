@@ -409,6 +409,47 @@ namespace Nexus.Editor.Tests
 #if UNITY_EDITOR
         [Test]
 #endif
+        public void EarnOnce_SendsOnlyTheNoticesItsOwnCommitContained()
+        {
+            var store = new ReentrantStore(new InMemoryPlayerPrefsService());
+            var validator = new RecordingValidator();
+            using var economy = new EconomyService { PlayerPrefsService = store, NetworkValidator = validator };
+            using var bInSave = new ManualResetEventSlim();
+            using var releaseB = new ManualResetEventSlim();
+            bool bCommits = false;
+            Exception bError = null;
+            Thread b = null;
+            int saves = 0;
+            store.TrySaveOverride = () =>
+            {
+                int n = ++saves;
+                if (n == 1) // A's commit: B earns on the same currency and queues its notice while A is still inside its save
+                {
+                    b = new Thread(() => { try { economy.EarnOnce("coin", 40, "r2", "why"); } catch (Exception e) { bError = e; } });
+                    b.Start();
+                    Require(bInSave.Wait(5000), "B must reach its own save while A is inside its save");
+                    return null; // A's commit succeeds
+                }
+                if (n == 2) // B's commit
+                {
+                    bInSave.Set();
+                    Require(releaseB.Wait(5000), "B must be released");
+                    return bCommits ? (bool?)null : false;
+                }
+                return null;
+            };
+            Require(economy.EarnOnce("coin", 40, "r1", "why"), "A's receipt applies");
+            Require(validator.Earns.Count == 1, "A's commit sends exactly its own notice, not B's queued one: sent " + validator.Earns.Count);
+            releaseB.Set();
+            Require(b.Join(5000), "B must finish");
+            Require(bError is IOException && validator.Earns.Count == 1, "B's failed commit must not have been notified");
+            Require(!economy.EarnOnce("coin", 40, "r2", "why") && validator.Earns.Count == 2, "B's retry notifies its earning once");
+            Require(!economy.EarnOnce("coin", 40, "r2", "why") && validator.Earns.Count == 2, "a notified earning is never sent again");
+        }
+
+#if UNITY_EDITOR
+        [Test]
+#endif
         public void EarnBigOnce_NotifiesTheValidatorOnlyAfterTheCommit_AndExactlyOnceAcrossARetry() => NotifyAfterCommit(true);
 
         private static void NotifyAfterCommit(bool big)
@@ -510,6 +551,7 @@ namespace Nexus.Editor.Tests
         {
             private readonly IPlayerPrefsService _inner;
             public Action BeforeSet;
+            public Func<bool?> TrySaveOverride; // null result: the inner store decides
             public ReentrantStore(IPlayerPrefsService inner) => _inner = inner;
             public int GetInt(string key, int defaultValue = 0) => _inner.GetInt(key, defaultValue);
             public void SetInt(string key, int value) => _inner.SetInt(key, value);
@@ -531,7 +573,7 @@ namespace Nexus.Editor.Tests
             public void DeleteKey(string key) => _inner.DeleteKey(key);
             public StorageReadStatus TryGetString(string key, out string value) => _inner.TryGetString(key, out value);
             public void Save() => _inner.Save();
-            public bool TrySave() => _inner.TrySave();
+            public bool TrySave() => TrySaveOverride?.Invoke() ?? _inner.TrySave();
         }
 
         private sealed class AfterReplaceStore : EncryptedStorageService
