@@ -201,7 +201,8 @@ namespace NexusBench
         public void SetLong(string key, long value) => SetString(key, value.ToString(CultureInfo.InvariantCulture));
         public bool HasKey(string key) => _store.ContainsKey(key);
         public void DeleteKey(string key) { Deletes[key] = Deletes.TryGetValue(key, out int n) ? n + 1 : 1; _store.Remove(key); }
-        public void Save() { }
+        public int Saves;
+        public void Save() => Saves++;
     }
 
     // ---------------------------------------------------------------------------
@@ -570,6 +571,18 @@ namespace NexusBench
                     && mutedSources[1].volume == 0f;
                 Check("A4. Muted_Drives_Effective_Zero_And_Persists", muted,
                     $"volumes={mutedSources[0].volume}/{mutedSources[1].volume}");
+
+                // #447: a setting change is saved at once (a background kill skips OnApplicationQuit); an unchanged value is not.
+                var counting = new SvcDeleteCountingPrefs();
+                audio.PlayerPrefsService = counting;
+                audio.MasterVolume = 0.3f;
+                audio.IsMusicMuted = true;
+                audio.IsSfxMuted = true;
+                int savesAfterChange = counting.Saves;
+                audio.MasterVolume = 0.3f;
+                audio.IsMusicMuted = true;
+                Check("A4b. Setting_Change_Saves_Store_Unchanged_Does_Not", savesAfterChange == 3 && counting.Saves == 3,
+                    $"saves after changes={savesAfterChange}, after repeats={counting.Saves} (expected 3/3)");
             }
             finally
             {

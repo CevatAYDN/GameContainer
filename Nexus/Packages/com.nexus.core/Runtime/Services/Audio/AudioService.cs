@@ -177,13 +177,22 @@ namespace Nexus.Core.Services
         private bool SfxMuted => _isMuted || _isSfxMuted;
         private float EffectiveSfxVolume => SfxMuted ? 0f : _masterVolume * _sfxVolume;
 
+        // #447: a changed setting is saved at once, like HapticService: a background kill skips OnApplicationQuit.
+        private void SaveSetting(Action<IPlayerPrefsService> write)
+        {
+            var store = Store;
+            if (store == null) return;
+            write(store);
+            store.Save();
+        }
+
         public float MasterVolume
         {
             get => _masterVolume;
             set
             {
-                _masterVolume = Mathf.Clamp01(value);
-                Store?.SetFloat(KeyMasterVol, _masterVolume);
+                float v = Mathf.Clamp01(value);
+                if (v != _masterVolume) { _masterVolume = v; SaveSetting(s => s.SetFloat(KeyMasterVol, v)); }
                 UpdateVolumes();
             }
         }
@@ -193,8 +202,8 @@ namespace Nexus.Core.Services
             get => _bgmVolume;
             set
             {
-                _bgmVolume = Mathf.Clamp01(value);
-                Store?.SetFloat(KeyBgmVol, _bgmVolume);
+                float v = Mathf.Clamp01(value);
+                if (v != _bgmVolume) { _bgmVolume = v; SaveSetting(s => s.SetFloat(KeyBgmVol, v)); }
                 UpdateVolumes();
             }
         }
@@ -218,8 +227,8 @@ namespace Nexus.Core.Services
             get => _sfxVolume;
             set
             {
-                _sfxVolume = Mathf.Clamp01(value);
-                Store?.SetFloat(KeySfxVol, _sfxVolume);
+                float v = Mathf.Clamp01(value);
+                if (v != _sfxVolume) { _sfxVolume = v; SaveSetting(s => s.SetFloat(KeySfxVol, v)); }
                 UpdateSfxVolumes();
             }
         }
@@ -229,8 +238,7 @@ namespace Nexus.Core.Services
             get => _isMuted;
             set
             {
-                _isMuted = value;
-                Store?.SetBool(KeyMuted, _isMuted);
+                if (value != _isMuted) { _isMuted = value; SaveSetting(s => s.SetBool(KeyMuted, value)); }
                 UpdateVolumes();
             }
         }
@@ -240,8 +248,7 @@ namespace Nexus.Core.Services
             get => _isMusicMuted;
             set
             {
-                _isMusicMuted = value;
-                Store?.SetBool(KeyMusicMuted, _isMusicMuted);
+                if (value != _isMusicMuted) { _isMusicMuted = value; SaveSetting(s => s.SetBool(KeyMusicMuted, value)); }
                 UpdateVolumes();
             }
         }
@@ -251,8 +258,7 @@ namespace Nexus.Core.Services
             get => _isSfxMuted;
             set
             {
-                _isSfxMuted = value;
-                Store?.SetBool(KeySfxMuted, _isSfxMuted);
+                if (value != _isSfxMuted) { _isSfxMuted = value; SaveSetting(s => s.SetBool(KeySfxMuted, value)); }
                 UpdateSfxVolumes();
             }
         }
