@@ -30,6 +30,7 @@ namespace NexusBench
 
             Test_BigDouble_Zero_Ordering();
             Test_BigDouble_Suffix_And_Fractions();
+            Test_BigDouble_FixedPoint_RollsOverToK();
             Test_Inject_PrivateBaseClassMembers();
             Test_PostConstruct_On_DerivedOverride();
             Test_NamedBindings_NoFalseCycle();
@@ -87,6 +88,18 @@ namespace NexusBench
             bool ok = distinct && expectedBeyond && fractionShown;
             Report("FV2. BigDouble_Suffix_And_Fractions", ok,
                 $"1e15='{atTable}' 1e93='{beyondTable}' distinct={distinct} 0.25='{quarter}'");
+        }
+
+        // #456: 999.5..999.999 printed "1000" in the fixed-point path while 999.999K already rolled to 1.00M.
+        private static void Test_BigDouble_FixedPoint_RollsOverToK()
+        {
+            string up = new BigDouble(999.6).ToFormattedString();
+            string half = new BigDouble(999.999).ToFormattedString();
+            string neg = new BigDouble(-999.6).ToFormattedString();
+            string below = new BigDouble(999.4).ToFormattedString();
+            bool ok = up == "1.00K" && half == "1.00K" && neg == "-1.00K" && below == "999";
+            Report("FV456. BigDouble_FixedPoint_RollsOverToK", ok,
+                $"999.6='{up}' 999.999='{half}' -999.6='{neg}' 999.4='{below}' (expected 1.00K/1.00K/-1.00K/999)");
         }
 
         // ── DI metadata across the inheritance chain ──────────────────────────

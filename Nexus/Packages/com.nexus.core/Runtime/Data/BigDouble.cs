@@ -312,7 +312,11 @@ namespace Nexus.Core
                 {
                     return (Mantissa * pow10).ToString("0.################", culture);
                 }
-                return (Mantissa * pow10).ToString("F0", culture);
+                string whole = (Mantissa * pow10).ToString("F0", culture);
+                // 999.6 rounds to "1000": shown as "1.00K", as the suffix path below does for 999.999K (#456).
+                if (Exponent == 2 && whole.TrimStart('-') == "1000")
+                    return $"{(Mantissa * pow10 / 1000).ToString("F2", culture)}{GetSuffix(1)}";
+                return whole;
             }
 
             long suffixIndex = Exponent / 3;
