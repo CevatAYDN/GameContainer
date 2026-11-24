@@ -358,8 +358,23 @@ namespace Nexus.Core.Services
         /// <summary>Raises <see cref="OnAdImpression"/>, then <see cref="OnImpressionRecorded"/> (issue #135).</summary>
         public void RaiseImpression(AdImpression impression)
         {
-            OnAdImpression?.Invoke(impression);
-            OnImpressionRecorded?.Invoke(impression.Network, impression.Value, impression.Placement);
+            // Subscribers are game code (revenue analytics): each runs in its own try/catch so one that throws
+            // neither hides the impression from the rest nor reaches the provider callback. GetInvocationList
+            // allocates only while a subscriber exists, once per shown ad (not a README allocation-contract path).
+            var detailed = OnAdImpression;
+            if (detailed != null)
+                foreach (Action<AdImpression> subscriber in detailed.GetInvocationList())
+                {
+                    try { subscriber(impression); }
+                    catch (Exception ex) { NexusLog.WarnAlways($"[AdService] An OnAdImpression subscriber threw: {ex.GetType().Name}: {ex.Message}"); }
+                }
+            var recorded = OnImpressionRecorded;
+            if (recorded != null)
+                foreach (Action<string, double, string> subscriber in recorded.GetInvocationList())
+                {
+                    try { subscriber(impression.Network, impression.Value, impression.Placement); }
+                    catch (Exception ex) { NexusLog.WarnAlways($"[AdService] An OnImpressionRecorded subscriber threw: {ex.GetType().Name}: {ex.Message}"); }
+                }
         }
 
         public override void Dispose()
@@ -389,6 +404,9 @@ namespace Nexus.Core.Services
                     {
                         _interstitialCooldownSeconds.ClearOnChanged();
                         _lastInterstitialTime.ClearOnChanged();
+                        OnAdImpression = null;
+                        OnImpressionRecorded = null;
+                        ReadyChanged = null;
                         base.Dispose();
                     }
                 }

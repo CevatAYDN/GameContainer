@@ -1229,6 +1229,21 @@ namespace NexusBench
                 Check("D4c. Impression_Carries_Format_Currency_And_Precision", full && oldStillFires && threeValues,
                     $"count={impressions.Count} full={full} old=({net},{place}) threeValues={threeValues}");
 
+                // D4d (issue #454): a throwing OnAdImpression subscriber hid the impression from the later subscribers and from
+                // every OnImpressionRecorded subscriber (revenue analytics), and the exception reached the provider callback.
+                var isolated = new AdService();
+                int detailedHeard = 0, recordedHeard = 0;
+                bool leaked = false;
+                isolated.OnAdImpression += _ => throw new InvalidOperationException("subscriber bug");
+                isolated.OnAdImpression += _ => detailedHeard++;
+                isolated.OnImpressionRecorded += (_, _, _) => throw new InvalidOperationException("subscriber bug");
+                isolated.OnImpressionRecorded += (_, _, _) => recordedHeard++;
+                try { isolated.RaiseImpression("admob", 0.1, "p"); } catch { leaked = true; }
+                isolated.Dispose();
+                isolated.RaiseImpression("admob", 0.1, "p");
+                Check("D4d. Throwing_Impression_Subscriber_Does_Not_Hide_The_Impression", !leaked && detailedHeard == 1 && recordedHeard == 1,
+                    $"leaked={leaked} detailed={detailedHeard} recorded={recordedHeard} (expected false/1/1; none after Dispose)");
+
                 // D4b (issue #99): without the ad family's bridge nothing raised ReadyChanged when AdService's own
                 // interstitial cooldown ended, so a UI that follows the event kept its button hidden.
                 var tick = new TickService();
