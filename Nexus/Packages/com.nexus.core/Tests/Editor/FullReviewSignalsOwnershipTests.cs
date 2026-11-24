@@ -251,10 +251,14 @@ namespace Nexus.Editor.Tests
         {
             var control = UnretainedOwner();
             var owner = CompleteComposite(mode);
-            Collect();
+            // Mono scans the stack conservatively: stale slots can pin the owner for one pass (#446).
+            for (int i = 0; i < 8 && owner.IsAlive; i++) { ClobberStack(); Collect(); }
             Require(!control.IsAlive, "S08: collection control remained reachable");
             Require(!owner.IsAlive, $"S08: completed dispatch retained its payload owner; mode={mode}");
         }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static int ClobberStack() { Span<byte> b = stackalloc byte[4096]; b.Clear(); return b[0]; }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static WeakReference CompleteComposite(int mode)
