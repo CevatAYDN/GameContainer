@@ -1,5 +1,11 @@
 # Session handoff
 
+## Current continuation — 2026-11-24 (#444)
+
+#444 is done: with `Consent: GoogleUmp`, Google's US-state opt-out (GPP usnat v1/v2, usca; `IABUSPrivacy_String` as fallback) reaches
+LevelPlay `do_not_sell` when UMP answers and when its answer changes (`7bb6e960`, review fixes `fed7d746`; evidence in
+`RELEASE_GATES.md`, top). Games re-pin to the pushed SHA that carries these commits, one at a time. Not run on a device.
+
 ## Current continuation — 2026-11-23 (#443)
 
 Guideline 5.6 follow-up (#443). The ten Mac commits `fc5bcc60..60715202` and the four local fixes (`48d35a81`,

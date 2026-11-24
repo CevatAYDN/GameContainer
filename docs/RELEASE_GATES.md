@@ -9,6 +9,9 @@ test and the GameFlow test, before the fix: 5 run, 3 passed, 2 failed (`red.xml`
 (`green-editmode.xml`, 0 `error CS`). Development project, `com.nexus.ads.editor.tests`: 159 total, 158 passed, 0 failed (1
 inconclusive, `devproject-editmode.xml`); `nexus-compile-check` 0 errors / 0 warnings. Not run: a device (UMP's real GPP write on
 Android, the iOS `PlayerPrefs` read of NSUserDefaults), usnat version 3, state sections other than usnat and usca.
+Review fixes `fed7d746` (US-string fallback test, docs, one JNI warning), then the full suites on it (Windows, 6000.6.8f1, one
+editor at a time): host harness passed; `nexus-compile-check` 0 errors; `check-docs.py` 158 files, 0 broken links; EditMode
+1096 / 1092 / 0 / 4 (`us444/full-editmode.xml`); PlayMode 344 / 344 / 0 / 0 (`us444/full-playmode.xml`).
 
 ## Full suites on `9d845a9d` — 2026-11-23
 
