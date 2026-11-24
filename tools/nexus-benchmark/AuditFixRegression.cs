@@ -328,6 +328,7 @@ namespace NexusBench
             Test_PerfMonitor_ThrowingSubscriber_Isolated();
             Test_NetworkMonitor_ThrowingSubscriber_Isolated();
             Test_ObjectPoolService_BoundRetention();
+            Test_ObjectPoolService_DespawnAfter_NeverBeforeRequestedDelay();
             Test_A23_IntegerSaves_SurviveLocaleChange();
             Test_A23_TransientReadError_NotCachedAsMissing();
             Test_A23_DoubleDespawn_KeepsPooledInstance();
@@ -1119,6 +1120,27 @@ namespace NexusBench
 
             Check("M3. ObjectPoolService_BoundRetention", inactiveCount > 0 && inactiveCount <= 128,
                 $"retained inactive={inactiveCount} after {spawnCount} despawns (cap 128, pre-fix: unbounded = {spawnCount})");
+        }
+
+        // ── #452 (DespawnAfter never fires before the requested delay) ─────────
+        private static void Test_ObjectPoolService_DespawnAfter_NeverBeforeRequestedDelay()
+        {
+            var pool = new ObjectPoolService();
+            var prefab = new GameObject("delay-prefab");
+            var go = new GameObject("delay-instance");
+            var method = typeof(ObjectPoolService).GetMethod("DespawnCoroutine", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var bad = new System.Collections.Generic.List<string>();
+            foreach (float delay in new[] { 0.01f, 0.024f, 0.06f, 0.074f, 0.05f, 0.1f, 1.37f })
+            {
+                var it = (System.Collections.IEnumerator)method.Invoke(pool, new object[] { go, go, -1L, delay });
+                it.MoveNext();
+                float waited = ((WaitForSeconds)it.Current).seconds;
+                if (waited < delay - 1e-6f || waited > delay + 0.05f + 1e-6f) bad.Add($"{delay}->{waited}");
+            }
+            UnityEngine.Object.Destroy(go);
+            UnityEngine.Object.Destroy(prefab);
+            Check("M452. DespawnAfter_NeverBeforeRequestedDelay", bad.Count == 0,
+                bad.Count == 0 ? "no wait is shorter than the requested delay (or more than one 50 ms bucket longer)" : "bad: " + string.Join(", ", bad));
         }
 
         // ── #23 ───────────────────────────────────────────────────────────────

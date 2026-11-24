@@ -444,7 +444,7 @@ namespace Nexus.Core.Services
 
         // Cache WaitForSeconds instances per unique delay value to avoid per-call heap allocation.
         // M3b fix: cap at 64 entries to prevent unbounded growth when callers pass non-repeating
-        // float delays (e.g. computed values). The delay is rounded to the nearest 50 ms bucket
+        // float delays (e.g. computed values). The delay is rounded up to the next 50 ms bucket
         // so similar values share a cached instance (0-alloc in the steady-state common case).
         private static readonly Dictionary<float, WaitForSeconds> s_waitForSecondsCache = new();
         private const int MaxWaitCacheEntries = 64;
@@ -452,8 +452,10 @@ namespace Nexus.Core.Services
 
         private IEnumerator DespawnCoroutine(GameObject instance, UnityEngine.Object instanceKey, long generation, float delay)
         {
-            // Round to the nearest bucket so nearby delays share a cached WaitForSeconds.
-            float key = (float)(Math.Round(delay / WaitBucketMs) * WaitBucketMs);
+            // Round UP to the next bucket so nearby delays share a cached WaitForSeconds and none fires early (#452).
+            // The small epsilon keeps 0.05f (a hair above 0.05) in bucket 1; the guard keeps the wait from ever being shorter.
+            float key = (float)(Math.Ceiling(delay / WaitBucketMs - 1e-4) * WaitBucketMs);
+            if (key < delay) key = delay;
             if (!s_waitForSecondsCache.TryGetValue(key, out var wait))
             {
                 // M3b: evict one entry if at cap before adding new entry.
