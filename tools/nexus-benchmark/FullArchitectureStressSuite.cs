@@ -341,6 +341,7 @@ namespace NexusBench
             Test_ErrorCollection_Grouping_Bounded();
             Test_PluginTraceSink_Auth_And_TracingContract();
             Test_EncryptedStorage_RoundTrip_TamperDetection();
+            Test_EncryptedStorage_Import_RaceDuringWrite_ReturnsFalse();
             Test_Storage_SaveThrottler_OfflineTime_GameSave();
             Test_ObjectPoolService_SpawnDespawn_Reuse();
             
@@ -2855,6 +2856,36 @@ namespace NexusBench
             Console.WriteLine($"[Nexus Architecture Stress] Encrypted storage: roundTrip={ok}");
             Report("28. EncryptedStorage_RoundTrip_TamperDetection", ok,
                 "AES-256+HMAC round-trip, persistence across instances, corrupt cloud import rejected without replacing local data, delete key");
+        }
+
+        // ── 28b. Import refused when a newer write lands during the disk write (#455) ─────────────
+
+        private static void Test_EncryptedStorage_Import_RaceDuringWrite_ReturnsFalse()
+        {
+            UnityEngine.PlayerPrefs.ClearAll();
+            bool ok = false;
+            string detail = "";
+            try
+            {
+                var s = new EncryptedStorageService("HarnessSalt_28b");
+                s.SetString("profile", "imported");
+                string export = s.ExportEncryptedSaveData("profile");
+                s.SetString("profile", "local");
+                // a cache write lands after the import's first version check, while its file write is in flight
+                s.AfterImportWriteForTest = () => s.SetString("profile", "newer");
+                bool imported = s.ImportEncryptedSaveData("profile", export, out string failure);
+                string kept = s.GetString("profile");
+                ok = !imported && kept == "newer" && failure != null;
+                detail = $"imported={imported} kept={kept} failure={failure ?? "null"} (expected false/newer/reason)";
+                s.Dispose();
+            }
+            finally
+            {
+                string secureDataPath = Path.Combine(Application.persistentDataPath, "SecureData");
+                if (Directory.Exists(secureDataPath)) { try { Directory.Delete(secureDataPath, true); } catch { } }
+                UnityEngine.PlayerPrefs.ClearAll();
+            }
+            Report("28b. EncryptedStorage_Import_Refused_When_A_Newer_Write_Lands_During_The_Disk_Write", ok, detail);
         }
 
         // ── 29. SaveThrottler + OfflineTimeCalculator + GameSaveManager ─────────

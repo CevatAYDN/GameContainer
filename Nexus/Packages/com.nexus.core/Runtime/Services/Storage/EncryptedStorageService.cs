@@ -1049,6 +1049,7 @@ namespace Nexus.Core.Services
                         if (refused == null)
                         {
                             WriteRawDataAtomically(path, rawData);
+                            AfterImportWriteForTest?.Invoke();
                             lock (_lock)
                             {
                                 if (IsCurrentVersionLocked(key, version))
@@ -1057,6 +1058,7 @@ namespace Nexus.Core.Services
                                     BumpKeyVersionLocked(key);
                                     _dirtyKeys.Remove(key);
                                 }
+                                else refused = "the key was written while the import waited, and that newer value is kept";
                             }
                         }
                     }
@@ -1070,6 +1072,9 @@ namespace Nexus.Core.Services
             failure = null;
             return true;
         }
+
+        // Test seam (#455): runs after an import's file write, before its final version check, so a harness can land a newer write in that window.
+        internal Action AfterImportWriteForTest;
 
         private static bool ImportRefused(string key, string reason, out string failure)
         {
