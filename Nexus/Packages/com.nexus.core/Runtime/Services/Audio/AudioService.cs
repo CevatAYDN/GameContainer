@@ -177,13 +177,26 @@ namespace Nexus.Core.Services
         private bool SfxMuted => _isMuted || _isSfxMuted;
         private float EffectiveSfxVolume => SfxMuted ? 0f : _masterVolume * _sfxVolume;
 
-        // #447: a changed setting is saved at once, like HapticService: a background kill skips OnApplicationQuit.
-        private void SaveSetting(Action<IPlayerPrefsService> write)
+        // #447: a changed setting is saved, as HapticService does: a background kill skips OnApplicationQuit.
+        // With an ISaveThrottler a slider drag coalesces into one save per window; without one it saves at once.
+        [OptionalInject] public ISaveThrottler SaveThrottler { get; set; }
+        private const string SaveOwner = "Audio";
+        private Action _saveNow;
+        private bool _savePending;
+
+        private void RequestSave()
         {
-            var store = Store;
-            if (store == null) return;
-            write(store);
-            store.Save();
+            if (Store == null) return;
+            _savePending = true;
+            if (SaveThrottler != null) SaveThrottler.TryRequestSave(SaveOwner, _saveNow ??= SaveNow);
+            else SaveNow();
+        }
+
+        private void SaveNow()
+        {
+            if (!_savePending) return;
+            _savePending = false;
+            Store?.Save();
         }
 
         public float MasterVolume
@@ -192,7 +205,7 @@ namespace Nexus.Core.Services
             set
             {
                 float v = Mathf.Clamp01(value);
-                if (v != _masterVolume) { _masterVolume = v; SaveSetting(s => s.SetFloat(KeyMasterVol, v)); }
+                if (v != _masterVolume) { _masterVolume = v; Store?.SetFloat(KeyMasterVol, v); RequestSave(); }
                 UpdateVolumes();
             }
         }
@@ -203,7 +216,7 @@ namespace Nexus.Core.Services
             set
             {
                 float v = Mathf.Clamp01(value);
-                if (v != _bgmVolume) { _bgmVolume = v; SaveSetting(s => s.SetFloat(KeyBgmVol, v)); }
+                if (v != _bgmVolume) { _bgmVolume = v; Store?.SetFloat(KeyBgmVol, v); RequestSave(); }
                 UpdateVolumes();
             }
         }
@@ -228,7 +241,7 @@ namespace Nexus.Core.Services
             set
             {
                 float v = Mathf.Clamp01(value);
-                if (v != _sfxVolume) { _sfxVolume = v; SaveSetting(s => s.SetFloat(KeySfxVol, v)); }
+                if (v != _sfxVolume) { _sfxVolume = v; Store?.SetFloat(KeySfxVol, v); RequestSave(); }
                 UpdateSfxVolumes();
             }
         }
@@ -238,7 +251,7 @@ namespace Nexus.Core.Services
             get => _isMuted;
             set
             {
-                if (value != _isMuted) { _isMuted = value; SaveSetting(s => s.SetBool(KeyMuted, value)); }
+                if (value != _isMuted) { _isMuted = value; Store?.SetBool(KeyMuted, value); RequestSave(); }
                 UpdateVolumes();
             }
         }
@@ -248,7 +261,7 @@ namespace Nexus.Core.Services
             get => _isMusicMuted;
             set
             {
-                if (value != _isMusicMuted) { _isMusicMuted = value; SaveSetting(s => s.SetBool(KeyMusicMuted, value)); }
+                if (value != _isMusicMuted) { _isMusicMuted = value; Store?.SetBool(KeyMusicMuted, value); RequestSave(); }
                 UpdateVolumes();
             }
         }
@@ -258,7 +271,7 @@ namespace Nexus.Core.Services
             get => _isSfxMuted;
             set
             {
-                if (value != _isSfxMuted) { _isSfxMuted = value; SaveSetting(s => s.SetBool(KeySfxMuted, value)); }
+                if (value != _isSfxMuted) { _isSfxMuted = value; Store?.SetBool(KeySfxMuted, value); RequestSave(); }
                 UpdateSfxVolumes();
             }
         }
@@ -570,6 +583,7 @@ namespace Nexus.Core.Services
 
         public override void Dispose()
         {
+            SaveNow(); // a change the throttler still holds
             StopFadeCoroutine();
             var runner = _fadeRunner;
             _fadeRunner = null;

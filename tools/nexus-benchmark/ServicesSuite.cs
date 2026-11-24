@@ -185,6 +185,21 @@ namespace NexusBench
     }
 
     /// <summary>Key-value store that counts DeleteKey calls per key (#300).</summary>
+    public sealed class SvcRecordingThrottler : ISaveThrottler
+    {
+        private readonly Dictionary<string, Action> _pending = new();
+        public int Requests;
+        public void TryRequestSave(Action a) => TryRequestSave("default", a);
+        public void TryRequestSave(string owner, Action a) { Requests++; _pending[owner] = a; }
+        public void ForceSave(Action a) => a();
+        public void ForceSave(string owner, Action a) => a();
+        public float SecondsSinceLastSave => 0f;
+        public float GetSecondsSinceLastSave(string owner) => 0f;
+        public void Flush() => FlushAll();
+        public void Flush(string owner) { if (_pending.Remove(owner, out var a)) a(); }
+        public void FlushAll() { foreach (var a in new List<Action>(_pending.Values)) a(); _pending.Clear(); }
+    }
+
     public sealed class SvcDeleteCountingPrefs : IPlayerPrefsService
     {
         private readonly Dictionary<string, string> _store = new();
@@ -583,6 +598,18 @@ namespace NexusBench
                 audio.IsMusicMuted = true;
                 Check("A4b. Setting_Change_Saves_Store_Unchanged_Does_Not", savesAfterChange == 3 && counting.Saves == 3,
                     $"saves after changes={savesAfterChange}, after repeats={counting.Saves} (expected 3/3)");
+
+                // #447 follow-up: with an ISaveThrottler a slider drag requests throttled saves, none at once; one real save after the flush.
+                var throttled = new SvcDeleteCountingPrefs();
+                var throttler = new SvcRecordingThrottler();
+                audio.PlayerPrefsService = throttled;
+                audio.SaveThrottler = throttler;
+                for (int i = 1; i <= 20; i++) audio.SfxVolume = i / 40f;
+                int savesBeforeFlush = throttled.Saves;
+                throttler.FlushAll();
+                audio.Dispose();
+                Check("A4c. Throttled_Setting_Saves_Once_After_Flush", savesBeforeFlush == 0 && throttler.Requests == 20 && throttled.Saves == 1,
+                    $"saves before flush={savesBeforeFlush}, requests={throttler.Requests}, saves after flush={throttled.Saves} (expected 0/20/1)");
             }
             finally
             {
