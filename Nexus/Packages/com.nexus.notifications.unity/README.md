@@ -2,7 +2,7 @@
 
 > **Who this is for:** level 3, shipping an Android game on Nexus that reminds a player who has left.
 
-Unity Mobile Notifications on Android behind Nexus's `INotificationService`, with a mock for the editor (issue #160). Like the notifications package's Android API, the assembly exists in Android players and the editor only.
+Unity Mobile Notifications on Android and iOS behind Nexus's `INotificationService`, with a mock for the editor (issues #160, #459). Like the notifications package's platform APIs, the assembly exists in Android and iOS players and the editor only.
 
 ## What 0.1.0 contains
 
@@ -10,21 +10,24 @@ Unity Mobile Notifications on Android behind Nexus's `INotificationService`, wit
 |---|---|
 | `INotificationService`, `NotificationPermission`, `UnavailableNotificationService` (in `com.nexus.core`) | `Permission` (`Allowed`, `NeedsPermission`, `Blocked`, `Unavailable`), `RequestPermissionAsync(ct)`, `OpenSettings()`, `SetChannel(id, name, description, smallIcon)`, `Schedule(title, text, fireTime, data)` returning the notification's id, `Cancel(id)`, `CancelAll()` (scheduled and shown) and `TakeOpenedWith()`. The unavailable service is what a build without a provider gets; its first call says so in every build's log. A schedule before `SetChannel` throws in every implementation. |
 | `UnityNotificationService` (`NEXUS_UNITY_NOTIFICATIONS`) | One channel of default importance; a tap opens the app and removes the notification. `RequestPermissionAsync` shows Android's dialog only when Android needs and still allows one, and completes with the answer. |
+| `IosNotificationService` (`NEXUS_UNITY_NOTIFICATIONS`, iOS) | The same contract on iOS (#459). The permission follows the authorization status: authorized, provisional and ephemeral are `Allowed`, denied is `Blocked` (iOS shows its dialog once; only the Settings app helps, and `OpenSettings` opens it), not yet asked is `NeedsPermission`. `RequestPermissionAsync` asks for alert, badge and sound and completes with the answer. iOS has no channels: `SetChannel` validates its arguments and changes nothing, and the small icon is the app icon. A notification is a one-shot time-interval trigger of at least one second and is not shown while the app is in the foreground. |
 | `MockNotificationService` | The editor's service: nothing is posted, a log line per scheduled notification, and the state a test sets: `Permission` (allowed by default, and what a request answers), the `Scheduled` list, the `OpenedWith` data the next `TakeOpenedWith` returns, and the number of `PermissionRequests` and `SettingsOpened`. |
-| `UnityNotificationBindings.Bind(builder)` | Binds the service: Unity Mobile Notifications in an Android player, the core's unavailable service with an error when the notifications package is older than 2.5.0, the mock in the editor (the package's notification center adds a scene object there at its first call). |
+| `UnityNotificationBindings.Bind(builder)` | Binds the service: Unity Mobile Notifications in an Android or iOS player, the core's unavailable service with an error when the notifications package is older than 2.5.0, the mock in the editor (the package's notification center adds a scene object there at its first call). |
 
 ## Install
 
 This package by git URL, pinned to a commit of the repository (the full 40-character hash):
 `https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.notifications.unity#<commit>`.
-It depends on `com.unity.mobile.notifications` 2.5.0 (installed by the Package Manager), whose build step adds Android's `POST_NOTIFICATIONS` permission and its receiver to the app's manifest. A notification's small icon is an identifier registered in **Project Settings > Mobile Notifications**; without one Android shows the app icon.
+It depends on `com.unity.mobile.notifications` 2.5.0 (installed by the Package Manager), whose build step adds Android's `POST_NOTIFICATIONS` permission and its receiver to the app's manifest.
+
+**iOS:** leave **Request Authorization on App Launch** off in **Project Settings > Mobile Notifications** (it is on by default in the package): the game asks through `RequestPermissionAsync` when the player sees why a reminder helps, never at launch (App Review). No Xcode capability is needed for local notifications. A notification's small icon is an identifier registered in **Project Settings > Mobile Notifications**; without one Android shows the app icon.
 
 ## Binding
 
 ```csharp
 public void OnConfigure(IContextBuilder builder)
 {
-#if UNITY_ANDROID || UNITY_EDITOR
+#if UNITY_ANDROID || UNITY_IOS || UNITY_EDITOR
     UnityNotificationBindings.Bind(builder);
 #else
     builder.BindService<INotificationService, UnavailableNotificationService>();
@@ -63,7 +66,7 @@ public sealed class RemindersMediator : Mediator<RemindersView>
 
 ## Asking for the permission
 
-Android 13 and later ask the player once the game requests it:
+Android 13 and later, and iOS, ask the player once the game requests it:
 
 ```csharp
 var answer = await Notifications.RequestPermissionAsync(ct);
@@ -76,4 +79,4 @@ Ask when the player sees why a reminder helps, not at the first start. Android s
 
 - The package is embedded in the repository's development project, so its declared notifications package resolves there: EditMode 769 passed, 0 failed, 1 skipped of 770, the package's four tests among them; the Android IL2CPP player's merged manifest holds the permission and the package's receiver (`Nexus/artifacts/notifications-20261102/`; the repository's `docs/RELEASE_GATES.md`, Dependencies).
 - An Android build must start the editor on Android (`-buildTarget Android` in batch mode): the notifications package adds its permission and receiver from editor code compiled only there.
-- A notification posted on a phone is not observed yet.
+- A notification posted on a phone is not observed yet, and the iOS service compiles in the iOS and Android player script compilation (`PlayerBuildInterface.CompilePlayerScripts` on Windows, Unity 6000.6.8f1) and its rules pass `IosNotificationRulesTests`, but it has not run: it needs a Mac, an iOS build and an iPhone (#459 stays open until then).

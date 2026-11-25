@@ -5,7 +5,7 @@ using Nexus.Core.Services;
 using Nexus.Notifications.Unity.Mocks;
 using UnityEngine;
 using UnityEngine.TestTools;
-#if NEXUS_UNITY_NOTIFICATIONS
+#if NEXUS_UNITY_NOTIFICATIONS && !UNITY_IOS
 using Unity.Notifications.Android;
 #endif
 
@@ -29,7 +29,7 @@ namespace Nexus.Notifications.Unity.Tests
             Assert.IsInstanceOf<UnavailableNotificationService>(test.Context.Resolve<INotificationService>());
         }
 
-#if NEXUS_UNITY_NOTIFICATIONS
+#if NEXUS_UNITY_NOTIFICATIONS && !UNITY_IOS
         // The package's AndroidNotificationCenter adds a scene object at its first call in the editor: binding the Android
         // service must not make that call.
         [Test]

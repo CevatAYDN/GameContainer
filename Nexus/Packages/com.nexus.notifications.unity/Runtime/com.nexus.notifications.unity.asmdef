@@ -3,10 +3,12 @@
     "rootNamespace": "Nexus.Notifications.Unity",
     "references": [
         "com.nexus.core",
-        "Unity.Notifications.Android"
+        "Unity.Notifications.Android",
+        "Unity.Notifications.iOS"
     ],
     "includePlatforms": [
         "Android",
+        "iOS",
         "Editor"
     ],
     "excludePlatforms": [],

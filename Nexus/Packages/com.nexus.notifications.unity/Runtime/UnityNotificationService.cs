@@ -1,4 +1,4 @@
-#if NEXUS_UNITY_NOTIFICATIONS
+#if NEXUS_UNITY_NOTIFICATIONS && (UNITY_ANDROID || UNITY_EDITOR)
 using System;
 using System.Threading;
 using System.Threading.Tasks;

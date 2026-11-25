@@ -9,12 +9,11 @@ using UnityEngine;
 namespace Nexus.Notifications.Unity
 {
     /// <summary>
-    /// Binds <see cref="INotificationService"/> (#160): an Android player gets Unity Mobile Notifications, and one whose
+    /// Binds <see cref="INotificationService"/> (#160, #459): an Android or iOS player gets Unity Mobile Notifications, and one whose
     /// notifications package is older than 2.5.0 gets the core's unavailable service with an error at start; the editor gets
     /// <see cref="MockNotificationService"/>, because the package's Android API adds a scene object there at its first call. The
-    /// choice is made here because <c>NEXUS_UNITY_NOTIFICATIONS</c> exists only inside this assembly. Like the package's Android
-    /// API, the assembly exists in Android players and the editor only, so a game that also builds for another platform calls
-    /// it under <c>#if UNITY_ANDROID || UNITY_EDITOR</c>.
+    /// choice is made here because <c>NEXUS_UNITY_NOTIFICATIONS</c> exists only inside this assembly. Like the package's platform APIs, the assembly exists in Android and iOS players and the editor only, so a game that also builds for another
+    /// platform calls it under <c>#if UNITY_ANDROID || UNITY_IOS || UNITY_EDITOR</c>.
     /// </summary>
     public static class UnityNotificationBindings
     {
@@ -31,7 +30,11 @@ namespace Nexus.Notifications.Unity
 #if NEXUS_UNITY_NOTIFICATIONS
             if (withSdk)
             {
+#if UNITY_IOS
+                builder.BindService<INotificationService, IosNotificationService>();
+#else
                 builder.BindService<INotificationService, UnityNotificationService>();
+#endif
                 return;
             }
 #endif
